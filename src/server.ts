@@ -1308,7 +1308,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const oauthProvider = new SingleUserOAuthProvider(config.oauth, mcpUrl);
   const bearerAuth = requireBearerAuth({
     verifier: oauthProvider,
-    requiredScopes: config.oauth.scopes,
+    requiredScopes: [config.oauth.scopes[0] ?? "devspace"],
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceServerUrl),
   });
   const workspaceStore = createWorkspaceStore(config.stateDir);
@@ -1319,17 +1319,6 @@ export function createServer(config = loadConfig()): RunningServer {
   if (config.logging.trustProxy) {
     app.set("trust proxy", true);
   }
-
-  app.use(
-    mcpAuthRouter({
-      provider: oauthProvider,
-      issuerUrl: new URL(config.publicBaseUrl),
-      baseUrl: new URL(config.publicBaseUrl),
-      resourceServerUrl,
-      scopesSupported: config.oauth.scopes,
-      resourceName: "DevSpace",
-    }),
-  );
 
   app.use((req, res, next) => {
     const requestId = randomUUID();
@@ -1353,6 +1342,17 @@ export function createServer(config = loadConfig()): RunningServer {
 
     next();
   });
+
+  app.use(
+    mcpAuthRouter({
+      provider: oauthProvider,
+      issuerUrl: new URL(config.publicBaseUrl),
+      baseUrl: new URL(config.publicBaseUrl),
+      resourceServerUrl,
+      scopesSupported: config.oauth.scopes,
+      resourceName: "DevSpace",
+    }),
+  );
 
   app.options("/mcp-app-assets/{*asset}", (_req, res) => {
     setAssetHeaders(res);
@@ -1378,16 +1378,12 @@ export function createServer(config = loadConfig()): RunningServer {
     const sessionId = req.header("mcp-session-id");
     const initializeRequest = req.method === "POST" && isInitializeRequest(req.body);
 
-    try {
-      await new Promise<void>((resolve, reject) => {
-        bearerAuth(req, res, (error?: unknown) => {
-          if (error) reject(error);
-          else resolve();
-        });
+    await new Promise<void>((resolve, reject) => {
+      bearerAuth(req, res, (error?: unknown) => {
+        if (error) reject(error);
+        else resolve();
       });
-    } catch (error) {
-      throw error;
-    }
+    });
     if (res.headersSent) return;
 
     if (!req.auth?.resource || !checkResourceAllowed({ requestedResource: req.auth.resource, configuredResource: resourceServerUrl })) {
