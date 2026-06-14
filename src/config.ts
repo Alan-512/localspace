@@ -19,6 +19,7 @@ export interface ServerConfig {
   compactSkills: boolean;
   skillPaths: string[];
   agentDir: string;
+  autoLoadAgentsMd: boolean;
 }
 
 function parsePort(value: string | undefined): number {
@@ -106,5 +107,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     compactSkills: parseBoolean(env.DEVSPACE_COMPACT_SKILLS),
     skillPaths: parseList(env.DEVSPACE_SKILL_PATHS),
     agentDir: resolve(expandHomePath(env.DEVSPACE_AGENT_DIR ?? defaultAgentDir())),
+    autoLoadAgentsMd: env.DEVSPACE_AUTO_LOAD_AGENTS_MD === undefined
+      ? true
+      : parseBoolean(env.DEVSPACE_AUTO_LOAD_AGENTS_MD),
   };
 }

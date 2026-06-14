@@ -167,11 +167,15 @@ export class WorkspaceRegistry {
   }
 
   async loadAgentsForPath(workspace: Workspace, absolutePath: string): Promise<LoadedAgentsFile[]> {
+    if (!this.config.autoLoadAgentsMd) return [];
+
     const directory = await this.pathDirectory(absolutePath);
     return this.loadAgentsForDirectory(workspace, directory);
   }
 
   async loadAgentsForDirectory(workspace: Workspace, directory: string): Promise<LoadedAgentsFile[]> {
+    if (!this.config.autoLoadAgentsMd) return [];
+
     const resolvedDirectory = assertAllowedPath(directory, [workspace.root]);
     const directories = directoriesBetween(workspace.root, resolvedDirectory);
     const loaded: LoadedAgentsFile[] = [];
@@ -317,11 +321,39 @@ function directoriesBetween(root: string, directory: string): string[] {
   return directories;
 }
 
-export function formatAgentsNotice(agentsFiles: LoadedAgentsFile[]): string | undefined {
+export function formatAgentsNotice(agentsFiles: LoadedAgentsFile[], workspaceRoot?: string): string | undefined {
   const newAgentsFiles = agentsFiles.filter((file) => !file.alreadyLoaded);
   if (newAgentsFiles.length === 0) return undefined;
 
-  const sections = newAgentsFiles.map((file) => `## ${file.path} (newly loaded)\n\n${file.content}`);
+  const sections = newAgentsFiles.map(
+    (file) =>
+      `<project_instructions path="${escapeXmlAttribute(formatAgentsPath(file.path, workspaceRoot))}">\n${file.content}\n</project_instructions>`,
+  );
 
-  return `AGENTS.md context for this workspace path:\n\n${sections.join("\n\n")}`;
+  return `<project_context>\nProject-specific instructions and guidelines:\n\n${sections.join("\n\n")}\n</project_context>`;
+}
+
+function formatAgentsPath(path: string, workspaceRoot: string | undefined): string {
+  if (!workspaceRoot) return path.split(sep).join("/");
+
+  const relationship = relative(workspaceRoot, path);
+  if (
+    relationship === "" ||
+    relationship.startsWith("..") ||
+    relationship === ".." ||
+    relationship.includes(`..${sep}`)
+  ) {
+    return path.split(sep).join("/");
+  }
+
+  return relationship.split(sep).join("/");
+}
+
+function escapeXmlAttribute(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

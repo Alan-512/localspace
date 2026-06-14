@@ -27,7 +27,9 @@ try {
   const { workspace, agentsFiles } = await registry.openWorkspace(root);
 
   assert.equal(workspace.mode, "checkout");
-  assert.match(formatAgentsNotice(agentsFiles) ?? "", /root instructions/);
+  assert.match(formatAgentsNotice(agentsFiles, workspace.root) ?? "", /<project_context>/);
+  assert.match(formatAgentsNotice(agentsFiles, workspace.root) ?? "", /<project_instructions path="AGENTS\.md">/);
+  assert.match(formatAgentsNotice(agentsFiles, workspace.root) ?? "", /root instructions/);
 
   const missingWorkspaceRoot = join(root, "missing", "workspace");
   const missingWorkspace = await registry.openWorkspace(missingWorkspaceRoot);
@@ -36,16 +38,33 @@ try {
   assert.equal((await stat(missingWorkspaceRoot)).isDirectory(), true);
 
   const rootAgain = await registry.loadAgentsForDirectory(workspace, root);
-  assert.equal(formatAgentsNotice(rootAgain), undefined);
+  assert.equal(formatAgentsNotice(rootAgain, workspace.root), undefined);
 
   const nestedPath = registry.resolvePath(workspace, "nested/file.txt");
   const nestedFirst = await registry.loadAgentsForPath(workspace, nestedPath);
-  const nestedFirstNotice = formatAgentsNotice(nestedFirst) ?? "";
+  const nestedFirstNotice = formatAgentsNotice(nestedFirst, workspace.root) ?? "";
   assert.doesNotMatch(nestedFirstNotice, /root instructions/);
+  assert.match(nestedFirstNotice, /<project_instructions path="nested\/AGENTS\.md">/);
   assert.match(nestedFirstNotice, /nested instructions/);
 
   const nestedAgain = await registry.loadAgentsForPath(workspace, nestedPath);
-  assert.equal(formatAgentsNotice(nestedAgain), undefined);
+  assert.equal(formatAgentsNotice(nestedAgain, workspace.root), undefined);
+
+  const manualAgentsConfig = loadConfig({
+    DEVSPACE_ALLOWED_ROOTS: root,
+    DEVSPACE_AUTO_LOAD_AGENTS_MD: "0",
+    PORT: "1",
+  });
+  const manualAgentsRegistry = new WorkspaceRegistry(manualAgentsConfig);
+  const manualAgentsWorkspace = await manualAgentsRegistry.openWorkspace(root);
+  assert.equal(manualAgentsWorkspace.agentsFiles.length, 0);
+  assert.deepEqual(
+    await manualAgentsRegistry.loadAgentsForPath(
+      manualAgentsWorkspace.workspace,
+      manualAgentsRegistry.resolvePath(manualAgentsWorkspace.workspace, "nested/file.txt"),
+    ),
+    [],
+  );
 
   await assert.rejects(
     () => registry.openWorkspace({ path: root, mode: "worktree" }),
@@ -76,7 +95,8 @@ try {
   assert.equal(worktreeWorkspace.workspace.worktree?.dirtySource, true);
   assert.equal(worktreeWorkspace.workspace.worktree?.managed, true);
   assert.equal((await stat(worktreeWorkspace.workspace.root)).isDirectory(), true);
-  assert.match(formatAgentsNotice(worktreeWorkspace.agentsFiles) ?? "", /git root instructions/);
+  assert.match(formatAgentsNotice(worktreeWorkspace.agentsFiles, worktreeWorkspace.workspace.root) ?? "", /<project_instructions path="AGENTS\.md">/);
+  assert.match(formatAgentsNotice(worktreeWorkspace.agentsFiles, worktreeWorkspace.workspace.root) ?? "", /git root instructions/);
 
   const worktreeReadmePath = registry.resolvePath(worktreeWorkspace.workspace, "README.md");
   assert.equal(worktreeReadmePath.startsWith(worktreeWorkspace.workspace.root), true);
@@ -115,13 +135,13 @@ try {
     restoredWorkspace,
     root,
   );
-  assert.equal(formatAgentsNotice(restoredRootAgents), undefined);
+  assert.equal(formatAgentsNotice(restoredRootAgents, restoredWorkspace.root), undefined);
 
   const restoredNestedAgents = await restoredRegistry.loadAgentsForPath(
     restoredWorkspace,
     restoredRegistry.resolvePath(restoredWorkspace, "nested/file.txt"),
   );
-  assert.equal(formatAgentsNotice(restoredNestedAgents), undefined);
+  assert.equal(formatAgentsNotice(restoredNestedAgents, restoredWorkspace.root), undefined);
   secondStore.close();
 } finally {
   await rm(root, { recursive: true, force: true });
