@@ -14,6 +14,7 @@ import {
 import express from "express";
 import type { Request, Response } from "express";
 import * as z from "zod/v4";
+import { createAutoCommitManager } from "./autocommit/manager.js";
 import { loadConfig, type ServerConfig } from "./config.js";
 import {
   editFileTool,
@@ -318,6 +319,7 @@ function createMcpServer(
   config: ServerConfig,
   workspaces: WorkspaceRegistry,
   results: ToolResultStore,
+  autoCommit: ReturnType<typeof createAutoCommitManager>,
 ): McpServer {
   const toolNames = toolNamesFor(config);
   const server = new McpServer(
@@ -474,6 +476,10 @@ function createMcpServer(
     },
     async ({ path, mode, baseRef }) => {
       const { workspace, agentsFiles } = await workspaces.openWorkspace({ path, mode, baseRef });
+      void autoCommit.initializeWorkspace({
+        workspaceId: workspace.id,
+        workspaceRoot: workspace.root,
+      });
       const summary = {
         agentsFiles: agentsFiles.length,
       };
@@ -690,6 +696,15 @@ function createMcpServer(
           patch,
         },
       });
+      autoCommit.recordToolCall({
+        workspaceId,
+        workspaceRoot: workspace.root,
+        tool: "write",
+        success: true,
+        path: input.path,
+        additions: stats.additions,
+        removals: stats.removals,
+      });
 
       return {
         ...response,
@@ -786,6 +801,16 @@ function createMcpServer(
         textBlock(editResultText),
         ...(agentsNotice ? [textBlock(agentsNotice)] : []),
       ];
+      autoCommit.recordToolCall({
+        workspaceId,
+        workspaceRoot: workspace.root,
+        tool: "edit",
+        success: true,
+        path: input.path,
+        additions: stats.additions,
+        removals: stats.removals,
+        editCount: input.edits.length,
+      });
 
       return {
         content: editContent,
@@ -1106,6 +1131,14 @@ function createMcpServer(
         summary,
         payload: { content: response.content },
       });
+      autoCommit.recordToolCall({
+        workspaceId,
+        workspaceRoot: workspace.root,
+        tool: "bash",
+        success: true,
+        command: input.command,
+        workingDirectory: workingDirectory ?? ".",
+      });
 
       return {
         ...response,
@@ -1132,6 +1165,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const workspaceStore = createWorkspaceStore(config.stateDir);
   const workspaces = new WorkspaceRegistry(config, workspaceStore);
   const results = createResultStore(config.stateDir);
+  const autoCommit = createAutoCommitManager({ config: config.autocommit });
 
   app.options("/mcp-app-assets/{*asset}", (_req, res) => {
     setAssetHeaders(res);
@@ -1181,7 +1215,7 @@ export function createServer(config = loadConfig()): RunningServer {
           if (closedSessionId) transports.delete(closedSessionId);
         };
 
-        const server = createMcpServer(config, workspaces, results);
+        const server = createMcpServer(config, workspaces, results, autoCommit);
         await server.connect(transport);
       } else {
         sendJsonRpcError(res, 400, -32000, "No valid MCP session");
