@@ -421,7 +421,9 @@ function WorkspacePayload({ card }: { card: ToolResultCard }) {
     skills.length > 0
       ? `Skills: ${skills.map((skill) => skill.name ?? skill.path ?? "unnamed").join(", ")}`
       : "Skills: none",
-    agentsFiles.length > 0 ? formatAgentsFilesForPayload(agentsFiles) : "AGENTS.md: none loaded",
+    agentsFiles.length > 0
+      ? `\n${formatAgentsFilesForPayload(agentsFiles)}`
+      : "\nAGENTS.md: none loaded",
   ].filter(Boolean);
 
   return <pre className="text-payload open_workspace">{lines.join("\n")}</pre>;
