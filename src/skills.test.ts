@@ -4,7 +4,7 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { loadConfig } from "./config.js";
 import {
-  formatSkillsNotice,
+  formatPathForPrompt,
   loadWorkspaceSkills,
   resolveSkillReadPath,
 } from "./skills.js";
@@ -87,19 +87,10 @@ try {
   assert.equal(loaded.skills.some((skill) => skill.name === "hidden-skill"), true);
   assert.equal(loaded.diagnostics.some((diagnostic) => diagnostic.type === "collision"), true);
 
-  const verboseNotice = formatSkillsNotice(loaded.skills, { compact: false }) ?? "";
-  assert.match(verboseNotice, /<available_skills>/);
-  assert.match(verboseNotice, /<path>/);
-  assert.match(verboseNotice, /~?\/.*SKILL\.md|SKILL\.md/);
-  assert.doesNotMatch(verboseNotice, /hidden-skill/);
-
-  const compactNotice = formatSkillsNotice(loaded.skills, { compact: true }) ?? "";
-  assert.match(compactNotice, /<skills>/);
-  assert.match(compactNotice, /<skill name="project-skill" path="/);
-  assert.doesNotMatch(compactNotice, /<description>/);
-
   const projectSkill = loaded.skills.find((skill) => skill.name === "project-skill");
   assert.ok(projectSkill);
+  assert.match(formatPathForPrompt(projectSkill.filePath), /SKILL\.md$/);
+
   const skillFileRead = resolveSkillReadPath(loaded.skills, new Set(), projectSkill.filePath);
   assert.equal(skillFileRead?.isSkillFile, true);
   assert.equal(skillFileRead?.absolutePath, projectSkill.filePath);

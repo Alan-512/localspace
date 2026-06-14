@@ -16,7 +16,6 @@ export interface ServerConfig {
   stateDir: string;
   worktreeRoot: string;
   skillsEnabled: boolean;
-  compactSkills: boolean;
   skillPaths: string[];
   agentDir: string;
   autoLoadAgentsMd: boolean;
@@ -104,7 +103,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     stateDir: resolve(env.DEVSPACE_STATE_DIR ?? defaultStateDir()),
     worktreeRoot: resolve(expandHomePath(env.DEVSPACE_WORKTREE_ROOT ?? defaultWorktreeRoot())),
     skillsEnabled: parseBoolean(env.DEVSPACE_SKILLS),
-    compactSkills: parseBoolean(env.DEVSPACE_COMPACT_SKILLS),
     skillPaths: parseList(env.DEVSPACE_SKILL_PATHS),
     agentDir: resolve(expandHomePath(env.DEVSPACE_AGENT_DIR ?? defaultAgentDir())),
     autoLoadAgentsMd: env.DEVSPACE_AUTO_LOAD_AGENTS_MD === undefined

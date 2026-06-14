@@ -35,7 +35,7 @@ type HostContext = NonNullable<ReturnType<App["getHostContext"]>>;
 
 interface ToolResultCard {
   tool: ToolName;
-  resultId: string;
+  resultId?: string;
   workspaceId?: string;
   path?: string;
   root?: string;
@@ -111,7 +111,13 @@ function resultIdFromMeta(result: CallToolResult): string | undefined {
   return typeof meta?.resultId === "string" ? meta.resultId : undefined;
 }
 
-function isToolResultCard(value: unknown): value is Omit<ToolResultCard, "tool" | "resultId"> {
+function cardFromMeta(result: CallToolResult): Partial<ToolResultCard> | undefined {
+  const meta = result._meta as Record<string, unknown> | undefined;
+  const card = meta?.card;
+  return card && typeof card === "object" ? card : undefined;
+}
+
+function isToolResultCard(value: unknown): value is Omit<ToolResultCard, "tool"> {
   return Boolean(value && typeof value === "object");
 }
 
@@ -141,10 +147,10 @@ function AppRoot() {
     appRef.current = createdApp;
 
     createdApp.ontoolresult = (result) => {
-      const structured = result.structuredContent;
+      const structured = cardFromMeta(result) ?? result.structuredContent;
       const tool = toolNameFromMeta(result);
       const resultId = resultIdFromMeta(result);
-      if (!tool || !resultId || !isToolResultCard(structured)) {
+      if (!tool || !isToolResultCard(structured)) {
         setCard(null);
         setPayload(null);
         setExpanded(false);
@@ -237,7 +243,7 @@ function AppRoot() {
   );
 
   const loadPayload = useCallback(async () => {
-    if (!app || !card || payload || loadState === "loading") return;
+    if (!app || !card?.resultId || payload || loadState === "loading") return;
 
     setLoadState("loading");
     setErrorMessage(null);
@@ -252,17 +258,17 @@ function AppRoot() {
       });
       const structured = getStructuredContent<PayloadResult>(result);
       if (structured?.summary) {
-        setCard((current) =>
-          current?.resultId === card.resultId
-            ? {
-                ...current,
-                summary: {
-                  ...current.summary,
-                  ...structured.summary,
-                },
-              }
-            : current,
-        );
+        setCard((current) => {
+          if (!current || current.resultId !== card.resultId) return current;
+
+          return {
+            ...current,
+            summary: {
+              ...current.summary,
+              ...structured.summary,
+            },
+          };
+        });
       }
       setPayload(structured?.payload ?? {});
       setLoadState("loaded");
@@ -461,7 +467,10 @@ function SummaryBadges({ card }: { card: ToolResultCard }) {
   }
 
   if (card.tool === "open_workspace") {
-    return <span className="badge">{String(summary.agentsFiles ?? 0)} AGENTS</span>;
+    const agentsFiles = summaryNumber(summary, "agentsFiles") ?? 0;
+    const skills = summaryNumber(summary, "skills") ?? 0;
+    const agentsLabel = agentsFiles > 0 ? "AGENTS.md loaded" : "No AGENTS.md";
+    return <span className="badge">{agentsLabel} · {skills} skills</span>;
   }
 
   if (isShellTool(card.tool)) {
@@ -477,11 +486,7 @@ function SummaryBadges({ card }: { card: ToolResultCard }) {
 }
 
 function isExpandableCard(card: ToolResultCard): boolean {
-  if (card.tool === "open_workspace") {
-    return Number(card.summary?.agentsFiles ?? 0) > 0;
-  }
-
-  return true;
+  return Boolean(card.resultId);
 }
 
 function getToolDisplay(card: ToolResultCard): {

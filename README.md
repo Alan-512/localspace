@@ -115,32 +115,12 @@ skills from `DEVSPACE_AGENT_DIR` (`~/.pi/agent` by default), project `.pi/skills
 and optional comma-separated `DEVSPACE_SKILL_PATHS` for locations such as
 `~/.agents/skills`, `~/.codex/skills`, or `~/.claude/skills`.
 
-When enabled, `open_workspace` returns a compact catalog of skill names,
+When enabled, `open_workspace` returns a structured catalog of skill names,
 descriptions, and readable `SKILL.md` paths. The model should use the normal
 read tool to load a matching skill path before following that skill. Skill paths
 may be outside the workspace, but read access is limited to advertised `SKILL.md`
 files and files under a skill directory after that skill's `SKILL.md` has been
 read.
-
-The default catalog format is:
-
-```xml
-<available_skills>
-  <skill>
-    <name>pdf-processing</name>
-    <description>Extract text and tables from PDFs.</description>
-    <path>~/.codex/skills/pdf-processing/SKILL.md</path>
-  </skill>
-</available_skills>
-```
-
-Set `DEVSPACE_COMPACT_SKILLS=1` to use the smaller format:
-
-```xml
-<skills>
-<skill name="pdf-processing" path="~/.codex/skills/pdf-processing/SKILL.md">Extract text and tables from PDFs.</skill>
-</skills>
-```
 
 ## Run Locally
 

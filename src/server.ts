@@ -29,7 +29,7 @@ import {
   createResultStore,
   type ToolResultStore,
 } from "./result-store.js";
-import { formatPathForPrompt, formatSkillsNotice } from "./skills.js";
+import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { formatAgentsNotice, formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 
@@ -500,8 +500,6 @@ function createMcpServer(
         skills: z.array(workspaceSkillOutputSchema),
         skillDiagnostics: z.array(z.unknown()),
         instruction: z.string(),
-        projectContext: z.string().optional(),
-        skillsContext: z.string().optional(),
       },
       _meta: {
         ui: {
@@ -514,9 +512,6 @@ function createMcpServer(
     async ({ path, mode, baseRef }) => {
       const { workspace, agentsFiles } = await workspaces.openWorkspace({ path, mode, baseRef });
       const agentsNotice = formatAgentsNotice(agentsFiles, workspace.root);
-      const skillsNotice = formatSkillsNotice(workspace.skills, {
-        compact: config.compactSkills,
-      });
       const visibleSkills = workspace.skills
         .filter((skill) => !skill.disableModelInvocation)
         .map((skill) => ({
@@ -531,10 +526,10 @@ function createMcpServer(
       }));
       const instruction = config.skillsEnabled
         ? config.autoLoadAgentsMd
-          ? "Use this workspaceId in all subsequent tool calls for this project. Follow any projectContext returned below. When a task matches an available skill, read its path before proceeding."
+          ? "Use this workspaceId in all subsequent tool calls for this project. Follow any loaded agentsFiles instructions. When a task matches an available skill in skills, read its path before proceeding."
           : "Use this workspaceId in all subsequent tool calls for this project. Read relevant AGENTS.md files before working. When a task matches an available skill, read its path before proceeding."
         : config.autoLoadAgentsMd
-          ? "Use this workspaceId in all subsequent tool calls for this project. Follow any projectContext returned below."
+          ? "Use this workspaceId in all subsequent tool calls for this project. Follow any loaded agentsFiles instructions."
           : "Use this workspaceId in all subsequent tool calls for this project. Read relevant AGENTS.md files before working.";
       const resultContent: ToolContent[] = [
         {
@@ -560,19 +555,23 @@ function createMcpServer(
               },
             ]
           : []),
-        ...(skillsNotice
-          ? [
-              {
-                type: "text" as const,
-                text: skillsNotice,
-              },
-            ]
-          : []),
       ];
 
       return {
         content: resultContent,
-        _meta: { tool: "open_workspace" },
+        _meta: {
+          tool: "open_workspace",
+          card: {
+            workspaceId: workspace.id,
+            root: workspace.root,
+            path: workspace.root,
+            summary: {
+              agentsFiles: loadedAgentsFiles.length,
+              skills: visibleSkills.length,
+              skillDiagnostics: workspace.skillDiagnostics.length,
+            },
+          },
+        },
         structuredContent: {
           workspaceId: workspace.id,
           root: workspace.root,
@@ -583,8 +582,6 @@ function createMcpServer(
           skills: visibleSkills,
           skillDiagnostics: workspace.skillDiagnostics,
           instruction,
-          projectContext: agentsNotice,
-          skillsContext: skillsNotice,
         },
       };
     },
@@ -615,7 +612,7 @@ function createMcpServer(
           .string()
           .describe(
             config.skillsEnabled
-              ? "File path to read, relative to the workspace root. May also be an advertised skill path from available_skills."
+              ? "File path to read, relative to the workspace root. May also be an advertised skill path from open_workspace skills."
               : "File path to read, relative to the workspace root.",
           ),
         offset: z

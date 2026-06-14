@@ -6,7 +6,6 @@ import type { ServerConfig } from "./config.js";
 import { createManagedWorktree } from "./git-worktrees.js";
 import { assertAllowedPath, isPathInsideRoot, resolveAllowedPath } from "./roots.js";
 import {
-  formatSkillsNotice,
   loadWorkspaceSkills,
   markSkillActivated,
   resolveSkillReadPath,
@@ -155,10 +154,6 @@ export class WorkspaceRegistry {
     if (readPath.skillRead?.isSkillFile) {
       markSkillActivated(workspace.activatedSkillDirs, readPath.skillRead.skill);
     }
-  }
-
-  formatSkillsNotice(workspace: Workspace): string | undefined {
-    return formatSkillsNotice(workspace.skills, { compact: this.config.compactSkills });
   }
 
   resolveWorkingDirectory(workspace: Workspace, workingDirectory: string | undefined): string {
