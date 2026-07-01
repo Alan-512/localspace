@@ -86,7 +86,7 @@ function parseToolMode(env: NodeJS.ProcessEnv): ToolMode {
   if (env.LOCALSPACE_MINIMAL_TOOLS !== undefined) {
     return parseBoolean(env.LOCALSPACE_MINIMAL_TOOLS) ? "minimal" : "full";
   }
-  return "minimal";
+  return "hybrid";
 }
 
 function parseLogLevel(value: string | undefined): LogLevel {

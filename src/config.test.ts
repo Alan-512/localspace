@@ -15,7 +15,7 @@ assert.equal(loadConfig(baseEnv).widgets, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "changes" }).widgets, "changes");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "full" }).widgets, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "off" }).widgets, "off");
-assert.equal(loadConfig(baseEnv).toolMode, "minimal");
+assert.equal(loadConfig(baseEnv).toolMode, "hybrid");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "minimal" }).toolMode, "minimal");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "full" }).toolMode, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "codex" }).toolMode, "codex");
