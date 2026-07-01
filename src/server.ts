@@ -1651,6 +1651,7 @@ export function createServer(config = loadConfig()): RunningServer {
       } else if (initializeRequest) {
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
+          enableJsonResponse: true,
           onsessioninitialized: (newSessionId) => {
             if (transport) transports.set(newSessionId, transport);
             logEvent(config.logging, "info", "mcp_session_created", {
