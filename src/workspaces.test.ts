@@ -10,7 +10,7 @@ import { SqliteWorkspaceStore } from "./workspace-store.js";
 import { WorkspaceRegistry } from "./workspaces.js";
 
 const execFileAsync = promisify(execFile);
-const root = await mkdtemp(join(tmpdir(), "devspace-workspace-test-"));
+const root = await mkdtemp(join(tmpdir(), "localspace-workspace-test-"));
 
 try {
   const agentDir = join(root, ".pi", "agent");
@@ -22,10 +22,10 @@ try {
   await writeFile(join(root, "nested", "file.txt"), "hello\n");
 
   const config = loadConfig({
-    DEVSPACE_ALLOWED_ROOTS: root,
-    DEVSPACE_WORKTREE_ROOT: join(root, ".devspace", "worktrees"),
-    DEVSPACE_AGENT_DIR: agentDir,
-    DEVSPACE_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
+    LOCALSPACE_ALLOWED_ROOTS: root,
+    LOCALSPACE_WORKTREE_ROOT: join(root, ".localspace", "worktrees"),
+    LOCALSPACE_AGENT_DIR: agentDir,
+    LOCALSPACE_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
     PORT: "1",
   });
   const registry = new WorkspaceRegistry(config);
@@ -58,8 +58,8 @@ try {
   await writeFile(join(gitRoot, "AGENTS.md"), "git root instructions\n");
   await writeFile(join(gitRoot, "README.md"), "hello\n");
   await git(gitRoot, ["init"]);
-  await git(gitRoot, ["config", "user.email", "devspace@example.com"]);
-  await git(gitRoot, ["config", "user.name", "DevSpace Test"]);
+  await git(gitRoot, ["config", "user.email", "localspace@example.com"]);
+  await git(gitRoot, ["config", "user.name", "LocalSpace Test"]);
   await git(gitRoot, ["add", "."]);
   await git(gitRoot, ["commit", "-m", "Initial commit"]);
   await writeFile(join(gitRoot, "dirty.txt"), "not copied\n");
@@ -109,10 +109,10 @@ try {
     const aliasRoot = join(root, "alias-root");
     await symlink(root, aliasRoot, "dir");
     const aliasConfig = loadConfig({
-      DEVSPACE_ALLOWED_ROOTS: aliasRoot,
-      DEVSPACE_WORKTREE_ROOT: join(aliasRoot, ".devspace", "alias-worktrees"),
-      DEVSPACE_AGENT_DIR: agentDir,
-      DEVSPACE_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
+      LOCALSPACE_ALLOWED_ROOTS: aliasRoot,
+      LOCALSPACE_WORKTREE_ROOT: join(aliasRoot, ".localspace", "alias-worktrees"),
+      LOCALSPACE_AGENT_DIR: agentDir,
+      LOCALSPACE_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
       PORT: "1",
     });
     const aliasWorkspace = await new WorkspaceRegistry(aliasConfig).openWorkspace({

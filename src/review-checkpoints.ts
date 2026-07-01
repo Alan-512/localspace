@@ -44,7 +44,7 @@ export interface ReviewCheckpointManager {
   }): Promise<ReviewChangesResult>;
 }
 
-const REVIEW_REF_PREFIX = "refs/devspace/review";
+const REVIEW_REF_PREFIX = "refs/localspace/review";
 
 export function createReviewCheckpointManager(): ReviewCheckpointManager {
   const states = new Map<string, WorkspaceReviewState>();
@@ -120,7 +120,7 @@ function reviewRefs(workspaceId: string): Pick<WorkspaceReviewState, "openRef" |
 }
 
 async function createWorkingTreeSnapshot(gitRoot: string): Promise<string> {
-  const tempDir = await mkdtemp(join(tmpdir(), "devspace-review-index-"));
+  const tempDir = await mkdtemp(join(tmpdir(), "localspace-review-index-"));
   const indexPath = join(tempDir, "index");
   const env = checkpointEnv(indexPath);
 
@@ -129,7 +129,7 @@ async function createWorkingTreeSnapshot(gitRoot: string): Promise<string> {
     await git(gitRoot, ["add", "-A", "--", "."], { env });
     const tree = (await git(gitRoot, ["write-tree"], { env })).stdout.trim();
     const parent = (await git(gitRoot, ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim();
-    return (await git(gitRoot, ["commit-tree", tree, "-p", parent, "-m", "DevSpace review snapshot"], { env })).stdout.trim();
+    return (await git(gitRoot, ["commit-tree", tree, "-p", parent, "-m", "LocalSpace review snapshot"], { env })).stdout.trim();
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -138,10 +138,10 @@ async function createWorkingTreeSnapshot(gitRoot: string): Promise<string> {
 function checkpointEnv(indexPath: string): NodeJS.ProcessEnv {
   return {
     GIT_INDEX_FILE: indexPath,
-    GIT_AUTHOR_NAME: "DevSpace",
-    GIT_AUTHOR_EMAIL: "devspace@users.noreply.local",
-    GIT_COMMITTER_NAME: "DevSpace",
-    GIT_COMMITTER_EMAIL: "devspace@users.noreply.local",
+    GIT_AUTHOR_NAME: "LocalSpace",
+    GIT_AUTHOR_EMAIL: "localspace@users.noreply.local",
+    GIT_COMMITTER_NAME: "LocalSpace",
+    GIT_COMMITTER_EMAIL: "localspace@users.noreply.local",
   };
 }
 

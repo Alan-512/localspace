@@ -1,5 +1,5 @@
 {
-  "name": "@waishnav/devspace",
+  "name": "@alan-512/localspace",
   "version": "1.0.3",
   "description": "Expose a secure local coding workspace through an MCP server.",
   "type": "module",
@@ -8,7 +8,7 @@
     "node": ">=22.19 <27"
   },
   "bin": {
-    "devspace": "dist/cli.js"
+    "localspace": "dist/cli.js"
   },
   "files": [
     "dist",

@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { expandHomePath } from "./roots.js";
 
-export interface DevspaceUserConfig {
+export interface LocalspaceUserConfig {
   host?: string;
   port?: number;
   allowedRoots?: string[];
@@ -20,34 +20,34 @@ export interface DevspaceUserConfig {
   agentDir?: string;
 }
 
-export interface DevspaceAuthConfig {
+export interface LocalspaceAuthConfig {
   ownerToken?: string;
 }
 
-export interface DevspaceFiles {
+export interface LocalspaceFiles {
   dir: string;
   configPath: string;
   authPath: string;
   configExists: boolean;
   authExists: boolean;
-  config: DevspaceUserConfig;
-  auth: DevspaceAuthConfig;
+  config: LocalspaceUserConfig;
+  auth: LocalspaceAuthConfig;
 }
 
-export function devspaceConfigDir(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(expandHomePath(env.DEVSPACE_CONFIG_DIR ?? join(homedir(), ".devspace")));
+export function localspaceConfigDir(env: NodeJS.ProcessEnv = process.env): string {
+  return resolve(expandHomePath(env.LOCALSPACE_CONFIG_DIR ?? join(homedir(), ".localspace")));
 }
 
-export function devspaceConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(devspaceConfigDir(env), "config.json");
+export function localspaceConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(localspaceConfigDir(env), "config.json");
 }
 
-export function devspaceAuthPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(devspaceConfigDir(env), "auth.json");
+export function localspaceAuthPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(localspaceConfigDir(env), "auth.json");
 }
 
-export function loadDevspaceFiles(env: NodeJS.ProcessEnv = process.env): DevspaceFiles {
-  const dir = devspaceConfigDir(env);
+export function loadLocalspaceFiles(env: NodeJS.ProcessEnv = process.env): LocalspaceFiles {
+  const dir = localspaceConfigDir(env);
   const configPath = join(dir, "config.json");
   const authPath = join(dir, "auth.json");
   const configExists = existsSync(configPath);
@@ -59,27 +59,27 @@ export function loadDevspaceFiles(env: NodeJS.ProcessEnv = process.env): Devspac
     authPath,
     configExists,
     authExists,
-    config: configExists ? readJsonFile<DevspaceUserConfig>(configPath) : {},
-    auth: authExists ? readJsonFile<DevspaceAuthConfig>(authPath) : {},
+    config: configExists ? readJsonFile<LocalspaceUserConfig>(configPath) : {},
+    auth: authExists ? readJsonFile<LocalspaceAuthConfig>(authPath) : {},
   };
 }
 
-export function writeDevspaceConfig(
-  config: DevspaceUserConfig,
+export function writeLocalspaceConfig(
+  config: LocalspaceUserConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const filePath = devspaceConfigPath(env);
-  mkdirSync(devspaceConfigDir(env), { recursive: true });
+  const filePath = localspaceConfigPath(env);
+  mkdirSync(localspaceConfigDir(env), { recursive: true });
   writeJsonFile(filePath, config, 0o600);
   return filePath;
 }
 
-export function writeDevspaceAuth(
-  auth: DevspaceAuthConfig,
+export function writeLocalspaceAuth(
+  auth: LocalspaceAuthConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const filePath = devspaceAuthPath(env);
-  mkdirSync(devspaceConfigDir(env), { recursive: true });
+  const filePath = localspaceAuthPath(env);
+  mkdirSync(localspaceConfigDir(env), { recursive: true });
   writeJsonFile(filePath, auth, 0o600);
   return filePath;
 }

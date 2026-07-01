@@ -22,7 +22,7 @@ const migrations: Migration[] = [
 export function migrateDatabase(sqlite: Database.Database): void {
   const migrate = sqlite.transaction(() => {
     sqlite.exec(`
-      create table if not exists devspace_schema_migrations (
+      create table if not exists localspace_schema_migrations (
         version integer primary key,
         name text not null,
         applied_at text not null
@@ -31,13 +31,13 @@ export function migrateDatabase(sqlite: Database.Database): void {
 
     const applied = new Set(
       (
-        sqlite.prepare("select version from devspace_schema_migrations").all() as Array<{
+        sqlite.prepare("select version from localspace_schema_migrations").all() as Array<{
           version: number;
         }>
       ).map((row) => row.version),
     );
     const recordMigration = sqlite.prepare(
-      "insert into devspace_schema_migrations (version, name, applied_at) values (?, ?, ?)",
+      "insert into localspace_schema_migrations (version, name, applied_at) values (?, ?, ?)",
     );
 
     for (const migration of migrations) {

@@ -8,10 +8,10 @@ import { satisfies } from "semver";
 import { loadConfig } from "./config.js";
 import {
   generateOwnerToken,
-  loadDevspaceFiles,
-  writeDevspaceAuth,
-  writeDevspaceConfig,
-  type DevspaceUserConfig,
+  loadLocalspaceFiles,
+  writeLocalspaceAuth,
+  writeLocalspaceConfig,
+  type LocalspaceUserConfig,
 } from "./user-config.js";
 import { expandHomePath } from "./roots.js";
 
@@ -57,19 +57,19 @@ function normalizeCommand(command: string | undefined): Command {
 }
 
 async function ensureConfigured(): Promise<void> {
-  const files = loadDevspaceFiles();
+  const files = loadLocalspaceFiles();
   if (files.configExists && files.authExists) return;
-  if (process.env.DEVSPACE_OAUTH_OWNER_TOKEN) return;
+  if (process.env.LOCALSPACE_OAUTH_OWNER_TOKEN) return;
 
   if (!input.isTTY || !output.isTTY) {
     throw new Error(
       [
-        "DevSpace is not configured and this terminal is non-interactive.",
+        "LocalSpace is not configured and this terminal is non-interactive.",
         "",
         "Run:",
-        "  devspace init",
+        "  localspace init",
         "",
-        "Or provide DEVSPACE_OAUTH_OWNER_TOKEN and DEVSPACE_ALLOWED_ROOTS.",
+        "Or provide LOCALSPACE_OAUTH_OWNER_TOKEN and LOCALSPACE_ALLOWED_ROOTS.",
       ].join("\n"),
     );
   }
@@ -78,15 +78,15 @@ async function ensureConfigured(): Promise<void> {
 }
 
 async function runInit({ force }: { force: boolean }): Promise<void> {
-  const files = loadDevspaceFiles();
+  const files = loadLocalspaceFiles();
   if (!force && files.configExists && files.authExists) {
-    prompts.log.info(`DevSpace is already configured at ${files.dir}`);
-    prompts.log.info("Run `devspace init --force` to update it.");
+    prompts.log.info(`LocalSpace is already configured at ${files.dir}`);
+    prompts.log.info("Run `localspace init --force` to update it.");
     return;
   }
 
   try {
-    prompts.intro("DevSpace setup");
+    prompts.intro("LocalSpace setup");
 
     const defaultRoots = files.config.allowedRoots?.join(", ") || process.cwd();
     const rootsAnswer = await textPrompt({
@@ -102,7 +102,7 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
 
     const defaultPort = String(files.config.port ?? 7676);
     const portAnswer = await textPrompt({
-      message: `Which local port should DevSpace use? Press Enter to use ${defaultPort}`,
+      message: `Which local port should LocalSpace use? Press Enter to use ${defaultPort}`,
       placeholder: defaultPort,
       defaultValue: defaultPort,
       validate: validatePort,
@@ -111,7 +111,7 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
 
     prompts.note(
       [
-        "DevSpace needs a public base URL so ChatGPT or Claude can reach this MCP server.",
+        "LocalSpace needs a public base URL so ChatGPT or Claude can reach this MCP server.",
         "Create a tunnel or reverse proxy with Cloudflare Tunnel, ngrok, Pinggy, Tailscale Funnel, or your own HTTPS proxy.",
         "Paste the public origin here, without /mcp.",
         "",
@@ -128,7 +128,7 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
       validate: validateRequiredPublicBaseUrl,
     }));
 
-    const config: DevspaceUserConfig = {
+    const config: LocalspaceUserConfig = {
       host: files.config.host ?? "127.0.0.1",
       port,
       allowedRoots,
@@ -138,8 +138,8 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
       ownerToken: files.auth.ownerToken ?? generateOwnerToken(),
     };
 
-    const configPath = writeDevspaceConfig(config);
-    const authPath = writeDevspaceAuth(auth);
+    const configPath = writeLocalspaceConfig(config);
+    const authPath = writeLocalspaceAuth(auth);
 
     const lines = [
       `Config: ${configPath}`,
@@ -147,16 +147,16 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
       `Local MCP URL: http://${config.host}:${config.port}/mcp`,
       ...(publicBaseUrl ? [`Public MCP URL: ${publicBaseUrl}/mcp`] : []),
     ];
-    prompts.note(lines.join("\n"), "DevSpace configured");
+    prompts.note(lines.join("\n"), "LocalSpace configured");
     prompts.note(
       [
         `Owner password: ${auth.ownerToken}`,
-        "Use this when ChatGPT or Claude asks you to approve DevSpace access.",
+        "Use this when ChatGPT or Claude asks you to approve LocalSpace access.",
         `Stored at: ${authPath}`,
       ].join("\n"),
       "Owner password",
     );
-    prompts.outro("Run `devspace serve` to start the MCP server.");
+    prompts.outro("Run `localspace serve` to start the MCP server.");
   } catch (error) {
     if (error instanceof SetupCancelledError) {
       prompts.cancel("Setup cancelled");
@@ -184,12 +184,12 @@ async function serve(): Promise<void> {
   const config = loadConfig();
   const { app, close } = createServer(config);
   const httpServer = app.listen(config.port, config.host, () => {
-    console.log(`devspace listening on http://${config.host}:${config.port}/mcp`);
+    console.log(`localspace listening on http://${config.host}:${config.port}/mcp`);
     console.log(`public base url: ${config.publicBaseUrl}`);
     console.log(`allowed roots: ${config.allowedRoots.join(", ")}`);
     console.log(`allowed hosts: ${config.allowedHosts.join(", ")}`);
     if (config.allowedHosts.includes("*")) {
-      console.warn("warning: Host header allowlist is disabled because DEVSPACE_ALLOWED_HOSTS=*");
+      console.warn("warning: Host header allowlist is disabled because LOCALSPACE_ALLOWED_HOSTS=*");
     }
     console.log("auth: Owner password approval required");
     console.log(`logging: ${config.logging.level} ${config.logging.format}`);
@@ -206,7 +206,7 @@ async function serve(): Promise<void> {
 }
 
 async function runDoctor(): Promise<void> {
-  const files = loadDevspaceFiles();
+  const files = loadLocalspaceFiles();
   console.log(`Config dir: ${files.dir}`);
   console.log(`Config file: ${files.configExists ? files.configPath : "missing"}`);
   console.log(`Auth file: ${files.authExists ? files.authPath : "missing"}`);
@@ -230,7 +230,7 @@ async function runDoctor(): Promise<void> {
 
 function runConfigCommand(args: string[]): void {
   const [subcommand, key, ...rest] = args;
-  const files = loadDevspaceFiles();
+  const files = loadLocalspaceFiles();
 
   if (!subcommand || subcommand === "get") {
     console.log(JSON.stringify(files.config, null, 2));
@@ -241,7 +241,7 @@ function runConfigCommand(args: string[]): void {
     throw new Error(`Unknown config command: ${subcommand}`);
   }
   if (key !== "publicBaseUrl") {
-    throw new Error("Only `devspace config set publicBaseUrl <url|null>` is supported right now.");
+    throw new Error("Only `localspace config set publicBaseUrl <url|null>` is supported right now.");
   }
 
   const value = rest.join(" ").trim();
@@ -249,7 +249,7 @@ function runConfigCommand(args: string[]): void {
     throw new Error("Missing publicBaseUrl value.");
   }
 
-  writeDevspaceConfig({
+  writeLocalspaceConfig({
     ...files.config,
     publicBaseUrl: normalizeOptionalPublicBaseUrl(value),
   });
@@ -259,19 +259,19 @@ function runConfigCommand(args: string[]): void {
 function printHelp(): void {
   console.log(
     [
-      "DevSpace",
+      "LocalSpace",
       "",
       "Usage:",
-      "  devspace                 Run first-time setup if needed, then start the server",
-      "  devspace serve           Start the server",
-      "  devspace init            Create or update ~/.devspace/config.json and auth.json",
-      "  devspace doctor          Show config, runtime, and native dependency status",
-      "  devspace config get      Print persisted config",
-      "  devspace config set publicBaseUrl <url|null>",
-      "  devspace -v, --version   Print the installed version",
+      "  localspace                 Run first-time setup if needed, then start the server",
+      "  localspace serve           Start the server",
+      "  localspace init            Create or update ~/.localspace/config.json and auth.json",
+      "  localspace doctor          Show config, runtime, and native dependency status",
+      "  localspace config get      Print persisted config",
+      "  localspace config set publicBaseUrl <url|null>",
+      "  localspace -v, --version   Print the installed version",
       "",
       "For temporary tunnels:",
-      "  DEVSPACE_PUBLIC_BASE_URL=https://example.trycloudflare.com devspace serve",
+      "  LOCALSPACE_PUBLIC_BASE_URL=https://example.trycloudflare.com localspace serve",
     ].join("\n"),
   );
 }
@@ -279,7 +279,7 @@ function printHelp(): void {
 function printVersion(): void {
   const packageJson = require("../package.json") as { version?: unknown };
   if (typeof packageJson.version !== "string") {
-    throw new Error("Unable to read DevSpace package version.");
+    throw new Error("Unable to read LocalSpace package version.");
   }
 
   console.log(packageJson.version);
@@ -346,7 +346,7 @@ function assertSupportedNode(): void {
 
   throw new Error(
     [
-      `DevSpace requires Node ${SUPPORTED_NODE_RANGE}.`,
+      `LocalSpace requires Node ${SUPPORTED_NODE_RANGE}.`,
       `Current Node: ${process.version}`,
       "",
       "Install Node 22 LTS or use a version manager such as nvm, fnm, or mise.",
