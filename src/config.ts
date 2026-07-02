@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { expandHomePath } from "./roots.js";
 import type { LoggingConfig, LogFormat, LogLevel } from "./logger.js";
 import type { OAuthConfig } from "./oauth-provider.js";
@@ -175,7 +176,7 @@ function parseOAuthConfig(env: NodeJS.ProcessEnv, ownerToken: string | undefined
       DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
       "LOCALSPACE_OAUTH_REFRESH_TOKEN_TTL_SECONDS",
     ),
-    scopes: parseStringList(env.LOCALSPACE_OAUTH_SCOPES, ["localspace"]),
+    scopes: parseStringList(env.LOCALSPACE_OAUTH_SCOPES ?? env.DEVSPACE_OAUTH_SCOPES, ["devspace", "localspace"]),
     allowedRedirectHosts: parseStringList(env.LOCALSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS, [
       "chatgpt.com",
       "localhost",
@@ -185,11 +186,21 @@ function parseOAuthConfig(env: NodeJS.ProcessEnv, ownerToken: string | undefined
 }
 
 function defaultStateDir(): string {
-  return join(homedir(), ".local", "share", "localspace");
+  const defaultDir = join(homedir(), ".local", "share", "localspace");
+  const fallbackDir = join(homedir(), ".local", "share", "devspace");
+  if (!existsSync(defaultDir) && existsSync(fallbackDir)) {
+    return fallbackDir;
+  }
+  return defaultDir;
 }
 
 function defaultWorktreeRoot(): string {
-  return join(homedir(), ".localspace", "worktrees");
+  const defaultDir = join(homedir(), ".localspace", "worktrees");
+  const fallbackDir = join(homedir(), ".devspace", "worktrees");
+  if (!existsSync(defaultDir) && existsSync(fallbackDir)) {
+    return fallbackDir;
+  }
+  return defaultDir;
 }
 
 function defaultAgentDir(): string {

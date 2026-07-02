@@ -35,7 +35,13 @@ export interface LocalspaceFiles {
 }
 
 export function localspaceConfigDir(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(expandHomePath(env.LOCALSPACE_CONFIG_DIR ?? join(homedir(), ".localspace")));
+  const defaultDir = join(homedir(), ".localspace");
+  const fallbackDir = join(homedir(), ".devspace");
+  const dir = resolve(expandHomePath(env.LOCALSPACE_CONFIG_DIR ?? env.DEVSPACE_CONFIG_DIR ?? defaultDir));
+  if (dir === defaultDir && !existsSync(defaultDir) && existsSync(fallbackDir)) {
+    return fallbackDir;
+  }
+  return dir;
 }
 
 export function localspaceConfigPath(env: NodeJS.ProcessEnv = process.env): string {

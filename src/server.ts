@@ -43,7 +43,7 @@ import { createWorkspaceStore } from "./workspace-store.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 
 type Transport = StreamableHTTPServerTransport;
-const WORKSPACE_APP_URI = "ui://localspace/workspace-app.html";
+const WORKSPACE_APP_URI = "ui://devspace/workspace-app.html";
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
 const WRITE_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
@@ -164,11 +164,11 @@ interface ToolLogFields {
 
 function serverInstructions(config: ServerConfig): string {
   if (config.toolMode === "codex") {
-    return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for direct file reads and inspection. Use apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for direct file reads and inspection. Use apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
@@ -186,7 +186,7 @@ function serverInstructions(config: ServerConfig): string {
       ? " After creating, editing, or overwriting files, call show_changes once after the related file changes are complete so the user can see the aggregate diff."
       : "";
 
-  return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree to obtain a workspaceId. Reuse that same workspaceId for all later file, search, edit, write, show-changes, and shell tools in that folder; do not call ${toolNames.openWorkspace} again unless switching folders/worktrees, changing checkout/worktree mode, the workspaceId is rejected as unknown, or the user explicitly asks to reopen. ${agentsMd}${skills}${inspection}Prefer ${toolNames.edit} for targeted modifications, ${toolNames.write} only for new files or complete rewrites, and ${toolNames.shell} for tests, builds, git inspection, package scripts, and commands that are better executed by the shell. Do not create or modify files with ${toolNames.shell}; avoid shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or any command whose purpose is to write project files.${showChanges}`;
+  return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree to obtain a workspaceId. Reuse that same workspaceId for all later file, search, edit, write, show-changes, and shell tools in that folder; do not call ${toolNames.openWorkspace} again unless switching folders/worktrees, changing checkout/worktree mode, the workspaceId is rejected as unknown, or the user explicitly asks to reopen. ${agentsMd}${skills}${inspection}Prefer ${toolNames.edit} for targeted modifications, ${toolNames.write} only for new files or complete rewrites, and ${toolNames.shell} for tests, builds, git inspection, package scripts, and commands that are better executed by the shell. Do not create or modify files with ${toolNames.shell}; avoid shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or any command whose purpose is to write project files.${showChanges}`;
 }
 function resultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
   return {
@@ -393,7 +393,7 @@ function workspaceAppHtml(config: ServerConfig): string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LocalSpace Workspace</title>
+    <title>DevSpace Workspace</title>
     <script type="module" crossorigin src="${assetUrl(baseUrl, entry.file)}"></script>
 ${stylesheets}
   </head>
@@ -640,8 +640,8 @@ function createMcpServer(
 ): McpServer {
   const server = new McpServer(
     {
-      name: "localspace",
-      title: "LocalSpace",
+      name: "devspace",
+      title: "DevSpace",
       version: "0.1.0",
       description:
         "Secure local coding workspace for MCP clients. Provides workspace-scoped file, search, edit, write, and shell tools.",
@@ -653,10 +653,10 @@ function createMcpServer(
 
   registerAppResource(
     server,
-    "LocalSpace Diff Card",
+    "DevSpace Diff Card",
     WORKSPACE_APP_URI,
     {
-      description: "Interactive card for viewing LocalSpace file diffs.",
+      description: "Interactive card for viewing DevSpace file diffs.",
       _meta: {
         ui: {
           csp: appCsp(config),
@@ -1541,7 +1541,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const oauthProvider = new SingleUserOAuthProvider(config.oauth, mcpUrl, config.stateDir);
   const bearerAuth = requireBearerAuth({
     verifier: oauthProvider,
-    requiredScopes: [config.oauth.scopes[0] ?? "localspace"],
+    requiredScopes: [config.oauth.scopes[0] ?? "devspace"],
     resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceServerUrl),
   });
   const workspaceStore = createWorkspaceStore(config.stateDir);
@@ -1583,7 +1583,7 @@ export function createServer(config = loadConfig()): RunningServer {
       baseUrl: new URL(config.publicBaseUrl),
       resourceServerUrl,
       scopesSupported: config.oauth.scopes,
-      resourceName: "LocalSpace",
+      resourceName: "DevSpace",
     }),
   );
 
@@ -1603,7 +1603,7 @@ export function createServer(config = loadConfig()): RunningServer {
   );
 
   app.get("/healthz", (_req, res) => {
-    res.json({ ok: true, name: "localspace" });
+    res.json({ ok: true, name: "devspace" });
   });
 
   app.all("/mcp", async (req, res) => {
@@ -1716,7 +1716,7 @@ if (await isMainModule()) {
   const { app, config, close } = createServer();
   const httpServer = app.listen(config.port, config.host, () => {
     console.log(
-      `localspace listening on http://${config.host}:${config.port}/mcp`,
+      `devspace listening on http://${config.host}:${config.port}/mcp`,
     );
     console.log(`allowed roots: ${config.allowedRoots.join(", ")}`);
     console.log("auth: oauth owner-token flow required");
