@@ -163,8 +163,13 @@ interface ToolLogFields {
 }
 
 function serverInstructions(config: ServerConfig): string {
+  const showChangesInstruction =
+    config.widgets === "changes"
+      ? " If the turn successfully modifies files by creating, editing, overwriting, deleting, moving, or applying patches, call show_changes exactly once for that workspace after the final related file change and before your final response so the user can inspect the aggregate diff for that turn. Do not call it after every individual file change; do not skip it because individual file-change tools already returned diffs."
+      : "";
+
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
@@ -181,12 +186,7 @@ function serverInstructions(config: ServerConfig): string {
 
   const agentsMd = `Follow instructions returned by ${toolNames.openWorkspace}. Before working under a path listed in availableAgentsFiles, use ${toolNames.read} to inspect that instruction file and follow it. `;
 
-  const showChanges =
-    config.widgets === "changes"
-      ? " After creating, editing, or overwriting files, call show_changes once after the related file changes are complete so the user can see the aggregate diff."
-      : "";
-
-  return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree to obtain a workspaceId. Reuse that same workspaceId for all later file, search, edit, write, show-changes, and shell tools in that folder; do not call ${toolNames.openWorkspace} again unless switching folders/worktrees, changing checkout/worktree mode, the workspaceId is rejected as unknown, or the user explicitly asks to reopen. ${agentsMd}${skills}${inspection}Prefer ${toolNames.edit} for targeted modifications, ${toolNames.write} only for new files or complete rewrites, and ${toolNames.shell} for tests, builds, git inspection, package scripts, and commands that are better executed by the shell. Do not create or modify files with ${toolNames.shell}; avoid shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or any command whose purpose is to write project files.${showChanges}`;
+  return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree to obtain a workspaceId. Reuse that same workspaceId for all later file, search, edit, write, show-changes, and shell tools in that folder; do not call ${toolNames.openWorkspace} again unless switching folders/worktrees, changing checkout/worktree mode, the workspaceId is rejected as unknown, or the user explicitly asks to reopen. ${agentsMd}${skills}${inspection}Prefer ${toolNames.edit} for targeted modifications, ${toolNames.write} only for new files or complete rewrites, and ${toolNames.shell} for tests, builds, git inspection, package scripts, and commands that are better executed by the shell. Do not create or modify files with ${toolNames.shell}; avoid shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or any command whose purpose is to write project files.${showChangesInstruction}`;
 }
 function resultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
   return {
@@ -1086,7 +1086,7 @@ function createMcpServer(
       {
         title: "Apply patch",
         description:
-          "Apply one Codex-style patch inside an open workspace. Supports adding, overwriting, updating, deleting, and moving files. Earlier successful file changes remain if a later patch action fails. Use this for all file modifications. Paths must be relative to the workspace. Call open_workspace first and pass workspaceId.",
+          "Apply one Codex-style patch inside an open workspace. Supports adding, overwriting, updating, deleting, and moving files. Use this for all file modifications. Paths must be relative to the workspace. Call open_workspace first and pass workspaceId.",
         inputSchema: {
           workspaceId: z
             .string()
@@ -1160,32 +1160,24 @@ function createMcpServer(
       {
         title: "Show changes",
         description:
-          "Show aggregate file changes in an open workspace since the last shown checkpoint or since the workspace was opened. After you create, edit, or overwrite files, call this once when the related file changes are complete so the user can inspect the combined diff.",
+          "Show aggregate file changes for an open workspace. If the current turn successfully modified files, call this exactly once after the final related file change and before your final response so the user can inspect the combined diff for the turn. Do not call it after every individual file change, and do not skip it because prior file-change tools already displayed per-tool diffs.",
         inputSchema: {
           workspaceId: z
             .string()
             .describe("Workspace identifier returned by open_workspace."),
-          since: z
-            .enum(["last_shown", "workspace_open"])
-            .optional()
-            .describe("Defaults to last_shown. Use workspace_open to compare against the initial open_workspace checkpoint."),
-          markReviewed: z
-            .boolean()
-            .optional()
-            .describe("Defaults to true. When true, advances the last shown checkpoint to the current workspace state."),
         },
         outputSchema: resultOutputSchema(),
         ...toolWidgetDescriptorMeta(config, "show_changes"),
         annotations: { readOnlyHint: true },
       },
-      async ({ workspaceId, since, markReviewed }) => {
+      async ({ workspaceId }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
         const review = await reviewCheckpoints.reviewChanges({
           workspaceId,
           root: workspace.root,
-          since: since ?? "last_shown",
-          markReviewed: markReviewed ?? true,
+          since: "last_shown",
+          markReviewed: true,
         });
 
         const content = [textBlock(review.result)];
