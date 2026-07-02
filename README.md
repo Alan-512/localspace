@@ -17,6 +17,11 @@
 
 LocalSpace is a self-hosted MCP server that lets ChatGPT read, edit, search, and run code in your real local projects — your files, your tools, your terminal — without uploading anything to a third party. You run it on your machine, expose it through a tunnel you control, and approve the connection with a password only you have.
 
+---
+
+### 💖 Acknowledgement & Credits
+LocalSpace is a fork of and built upon the original project [DevSpace](https://github.com/Waishnav/devspace) created by [Waishnav](https://x.com/wshxnv). We thank them for their great work in bringing Codex-style workflows to ChatGPT. This repository is customized and extended for hybrid coding assistant workflows.
+
 ## Installation
 
 LocalSpace requires Node `>=22.19 <27`.
