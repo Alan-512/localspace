@@ -72,7 +72,7 @@ Temporary tunnels often change URLs between runs.
 For a one-off run:
 
 ```bash
-DEVSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" npx @waishnav/devspace serve
+LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" localspace serve
 ```
 
 For a stable URL:
@@ -97,7 +97,7 @@ URLs, update `publicBaseUrl`.
 Use this only for intentional local debugging:
 
 ```bash
-DEVSPACE_ALLOWED_HOSTS="*" npx @waishnav/devspace serve
+LOCALSPACE_ALLOWED_HOSTS="*" localspace serve
 ```
 
 ## OAuth Redirect Host Rejected
@@ -113,7 +113,7 @@ localhost
 If another MCP client uses a different redirect host, configure:
 
 ```bash
-DEVSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS="chatgpt.com,example.com" npx @waishnav/devspace serve
+LOCALSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS="chatgpt.com,example.com" localspace serve
 ```
 
 ## Owner Password Not Accepted
@@ -172,38 +172,38 @@ needed.
 
 ## Windows Shell Commands Fail
 
-DevSpace shell execution requires Bash. Native PowerShell and `cmd.exe` command
-execution are not supported yet.
-
-Install Git for Windows and use Git Bash, or use WSL, MSYS2, or Cygwin Bash.
+LocalSpace command execution uses the platform default command shell by default.
+On Windows, common commands such as `node`, `npm`, and `git` should work
+directly, while Bash-specific syntax still requires Git Bash, WSL, MSYS2, or
+Cygwin Bash.
 
 Run:
 
 ```bash
-npx @waishnav/devspace doctor
+localspace doctor
 ```
 
-Confirm Bash is detected.
+Confirm your expected shell tools are available.
 
 ## Skills Do Not Appear
 
 Skills are enabled by default. Check:
 
 ```bash
-DEVSPACE_SKILLS=1 npx @waishnav/devspace serve
+LOCALSPACE_SKILLS=1 localspace serve
 ```
 
-DevSpace looks in standard Agent Skills locations:
+LocalSpace looks in standard Agent Skills locations:
 
 - `~/.agents/skills`
 - project `.agents/skills`
 
 It also checks compatibility and custom paths:
 
-- `DEVSPACE_AGENT_DIR/skills`, defaulting to `~/.codex/skills`
-- additional paths from `DEVSPACE_SKILL_PATHS`
+- `LOCALSPACE_AGENT_DIR/skills`, defaulting to `~/.codex/skills`
+- additional paths from `LOCALSPACE_SKILL_PATHS`
 
-Legacy project paths such as `.pi/skills` can be added through `DEVSPACE_SKILL_PATHS` when needed.
+Legacy project paths such as `.pi/skills` can be added through `LOCALSPACE_SKILL_PATHS` when needed.
 
 If a skill appears in `open_workspace`, the model must read that skill's
 `SKILL.md` before reading other files inside the skill directory.
@@ -213,9 +213,9 @@ If a skill appears in `open_workspace`, the model must read that skill's
 Per-tool widget cards are enabled by default with:
 
 ```bash
-DEVSPACE_WIDGETS=full
+LOCALSPACE_WIDGETS=full
 ```
 
 The aggregate `show_changes` tool is only exposed with
-`DEVSPACE_WIDGETS=changes`. Plain MCP clients may ignore ChatGPT Apps widget
+`LOCALSPACE_WIDGETS=changes`. Plain MCP clients may ignore ChatGPT Apps widget
 metadata and only show text results.

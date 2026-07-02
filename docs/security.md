@@ -46,12 +46,12 @@ password only when you intentionally want that client to access this server.
 For env-driven deployments, set a long random value:
 
 ```bash
-DEVSPACE_OAUTH_OWNER_TOKEN="$(openssl rand -base64 32)"
+LOCALSPACE_OAUTH_OWNER_TOKEN="$(openssl rand -base64 32)"
 ```
 
 ## Public URL And Host Allowlist
 
-DevSpace needs `DEVSPACE_PUBLIC_BASE_URL` so MCP clients can discover OAuth
+LocalSpace needs `LOCALSPACE_PUBLIC_BASE_URL` so MCP clients can discover OAuth
 metadata and connect to the correct resource.
 
 The value should be the origin only:
@@ -60,10 +60,10 @@ The value should be the origin only:
 https://your-tunnel-host.example.com
 ```
 
-Do not include `/mcp` in `DEVSPACE_PUBLIC_BASE_URL`.
+Do not include `/mcp` in `LOCALSPACE_PUBLIC_BASE_URL`.
 
 By default, DevSpace derives allowed Host headers from the local host and public
-URL. Use `DEVSPACE_ALLOWED_HOSTS=*` only for intentional local debugging.
+URL. Use `LOCALSPACE_ALLOWED_HOSTS=*` only for intentional local debugging.
 
 ## Tunnels
 
@@ -95,6 +95,6 @@ sessions.
 ## Logs
 
 By default, DevSpace logs requests and tool calls. Shell command previews are
-disabled unless `DEVSPACE_LOG_SHELL_COMMANDS=1`.
+disabled unless `LOCALSPACE_LOG_SHELL_COMMANDS=1`.
 
 Do not enable shell command logging if commands may contain secrets.

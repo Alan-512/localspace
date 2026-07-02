@@ -85,7 +85,7 @@ npx @waishnav/devspace serve
 If your tunnel URL changes for one run, override it without rewriting config:
 
 ```bash
-DEVSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" npx @waishnav/devspace serve
+LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" localspace serve
 ```
 
 For a stable public URL, persist it:

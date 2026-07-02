@@ -108,14 +108,17 @@ For a normal ChatGPT coding session:
 
 ## Platform Support
 
-LocalSpace supports Linux, macOS, and Windows environments with a Bash-compatible shell.
+LocalSpace supports Linux, macOS, and Windows environments. On Windows,
+`exec_command` uses the platform default command shell by default. Portable
+commands such as `node`, `npm`, and `git` work directly. Bash-specific syntax
+still requires an explicit Bash or WSL invocation.
 
 | Platform                                          | Status            | Notes                                          |
 | ------------------------------------------------- | ----------------- | ---------------------------------------------- |
 | Linux                                             | Supported         | Requires Node, npm, Git, and Bash.             |
 | macOS                                             | Supported         | Requires Node, npm, Git, and Bash.             |
-| Windows with Git Bash, WSL, MSYS2, or Cygwin Bash | Supported         | Git Bash is the simplest native Windows setup. |
-| Windows PowerShell or `cmd.exe` only              | Not supported yet | Install Git Bash or use WSL.                   |
+| Windows with Git Bash, WSL, MSYS2, or Cygwin Bash | Supported         | Use Bash or WSL for Bash-specific syntax.      |
+| Windows PowerShell or `cmd.exe` only              | Supported for common commands | Bash-specific scripts still require Bash or WSL. |
 
 Run this to inspect your local setup:
 

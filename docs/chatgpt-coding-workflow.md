@@ -86,24 +86,24 @@ DevSpace discovers standard Agent Skills from:
 
 It also keeps compatibility with:
 
-- `DEVSPACE_AGENT_DIR/skills`, defaulting to `~/.codex/skills`
-- additional paths from `DEVSPACE_SKILL_PATHS`
+- `LOCALSPACE_AGENT_DIR/skills`, defaulting to `~/.codex/skills`
+- additional paths from `LOCALSPACE_SKILL_PATHS`
 
-Legacy project paths such as `.pi/skills` can be added through `DEVSPACE_SKILL_PATHS` when needed.
+Legacy project paths such as `.pi/skills` can be added through `LOCALSPACE_SKILL_PATHS` when needed.
 
 When `open_workspace` returns matching skills, the model should read the
 advertised `SKILL.md` before following that skill.
 
-Skill paths may be outside the workspace. DevSpace only permits reading:
+Skill paths may be outside the workspace. LocalSpace only permits reading:
 
 - advertised `SKILL.md` files
 - files under a skill directory after that skill's `SKILL.md` has been read
 
-Set `DEVSPACE_SKILLS=0` to hide skills from workspace output.
+Set `LOCALSPACE_SKILLS=0` to hide skills from workspace output.
 
 ## Tool Names
 
-DevSpace exposes these tool names:
+LocalSpace exposes these tool names in minimal mode:
 
 - `open_workspace`
 - `read`
@@ -111,14 +111,15 @@ DevSpace exposes these tool names:
 - `edit`
 - `bash`
 
-By default, DevSpace also runs in `DEVSPACE_TOOL_MODE=minimal`, so dedicated
-`grep`, `glob`, and `ls` tools are hidden. Use `bash` with command-line tools
-such as `rg`, `find`, and `ls` for search and directory inspection.
+Set `LOCALSPACE_TOOL_MODE=minimal` to expose only this small tool surface. In
+that mode, dedicated `grep`, `glob`, and `ls` tools are hidden. Use `bash` with
+command-line tools such as `rg`, `find`, and `ls` for search and directory
+inspection.
 
-Use `DEVSPACE_TOOL_MODE=full` to restore dedicated search and directory tools.
+Use `LOCALSPACE_TOOL_MODE=full` to restore dedicated search and directory tools.
 
 The experimental Codex-style surface is enabled with
-`DEVSPACE_TOOL_MODE=codex`. It exposes:
+`LOCALSPACE_TOOL_MODE=codex`. It exposes:
 
 - `open_workspace`
 - `read`
@@ -131,20 +132,27 @@ registered. `exec_command` returns a process session ID when a command is still
 running after its yield window. Use `write_stdin` to poll it, send input, resize
 a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
 
+By default, LocalSpace uses `LOCALSPACE_TOOL_MODE=hybrid`, which combines the
+Codex-style editing and process tools with dedicated `grep`, `glob`, and `ls`.
+
 ## Show Changes
 
-By default, `DEVSPACE_WIDGETS=full`.
+By default, `LOCALSPACE_WIDGETS=full`.
 
-In that mode, DevSpace attaches widget UI to the exposed workspace, file, edit,
+In that mode, LocalSpace attaches widget UI to the exposed workspace, file, edit,
 and shell tools. The aggregate `show_changes` tool is not exposed by default.
 
-Use `DEVSPACE_WIDGETS=off` to disable widget UI, or `DEVSPACE_WIDGETS=changes`
+Use `LOCALSPACE_WIDGETS=off` to disable widget UI, or `LOCALSPACE_WIDGETS=changes`
 to expose the aggregate show-changes flow.
 
 When `show_changes` is exposed, models should call it exactly once after the
 final file modification in any turn that changes files. The tool only requires
 the `workspaceId`; DevSpace automatically compares against the last shown
 checkpoint and advances that checkpoint after rendering the aggregate diff.
+
+On Windows, `exec_command` uses the platform default command shell by default.
+Portable commands such as `node`, `npm`, and `git` work directly. Bash-specific
+syntax still requires an explicit Bash or WSL invocation.
 
 ## Shell Use
 

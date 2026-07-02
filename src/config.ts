@@ -176,7 +176,7 @@ function parseOAuthConfig(env: NodeJS.ProcessEnv, ownerToken: string | undefined
       DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
       "LOCALSPACE_OAUTH_REFRESH_TOKEN_TTL_SECONDS",
     ),
-    scopes: parseStringList(env.LOCALSPACE_OAUTH_SCOPES ?? env.DEVSPACE_OAUTH_SCOPES, ["devspace", "localspace"]),
+    scopes: parseStringList(env.LOCALSPACE_OAUTH_SCOPES, ["localspace"]),
     allowedRedirectHosts: parseStringList(env.LOCALSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS, [
       "chatgpt.com",
       "localhost",
