@@ -1679,6 +1679,19 @@ export function createServer(config = loadConfig()): RunningServer {
         return;
       }
 
+      if (transport) {
+        const originalSetHeader = res.setHeader.bind(res);
+        const originalWriteHead = res.writeHead.bind(res);
+        const t = transport as any;
+        res.writeHead = (statusCode: number, ...args: any[]) => {
+          const sid = t.sessionId;
+          if (sid && !res.getHeader("mcp-session-id")) {
+            originalSetHeader("mcp-session-id", sid);
+          }
+          return originalWriteHead(statusCode, ...args);
+        };
+      }
+
       await transport.handleRequest(req, res, req.body);
     } catch (error) {
       logEvent(config.logging, "error", "mcp_request_error", {
