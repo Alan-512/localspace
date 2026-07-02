@@ -1651,7 +1651,6 @@ export function createServer(config = loadConfig()): RunningServer {
       } else if (initializeRequest) {
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
-          enableJsonResponse: true,
           onsessioninitialized: (newSessionId) => {
             if (transport) transports.set(newSessionId, transport);
             logEvent(config.logging, "info", "mcp_session_created", {
@@ -1677,19 +1676,6 @@ export function createServer(config = loadConfig()): RunningServer {
       } else {
         sendJsonRpcError(res, 400, -32000, "No valid MCP session");
         return;
-      }
-
-      if (transport) {
-        const originalSetHeader = res.setHeader.bind(res);
-        const originalWriteHead = res.writeHead.bind(res);
-        const t = transport as any;
-        res.writeHead = (statusCode: number, ...args: any[]) => {
-          const sid = t.sessionId;
-          if (sid && !res.getHeader("mcp-session-id")) {
-            originalSetHeader("mcp-session-id", sid);
-          }
-          return originalWriteHead(statusCode, ...args);
-        };
       }
 
       await transport.handleRequest(req, res, req.body);
