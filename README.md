@@ -95,6 +95,7 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`grep`**, **`glob`**, **`ls`**: Efficient directory and file structure inspection.
 - **`exec_command`**: Run terminal commands (compiles, tests, builds, git status, etc.).
 - **`write_stdin`**: Interact or poll running terminal processes.
+- `exec_command` adds non-blocking safety warnings for risky commands such as recursive deletion, force push, deploy/publish, elevated privileges, and shell file writes.
 - **`changes`**: Review current Git changes as plain text without requiring widget mode.
 - **`git_status`**, **`git_diff`**, **`git_add`**, **`git_commit`**, **`git_log`**: Dedicated Git workflow tools using fixed Git arguments.
 

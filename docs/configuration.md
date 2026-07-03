@@ -123,6 +123,11 @@ LOCALSPACE_SHELL="wsl.exe" localspace serve
 LocalSpace automatically chooses shell flags for common shells: `cmd`,
 PowerShell, `pwsh`, POSIX shells, Git Bash, and WSL.
 
+`exec_command` also returns non-blocking command safety warnings for patterns
+that commonly mutate files, Git history, remotes, permissions, deployments, or
+system-level settings. The command still runs; the warning is included in the
+tool response and structured output so MCP clients and models can surface it.
+
 ## Widgets
 
 `LOCALSPACE_WIDGETS` controls ChatGPT Apps iframe usage.

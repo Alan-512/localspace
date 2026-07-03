@@ -40,6 +40,11 @@ import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.
 import { getGitChanges } from "./git-changes.js";
 import { gitAdd, gitCommit, gitDiff, gitLog, gitStatus } from "./git-tools.js";
 import { generateDoctorReport, generateWorkspaceInfo } from "./diagnostics.js";
+import {
+  analyzeCommandSafety,
+  formatCommandSafetyWarning,
+  type CommandSafetyAnalysis,
+} from "./command-safety.js";
 import { generateProjectMap } from "./project-map.js";
 import { findSymbols } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
@@ -470,6 +475,14 @@ function processOutputSchema(): z.ZodRawShape {
     signal: z.string().optional(),
     wallTimeMs: z.number().nonnegative(),
     outputTruncated: z.boolean(),
+    commandRisk: z.enum(["none", "notice", "warning", "danger"]).optional(),
+    commandSafetyFindings: z
+      .array(z.object({
+        level: z.enum(["notice", "warning", "danger"]),
+        category: z.string(),
+        message: z.string(),
+      }))
+      .optional(),
   });
 }
 
@@ -478,8 +491,11 @@ function processToolResponse(
   workspaceId: string,
   snapshot: ProcessSnapshot,
   summary: Record<string, unknown>,
+  safety?: CommandSafetyAnalysis,
 ) {
-  const result = processResult(snapshot);
+  const warning = safety ? formatCommandSafetyWarning(safety) : undefined;
+  const baseResult = processResult(snapshot);
+  const result = warning ? `${warning}\n\n${baseResult}` : baseResult;
   const content = [textBlock(result)];
   const outputSummary = textSummary(snapshot.output ? [textBlock(snapshot.output)] : []);
   return {
@@ -488,7 +504,12 @@ function processToolResponse(
       tool,
       card: {
         workspaceId,
-        summary: { ...summary, ...outputSummary },
+        summary: {
+          ...summary,
+          commandRisk: safety?.level,
+          commandSafetyFindings: safety?.findings.length,
+          ...outputSummary,
+        },
         payload: { content },
       },
     },
@@ -500,6 +521,8 @@ function processToolResponse(
       signal: snapshot.signal,
       wallTimeMs: snapshot.wallTimeMs,
       outputTruncated: snapshot.outputTruncated,
+      commandRisk: safety?.level,
+      commandSafetyFindings: safety?.findings,
     },
   };
 }
@@ -553,6 +576,7 @@ function registerCodexProcessTools(
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const cwd = workspaces.resolveWorkingDirectory(workspace, workingDirectory);
+      const safety = analyzeCommandSafety(cmd);
       const snapshot = await processSessions.start({
         workspaceId,
         command: cmd,
@@ -580,7 +604,7 @@ function registerCodexProcessTools(
         running: snapshot.running,
         exitCode: snapshot.exitCode,
         wallTimeMs: snapshot.wallTimeMs,
-      });
+      }, safety);
     },
   );
 

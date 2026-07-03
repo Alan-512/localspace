@@ -215,6 +215,26 @@ out through `exec_command`:
 These tools use fixed `git` arguments through `execFile`; they do not accept raw
 commands and do not run through the configured shell.
 
+## Command Safety Warnings
+
+`exec_command` performs a non-blocking safety analysis before running a command.
+It still executes the requested command, but the response includes a warning when
+the command appears risky.
+
+Warnings currently cover common cases such as:
+
+- recursive or forced file deletion
+- disk/filesystem commands
+- `git reset --hard`, `git clean`, forced pushes, and destructive branch deletion
+- history rewrite or discard-style Git commands
+- package publish or production deploy commands
+- elevated privileges or execution policy changes
+- broad permission changes such as `chmod 777`
+- piping downloaded content or writing project files through shell redirection
+
+These warnings are intentionally advisory. They help the model slow down and
+explain the risk, while preserving the user's ability to run legitimate commands.
+
 ## Show Changes
 
 By default, `LOCALSPACE_WIDGETS=full`.
