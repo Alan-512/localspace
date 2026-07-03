@@ -1,0 +1,105 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+import assert from "node:assert/strict";
+import type { ServerConfig } from "./config.js";
+import { generateDoctorReport, generateWorkspaceInfo } from "./diagnostics.js";
+import type { Workspace } from "./workspaces.js";
+
+const execFileAsync = promisify(execFile);
+const root = await mkdtemp(join(tmpdir(), "localspace-diagnostics-test-"));
+
+try {
+  await mkdir(join(root, "state"));
+  await mkdir(join(root, "worktrees"));
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "diagnostics-fixture",
+      version: "1.2.3",
+      engines: { node: ">=22" },
+      scripts: { test: "echo test", build: "echo build" },
+    }, null, 2),
+  );
+
+  await git(root, ["init"]);
+  await git(root, ["config", "user.email", "localspace@example.com"]);
+  await git(root, ["config", "user.name", "LocalSpace Test"]);
+  await writeFile(join(root, "README.md"), "hello\n");
+  await git(root, ["add", "README.md", "package.json"]);
+  await git(root, ["commit", "-m", "Initial commit"]);
+
+  const workspace = testWorkspace(root);
+  const info = await generateWorkspaceInfo(workspace);
+  assert.match(info, /Workspace info/);
+  assert.match(info, /repository: yes/);
+  assert.match(info, /status: clean/);
+  assert.match(info, /name: diagnostics-fixture/);
+  assert.match(info, /test: echo test/);
+
+  await writeFile(join(root, "README.md"), "hello\nworld\n");
+  const dirtyInfo = await generateWorkspaceInfo(workspace);
+  assert.match(dirtyInfo, /status: dirty/);
+  assert.match(dirtyInfo, /README\.md/);
+
+  const config = testConfig(root);
+  const doctor = await generateDoctorReport(config, { workspace });
+  assert.match(doctor, /LocalSpace doctor/);
+  assert.match(doctor, /tool mode: hybrid/);
+  assert.match(doctor, /Workspace:/);
+  assert.match(doctor, /OK node:/);
+  assert.match(doctor, /OK git:/);
+  assert.match(doctor, /Overall:/);
+} finally {
+  await rm(root, { recursive: true, force: true });
+}
+
+function testWorkspace(root: string): Workspace {
+  return {
+    id: "ws_test",
+    root,
+    mode: "checkout",
+    skills: [],
+    skillDiagnostics: [],
+    activatedSkillDirs: new Set(),
+  };
+}
+
+function testConfig(root: string): ServerConfig {
+  return {
+    host: "127.0.0.1",
+    port: 7676,
+    oauth: {
+      ownerToken: "test-owner-token-that-is-long-enough",
+      accessTokenTtlSeconds: 3600,
+      refreshTokenTtlSeconds: 2592000,
+      scopes: ["localspace"],
+      allowedRedirectHosts: ["chatgpt.com"],
+    },
+    allowedRoots: [root],
+    allowedHosts: ["localhost"],
+    publicBaseUrl: "http://127.0.0.1:7676",
+    toolMode: "hybrid",
+    widgets: "full",
+    stateDir: join(root, "state"),
+    worktreeRoot: join(root, "worktrees"),
+    skillsEnabled: true,
+    skillPaths: [],
+    agentDir: join(root, ".codex"),
+    logging: {
+      level: "info",
+      format: "json",
+      requests: true,
+      assets: false,
+      toolCalls: true,
+      shellCommands: false,
+      trustProxy: false,
+    },
+  };
+}
+
+async function git(cwd: string, args: string[]): Promise<void> {
+  await execFileAsync("git", args, { cwd });
+}

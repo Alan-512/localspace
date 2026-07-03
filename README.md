@@ -86,6 +86,8 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 
 ### Hybrid Mode Tools (Default)
 - **`open_workspace`**: Open an allowed project directory.
+- **`doctor`**: Check LocalSpace runtime, config, shell, Git, Node, npm, and workspace diagnostics.
+- **`workspace_info`**: Summarize workspace root, Git status, recent commits, and package scripts.
 - **`read`**: Direct file read/inspection.
 - **`project_map`**: Quickly view a compact project directory tree.
 - **`symbols`**: Locate TypeScript/JavaScript declarations before reading files.

@@ -24,6 +24,10 @@ or `ls`.
 For TypeScript or JavaScript projects, call `symbols` to locate declarations by
 name or kind before opening large files.
 
+Call `workspace_info` when you need the current branch, Git cleanliness, recent
+commits, and package scripts. Call `doctor` when commands, Git, shell selection,
+or LocalSpace connectivity behave unexpectedly.
+
 Do not reopen the same folder unless:
 
 - the `workspaceId` is rejected as unknown
@@ -168,6 +172,20 @@ It supports:
 The scan skips generated or dependency folders such as `.git`, `node_modules`,
 `dist`, `build`, `.next`, `.turbo`, `.cache`, `coverage`, `.localspace`, and
 `.devspace`.
+
+## Diagnostics
+
+Use `doctor` to inspect the LocalSpace server environment. It reports:
+
+- tool mode and widget mode
+- host, port, public base URL, allowed roots, state dir, worktree root, agent dir
+- platform, architecture, Node runtime, and server cwd
+- availability of `node`, `npm`, `git`, and the configured shell
+- optional workspace information when `workspaceId` is provided
+
+Use `workspace_info` after `open_workspace` to quickly inspect project state. It
+reports workspace root/mode, Git repository status, branch, short HEAD, dirty
+files, recent commits, and `package.json` name/version/engines/scripts.
 
 ## Review Changes
 

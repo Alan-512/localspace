@@ -39,6 +39,7 @@ import { SingleUserOAuthProvider } from "./oauth-provider.js";
 import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.js";
 import { getGitChanges } from "./git-changes.js";
 import { gitAdd, gitCommit, gitDiff, gitLog, gitStatus } from "./git-tools.js";
+import { generateDoctorReport, generateWorkspaceInfo } from "./diagnostics.js";
 import { generateProjectMap } from "./project-map.js";
 import { findSymbols } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
@@ -151,6 +152,8 @@ const toolNames = {
   grep: "grep",
   glob: "glob",
   ls: "ls",
+  doctor: "doctor",
+  workspaceInfo: "workspace_info",
   projectMap: "project_map",
   symbols: "symbols",
   changes: "changes",
@@ -181,16 +184,16 @@ function serverInstructions(config: ServerConfig): string {
       : "";
 
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
+    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -921,6 +924,93 @@ function createMcpServer(
         structuredContent: {
           result: contentText(response.content),
         },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    toolNames.doctor,
+    {
+      title: "Doctor",
+      description:
+        "Run LocalSpace diagnostics for server configuration, runtime, command availability, shell selection, and optionally a workspace.",
+      inputSchema: {
+        workspaceId: z
+          .string()
+          .optional()
+          .describe("Optional workspace identifier returned by open_workspace. When provided, workspace-specific diagnostics are included."),
+      },
+      outputSchema: resultOutputSchema(),
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId }) => {
+      const startedAt = performance.now();
+      const workspace = workspaceId ? workspaces.getWorkspace(workspaceId) : undefined;
+      const result = await generateDoctorReport(config, { workspace });
+      const content = [textBlock(result)];
+
+      logToolCall(config, {
+        tool: toolNames.doctor,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.doctor,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    toolNames.workspaceInfo,
+    {
+      title: "Workspace info",
+      description:
+        "Show workspace root, mode, Git branch/status/recent commits, and package.json scripts for an open workspace.",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+      },
+      outputSchema: resultOutputSchema(),
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const result = await generateWorkspaceInfo(workspace);
+      const content = [textBlock(result)];
+
+      logToolCall(config, {
+        tool: toolNames.workspaceInfo,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.workspaceInfo,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result },
       };
     },
   );
