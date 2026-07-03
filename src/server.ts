@@ -37,9 +37,9 @@ import {
 } from "./pi-tools.js";
 import { SingleUserOAuthProvider } from "./oauth-provider.js";
 import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.js";
-import { getGitChanges } from "./git-changes.js";
-import { gitAdd, gitCommit, gitDiff, gitLog, gitStatus } from "./git-tools.js";
-import { generateDoctorReport, generateWorkspaceInfo } from "./diagnostics.js";
+import { getGitChangesData } from "./git-changes.js";
+import { gitAddData, gitCommitData, gitDiffData, gitLogData, gitStatusData } from "./git-tools.js";
+import { generateDoctorReportData, generateWorkspaceInfoData } from "./diagnostics.js";
 import {
   analyzeCommandSafety,
   formatCommandSafetyWarning,
@@ -979,8 +979,8 @@ function createMcpServer(
     async ({ workspaceId }) => {
       const startedAt = performance.now();
       const workspace = workspaceId ? workspaces.getWorkspace(workspaceId) : undefined;
-      const result = await generateDoctorReport(config, { workspace });
-      const content = [textBlock(result)];
+      const data = await generateDoctorReportData(config, { workspace });
+      const content = [textBlock(data.text)];
 
       logToolCall(config, {
         tool: toolNames.doctor,
@@ -999,7 +999,7 @@ function createMcpServer(
             payload: { content },
           },
         },
-        structuredContent: { result },
+        structuredContent: { result: data.text, ...data },
       };
     },
   );
@@ -1021,8 +1021,8 @@ function createMcpServer(
     async ({ workspaceId }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
-      const result = await generateWorkspaceInfo(workspace);
-      const content = [textBlock(result)];
+      const data = await generateWorkspaceInfoData(workspace);
+      const content = [textBlock(data.text)];
 
       logToolCall(config, {
         tool: toolNames.workspaceInfo,
@@ -1041,7 +1041,7 @@ function createMcpServer(
             payload: { content },
           },
         },
-        structuredContent: { result },
+        structuredContent: { result: data.text, ...data },
       };
     },
   );
@@ -1791,12 +1791,12 @@ function createMcpServer(
       async ({ workspaceId, mode, staged, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
-        const result = await getGitChanges(workspace.root, {
+        const data = await getGitChangesData(workspace.root, {
           mode,
           staged,
           maxOutputChars,
         });
-        const content = [textBlock(result)];
+        const content = [textBlock(data.text)];
 
         logToolCall(config, {
           tool: toolNames.changes,
@@ -1820,9 +1820,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: {
-            result,
-          },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -1851,8 +1849,8 @@ function createMcpServer(
       async ({ workspaceId, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
-        const result = await gitStatus(workspace.root, { maxOutputChars });
-        const content = [textBlock(result)];
+        const data = await gitStatusData(workspace.root, { maxOutputChars });
+        const content = [textBlock(data.text)];
         logToolCall(config, {
           tool: toolNames.gitStatus,
           workspaceId,
@@ -1870,7 +1868,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -1901,8 +1899,8 @@ function createMcpServer(
       async ({ workspaceId, staged, stat, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
-        const result = await gitDiff(workspace.root, { staged, stat, maxOutputChars });
-        const content = [textBlock(result)];
+        const data = await gitDiffData(workspace.root, { staged, stat, maxOutputChars });
+        const content = [textBlock(data.text)];
         logToolCall(config, {
           tool: toolNames.gitDiff,
           workspaceId,
@@ -1924,7 +1922,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -1960,8 +1958,8 @@ function createMcpServer(
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
         for (const path of paths) workspaces.resolvePath(workspace, path);
-        const result = await gitAdd(workspace.root, paths, { maxOutputChars });
-        const content = [textBlock(result)];
+        const data = await gitAddData(workspace.root, paths, { maxOutputChars });
+        const content = [textBlock(data.text)];
         logToolCall(config, {
           tool: toolNames.gitAdd,
           workspaceId,
@@ -1982,7 +1980,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -2017,8 +2015,8 @@ function createMcpServer(
       async ({ workspaceId, message, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
-        const result = await gitCommit(workspace.root, { message, maxOutputChars });
-        const content = [textBlock(result)];
+        const data = await gitCommitData(workspace.root, { message, maxOutputChars });
+        const content = [textBlock(data.text)];
         logToolCall(config, {
           tool: toolNames.gitCommit,
           workspaceId,
@@ -2036,7 +2034,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -2066,8 +2064,8 @@ function createMcpServer(
       async ({ workspaceId, limit, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
-        const result = await gitLog(workspace.root, { limit, maxOutputChars });
-        const content = [textBlock(result)];
+        const data = await gitLogData(workspace.root, { limit, maxOutputChars });
+        const content = [textBlock(data.text)];
         logToolCall(config, {
           tool: toolNames.gitLog,
           workspaceId,
@@ -2088,7 +2086,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );

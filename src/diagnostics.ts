@@ -13,7 +13,7 @@ export interface DoctorOptions {
   workspace?: Workspace;
 }
 
-interface CommandCheck {
+export interface CommandCheck {
   name: string;
   status: "ok" | "warn" | "error";
   detail: string;
@@ -27,72 +27,184 @@ interface PackageJson {
   packageManager?: string;
 }
 
+export interface DoctorReportData {
+  configuration: {
+    toolMode: ServerConfig["toolMode"];
+    widgets: ServerConfig["widgets"];
+    host: string;
+    port: number;
+    publicBaseUrl: string;
+    allowedRoots: string[];
+    stateDir: string;
+    worktreeRoot: string;
+    agentDir: string;
+    skillsEnabled: boolean;
+    configuredShell?: string;
+  };
+  runtime: {
+    platform: NodeJS.Platform;
+    arch: string;
+    node: string;
+    cwd: string;
+  };
+  workspace?: WorkspaceData;
+  checks: CommandCheck[];
+  overall: "ok" | "warning" | "error";
+  text: string;
+}
+
+export interface WorkspaceData {
+  id: string;
+  root: string;
+  mode: Workspace["mode"];
+  exists?: boolean;
+  sourceRoot?: string;
+  worktree?: Workspace["worktree"];
+}
+
+export interface GitWorkspaceData {
+  isRepository: boolean;
+  branch: string;
+  head: string;
+  clean: boolean;
+  statusLines: string[];
+  recentCommits: string[];
+  error?: string;
+}
+
+export interface PackageJsonData {
+  name?: string;
+  version?: string;
+  scripts: Record<string, string>;
+  engines: Record<string, string>;
+  packageManager?: string;
+}
+
+export interface WorkspaceInfoData {
+  workspace: WorkspaceData;
+  git: GitWorkspaceData;
+  package?: PackageJsonData;
+  text: string;
+}
+
 export async function generateDoctorReport(
   config: ServerConfig,
   options: DoctorOptions = {},
 ): Promise<string> {
+  return (await generateDoctorReportData(config, options)).text;
+}
+
+export async function generateDoctorReportData(
+  config: ServerConfig,
+  options: DoctorOptions = {},
+): Promise<DoctorReportData> {
   const checks = await runDoctorChecks(config, options.workspace?.root);
+  const hasError = checks.some((check) => check.status === "error");
+  const hasWarn = checks.some((check) => check.status === "warn");
+  const data: DoctorReportData = {
+    configuration: {
+      toolMode: config.toolMode,
+      widgets: config.widgets,
+      host: config.host,
+      port: config.port,
+      publicBaseUrl: config.publicBaseUrl,
+      allowedRoots: config.allowedRoots,
+      stateDir: config.stateDir,
+      worktreeRoot: config.worktreeRoot,
+      agentDir: config.agentDir,
+      skillsEnabled: config.skillsEnabled,
+      configuredShell: config.shell,
+    },
+    runtime: {
+      platform: process.platform,
+      arch: process.arch,
+      node: process.version,
+      cwd: process.cwd(),
+    },
+    workspace: options.workspace ? workspaceData(options.workspace) : undefined,
+    checks,
+    overall: hasError ? "error" : hasWarn ? "warning" : "ok",
+    text: "",
+  };
+  data.text = formatDoctorReport(data);
+  return data;
+}
+
+function formatDoctorReport(data: DoctorReportData): string {
   const lines = ["LocalSpace doctor", ""];
 
   lines.push("Configuration:");
-  lines.push(`- tool mode: ${config.toolMode}`);
-  lines.push(`- widgets: ${config.widgets}`);
-  lines.push(`- host: ${config.host}`);
-  lines.push(`- port: ${config.port}`);
-  lines.push(`- public base URL: ${config.publicBaseUrl}`);
-  lines.push(`- allowed roots: ${config.allowedRoots.length}`);
-  for (const root of config.allowedRoots) lines.push(`  - ${root}`);
-  lines.push(`- state dir: ${config.stateDir}`);
-  lines.push(`- worktree root: ${config.worktreeRoot}`);
-  lines.push(`- agent dir: ${config.agentDir}`);
-  lines.push(`- skills: ${config.skillsEnabled ? "enabled" : "disabled"}`);
-  lines.push(`- configured shell: ${config.shell ?? "default"}`);
+  lines.push(`- tool mode: ${data.configuration.toolMode}`);
+  lines.push(`- widgets: ${data.configuration.widgets}`);
+  lines.push(`- host: ${data.configuration.host}`);
+  lines.push(`- port: ${data.configuration.port}`);
+  lines.push(`- public base URL: ${data.configuration.publicBaseUrl}`);
+  lines.push(`- allowed roots: ${data.configuration.allowedRoots.length}`);
+  for (const root of data.configuration.allowedRoots) lines.push(`  - ${root}`);
+  lines.push(`- state dir: ${data.configuration.stateDir}`);
+  lines.push(`- worktree root: ${data.configuration.worktreeRoot}`);
+  lines.push(`- agent dir: ${data.configuration.agentDir}`);
+  lines.push(`- skills: ${data.configuration.skillsEnabled ? "enabled" : "disabled"}`);
+  lines.push(`- configured shell: ${data.configuration.configuredShell ?? "default"}`);
   lines.push("");
 
   lines.push("Runtime:");
-  lines.push(`- platform: ${process.platform}`);
-  lines.push(`- arch: ${process.arch}`);
-  lines.push(`- node: ${process.version}`);
-  lines.push(`- cwd: ${process.cwd()}`);
+  lines.push(`- platform: ${data.runtime.platform}`);
+  lines.push(`- arch: ${data.runtime.arch}`);
+  lines.push(`- node: ${data.runtime.node}`);
+  lines.push(`- cwd: ${data.runtime.cwd}`);
   lines.push("");
 
-  if (options.workspace) {
+  if (data.workspace) {
     lines.push("Workspace:");
-    lines.push(`- id: ${options.workspace.id}`);
-    lines.push(`- root: ${options.workspace.root}`);
-    lines.push(`- mode: ${options.workspace.mode}`);
-    if (options.workspace.sourceRoot) lines.push(`- source root: ${options.workspace.sourceRoot}`);
-    if (options.workspace.worktree) {
-      lines.push(`- worktree base ref: ${options.workspace.worktree.baseRef}`);
-      lines.push(`- worktree base sha: ${options.workspace.worktree.baseSha}`);
-      lines.push(`- worktree managed: ${options.workspace.worktree.managed}`);
+    lines.push(`- id: ${data.workspace.id}`);
+    lines.push(`- root: ${data.workspace.root}`);
+    lines.push(`- mode: ${data.workspace.mode}`);
+    if (data.workspace.sourceRoot) lines.push(`- source root: ${data.workspace.sourceRoot}`);
+    if (data.workspace.worktree) {
+      lines.push(`- worktree base ref: ${data.workspace.worktree.baseRef}`);
+      lines.push(`- worktree base sha: ${data.workspace.worktree.baseSha}`);
+      lines.push(`- worktree managed: ${data.workspace.worktree.managed}`);
     }
     lines.push("");
   }
 
   lines.push("Checks:");
-  for (const check of checks) lines.push(`- ${check.status.toUpperCase()} ${check.name}: ${check.detail}`);
-
-  const hasError = checks.some((check) => check.status === "error");
-  const hasWarn = checks.some((check) => check.status === "warn");
+  for (const check of data.checks) lines.push(`- ${check.status.toUpperCase()} ${check.name}: ${check.detail}`);
   lines.push("");
-  lines.push(`Overall: ${hasError ? "error" : hasWarn ? "warning" : "ok"}`);
+  lines.push(`Overall: ${data.overall}`);
 
   return lines.join("\n");
 }
 
 export async function generateWorkspaceInfo(workspace: Workspace): Promise<string> {
+  return (await generateWorkspaceInfoData(workspace)).text;
+}
+
+export async function generateWorkspaceInfoData(workspace: Workspace): Promise<WorkspaceInfoData> {
   const [git, packageJson, rootStat] = await Promise.all([
     gitWorkspaceInfo(workspace.root),
     readPackageJson(workspace.root),
     safeStat(workspace.root),
   ]);
+  const data: WorkspaceInfoData = {
+    workspace: { ...workspaceData(workspace), exists: rootStat?.isDirectory() ?? false },
+    git,
+    package: packageJson ? packageJsonData(packageJson) : undefined,
+    text: "",
+  };
+  data.text = formatWorkspaceInfo(data);
+  return data;
+}
+
+function formatWorkspaceInfo(data: WorkspaceInfoData): string {
+  const { workspace, git, package: packageJson } = data;
 
   const lines = ["Workspace info", ""];
   lines.push(`- id: ${workspace.id}`);
   lines.push(`- root: ${workspace.root}`);
   lines.push(`- mode: ${workspace.mode}`);
-  lines.push(`- exists: ${rootStat?.isDirectory() ? "yes" : "no"}`);
+  lines.push(`- exists: ${workspace.exists ? "yes" : "no"}`);
   if (workspace.sourceRoot) lines.push(`- source root: ${workspace.sourceRoot}`);
   if (workspace.worktree) {
     lines.push(`- worktree base ref: ${workspace.worktree.baseRef}`);
@@ -144,6 +256,26 @@ export async function generateWorkspaceInfo(workspace: Workspace): Promise<strin
   }
 
   return lines.join("\n");
+}
+
+function workspaceData(workspace: Workspace): WorkspaceData {
+  return {
+    id: workspace.id,
+    root: workspace.root,
+    mode: workspace.mode,
+    sourceRoot: workspace.sourceRoot,
+    worktree: workspace.worktree,
+  };
+}
+
+function packageJsonData(packageJson: PackageJson): PackageJsonData {
+  return {
+    name: packageJson.name,
+    version: packageJson.version,
+    scripts: packageJson.scripts ?? {},
+    engines: packageJson.engines ?? {},
+    packageManager: packageJson.packageManager,
+  };
 }
 
 async function runDoctorChecks(config: ServerConfig, workspaceRoot: string | undefined): Promise<CommandCheck[]> {

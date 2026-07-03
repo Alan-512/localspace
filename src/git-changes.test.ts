@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
-import { getGitChanges } from "./git-changes.js";
+import { getGitChanges, getGitChangesData } from "./git-changes.js";
 
 const execFileAsync = promisify(execFile);
 const root = await mkdtemp(join(tmpdir(), "localspace-git-changes-test-"));
@@ -20,11 +20,20 @@ try {
   const clean = await getGitChanges(root);
   assert.equal(clean, "Working tree clean.");
 
+  const cleanData = await getGitChangesData(root);
+  assert.equal(cleanData.clean, true);
+  assert.equal(cleanData.isRepository, true);
+
   await writeFile(join(root, "README.md"), "hello\nworld\n");
   const modified = await getGitChanges(root);
   assert.match(modified, /Branch:/);
   assert.match(modified, /Modified:/);
   assert.match(modified, /README\.md/);
+
+  const modifiedData = await getGitChangesData(root);
+  assert.equal(modifiedData.clean, false);
+  assert.ok(modifiedData.groups.some((group) => group.title === "Modified" && group.paths.includes("README.md")));
+  assert.ok(modifiedData.statusEntries.some((entry) => entry.path === "README.md"));
 
   await writeFile(join(root, "new.txt"), "new\n");
   const untracked = await getGitChanges(root);
@@ -50,6 +59,7 @@ try {
   try {
     await writeFile(join(nonGitRoot, "file.txt"), "hello\n");
     assert.equal(await getGitChanges(nonGitRoot), "Not a git repository.");
+    assert.equal((await getGitChangesData(nonGitRoot)).isRepository, false);
   } finally {
     await rm(nonGitRoot, { recursive: true, force: true });
   }

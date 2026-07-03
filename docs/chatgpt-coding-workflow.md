@@ -208,6 +208,13 @@ For example, `symbols` returns `summary` and `symbols[]`; `imports` returns
 `entrypoints` returns package metadata, scripts, suggested verification commands,
 source entrypoints, and config files; and `code_map` aggregates those structures.
 
+Workspace and Git review tools also expose structured content. `doctor` returns
+configuration, runtime, checks, and overall health. `workspace_info` returns
+workspace, Git, and package metadata. `changes` returns branch, grouped changes,
+status entries, and stat output. `git_status`, `git_diff`, `git_log`, `git_add`,
+and `git_commit` preserve text output while also exposing normalized fields such
+as clean state, commits, staged paths, and truncation status.
+
 ## Diagnostics
 
 Use `doctor` to inspect the LocalSpace server environment. It reports:

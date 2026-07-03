@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import type { ServerConfig } from "./config.js";
-import { generateDoctorReport, generateWorkspaceInfo } from "./diagnostics.js";
+import { generateDoctorReport, generateDoctorReportData, generateWorkspaceInfo, generateWorkspaceInfoData } from "./diagnostics.js";
 import type { Workspace } from "./workspaces.js";
 
 const execFileAsync = promisify(execFile);
@@ -39,6 +39,13 @@ try {
   assert.match(info, /name: diagnostics-fixture/);
   assert.match(info, /test: echo test/);
 
+  const infoData = await generateWorkspaceInfoData(workspace);
+  assert.equal(infoData.workspace.id, "ws_test");
+  assert.equal(infoData.git.isRepository, true);
+  assert.equal(infoData.git.clean, true);
+  assert.equal(infoData.package?.name, "diagnostics-fixture");
+  assert.equal(infoData.package?.scripts.test, "echo test");
+
   await writeFile(join(root, "README.md"), "hello\nworld\n");
   const dirtyInfo = await generateWorkspaceInfo(workspace);
   assert.match(dirtyInfo, /status: dirty/);
@@ -52,6 +59,12 @@ try {
   assert.match(doctor, /OK node:/);
   assert.match(doctor, /OK git:/);
   assert.match(doctor, /Overall:/);
+
+  const doctorData = await generateDoctorReportData(config, { workspace });
+  assert.equal(doctorData.configuration.toolMode, "hybrid");
+  assert.equal(doctorData.workspace?.id, "ws_test");
+  assert.ok(doctorData.checks.some((check) => check.name === "git" && check.status === "ok"));
+  assert.match(doctorData.text, /LocalSpace doctor/);
 } finally {
   await rm(root, { recursive: true, force: true });
 }

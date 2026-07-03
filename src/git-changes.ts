@@ -19,16 +19,41 @@ interface GitResult {
   stderr: string;
 }
 
-interface StatusEntry {
+export interface StatusEntry {
   indexStatus: string;
   worktreeStatus: string;
   path: string;
+}
+
+export interface ChangesGroup {
+  title: string;
+  paths: string[];
+}
+
+export interface GitChangesData {
+  isRepository: boolean;
+  clean: boolean;
+  mode: ChangesMode;
+  staged: boolean;
+  branch?: string;
+  statusEntries: StatusEntry[];
+  groups: ChangesGroup[];
+  stat?: string;
+  truncated: boolean;
+  text: string;
 }
 
 export async function getGitChanges(
   workspaceRoot: string,
   options: GitChangesOptions = {},
 ): Promise<string> {
+  return (await getGitChangesData(workspaceRoot, options)).text;
+}
+
+export async function getGitChangesData(
+  workspaceRoot: string,
+  options: GitChangesOptions = {},
+): Promise<GitChangesData> {
   const mode = options.mode ?? "summary";
   const staged = options.staged ?? false;
   const maxOutputChars = clampInteger(
@@ -39,23 +64,61 @@ export async function getGitChanges(
   );
 
   if (!(await isGitRepository(workspaceRoot))) {
-    return "Not a git repository.";
+    return {
+      isRepository: false,
+      clean: false,
+      mode,
+      staged,
+      statusEntries: [],
+      groups: [],
+      truncated: false,
+      text: "Not a git repository.",
+    };
   }
 
   const status = await git(workspaceRoot, ["status", "--porcelain=v1"]);
   if (status.stdout.trim() === "") {
-    return "Working tree clean.";
+    return {
+      isRepository: true,
+      clean: true,
+      mode,
+      staged,
+      branch: await currentBranch(workspaceRoot),
+      statusEntries: [],
+      groups: [],
+      truncated: false,
+      text: "Working tree clean.",
+    };
   }
 
-  const result = await formatChanges(workspaceRoot, mode, staged, status.stdout);
-  return truncateOutput(result, maxOutputChars);
+  const statusEntries = parseStatus(status.stdout);
+  const included = statusEntries.filter((entry) => includeStatusEntry(entry, staged));
+  const groups = groupStatusEntries(included, staged);
+  const branch = await currentBranch(workspaceRoot);
+  const stat = await diffStat(workspaceRoot, staged);
+  const result = await formatChanges(workspaceRoot, mode, staged, branch, groups, stat);
+  const truncated = truncateOutputData(result, maxOutputChars);
+  return {
+    isRepository: true,
+    clean: false,
+    mode,
+    staged,
+    branch,
+    statusEntries,
+    groups,
+    stat: stat || undefined,
+    truncated: truncated.truncated,
+    text: truncated.text,
+  };
 }
 
 async function formatChanges(
   workspaceRoot: string,
   mode: ChangesMode,
   staged: boolean,
-  statusOutput: string,
+  branch: string,
+  grouped: ChangesGroup[],
+  statOutput: string,
 ): Promise<string> {
   if (mode === "patch") {
     const diff = await git(workspaceRoot, ["diff", ...(staged ? ["--cached"] : [])]);
@@ -69,11 +132,7 @@ async function formatChanges(
     return output || (staged ? "No staged tracked file changes." : "No unstaged tracked file changes.");
   }
 
-  const branch = await currentBranch(workspaceRoot);
-  const entries = parseStatus(statusOutput).filter((entry) => includeStatusEntry(entry, staged));
-  const stat = await git(workspaceRoot, ["diff", ...(staged ? ["--cached"] : []), "--stat"]);
   const lines = [`Branch: ${branch}`, ""];
-  const grouped = groupStatusEntries(entries, staged);
 
   if (grouped.length === 0) {
     lines.push(staged ? "No staged changes." : "No unstaged changes.");
@@ -87,13 +146,17 @@ async function formatChanges(
     }
   }
 
-  const statOutput = stat.stdout.trimEnd();
   if (statOutput) {
     lines.push("Stat:");
     lines.push(statOutput);
   }
 
   return lines.join("\n").trimEnd();
+}
+
+async function diffStat(workspaceRoot: string, staged: boolean): Promise<string> {
+  const stat = await git(workspaceRoot, ["diff", ...(staged ? ["--cached"] : []), "--stat"]);
+  return stat.stdout.trimEnd();
 }
 
 async function isGitRepository(cwd: string): Promise<boolean> {
@@ -130,7 +193,7 @@ function includeStatusEntry(entry: StatusEntry, staged: boolean): boolean {
   return entry.worktreeStatus !== " " || entry.indexStatus === "?";
 }
 
-function groupStatusEntries(entries: StatusEntry[], staged: boolean): Array<{ title: string; paths: string[] }> {
+function groupStatusEntries(entries: StatusEntry[], staged: boolean): ChangesGroup[] {
   const groups = new Map<string, string[]>();
   for (const entry of entries) {
     const status = staged ? entry.indexStatus : entry.indexStatus === "?" ? "?" : entry.worktreeStatus;
@@ -168,8 +231,12 @@ function statusTitle(status: string): string {
 }
 
 function truncateOutput(output: string, maxOutputChars: number): string {
-  if (output.length <= maxOutputChars) return output;
-  return `${output.slice(0, maxOutputChars)}\n... (truncated after ${maxOutputChars} characters)`;
+  return truncateOutputData(output, maxOutputChars).text;
+}
+
+function truncateOutputData(output: string, maxOutputChars: number): { text: string; truncated: boolean } {
+  if (output.length <= maxOutputChars) return { text: output, truncated: false };
+  return { text: `${output.slice(0, maxOutputChars)}\n... (truncated after ${maxOutputChars} characters)`, truncated: true };
 }
 
 function clampInteger(value: number | undefined, fallback: number, min: number, max: number): number {

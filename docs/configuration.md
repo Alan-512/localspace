@@ -109,6 +109,10 @@ structured content for model or UI consumers. `symbols`, `imports`,
 `references`, `entrypoints`, and `code_map` expose typed arrays and summaries in
 their `structuredContent` payloads while preserving the `result` text field.
 
+Workspace and Git tools follow the same pattern. `doctor`, `workspace_info`,
+`changes`, and `git_*` tools preserve text output and add structured summaries
+for health checks, branch status, grouped changes, commits, and truncation flags.
+
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
 does not require `LOCALSPACE_WIDGETS=changes`.
