@@ -226,6 +226,221 @@ function resultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
   };
 }
 
+function structuredTextOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
+  return resultOutputSchema({
+    text: z.string().describe("Same text as result for structured consumers."),
+    ...extra,
+  });
+}
+
+const scanSummaryOutputSchema = z.object({
+  filesScanned: z.number(),
+  truncatedFiles: z.boolean(),
+  truncatedResults: z.boolean(),
+});
+
+const symbolEntryOutputSchema = z.object({
+  file: z.string(),
+  line: z.number(),
+  kind: z.enum(["class", "function", "interface", "type", "enum", "variable", "method"]),
+  name: z.string(),
+  exported: z.boolean(),
+});
+
+const importExportEntryOutputSchema = z.object({
+  file: z.string(),
+  line: z.number(),
+  kind: z.enum(["import", "export", "dynamic-import"]),
+  module: z.string().optional(),
+  names: z.array(z.string()),
+});
+
+const referenceEntryOutputSchema = z.object({
+  file: z.string(),
+  line: z.number(),
+  column: z.number(),
+  name: z.string(),
+  kind: z.enum(["reference", "definition"]),
+  context: z.string(),
+});
+
+const entrypointCandidateOutputSchema = z.object({
+  path: z.string(),
+  reason: z.string(),
+});
+
+const entrypointPackageInfoOutputSchema = z.object({
+  name: z.string().optional(),
+  type: z.string().optional(),
+  main: z.string().optional(),
+  module: z.string().optional(),
+  browser: z.string().optional(),
+  types: z.string().optional(),
+  bin: z.array(z.object({ name: z.string(), path: z.string() })),
+  exports: z.array(z.string()),
+});
+
+const entrypointsStructuredOutputSchema = structuredTextOutputSchema({
+  packageInfo: entrypointPackageInfoOutputSchema.optional(),
+  scripts: z.array(z.object({ name: z.string(), command: z.string() })),
+  suggestedVerification: z.array(z.string()),
+  sourceEntrypoints: z.array(entrypointCandidateOutputSchema),
+  configFiles: z.array(z.string()),
+});
+
+const symbolsStructuredOutputSchema = structuredTextOutputSchema({
+  summary: scanSummaryOutputSchema,
+  symbols: z.array(symbolEntryOutputSchema),
+});
+
+const importsStructuredOutputSchema = structuredTextOutputSchema({
+  summary: scanSummaryOutputSchema,
+  entries: z.array(importExportEntryOutputSchema),
+});
+
+const referencesStructuredOutputSchema = structuredTextOutputSchema({
+  summary: scanSummaryOutputSchema.extend({ query: z.string() }),
+  references: z.array(referenceEntryOutputSchema),
+});
+
+const codeMapStructuredOutputSchema = structuredTextOutputSchema({
+  scope: z.string(),
+  options: z.object({
+    depth: z.number(),
+    maxEntries: z.number(),
+    maxSymbols: z.number(),
+    maxImports: z.number(),
+  }),
+  entrypoints: z.object(entrypointsStructuredOutputSchema),
+  projectMap: z.string(),
+  symbols: z.object(symbolsStructuredOutputSchema),
+  imports: z.object(importsStructuredOutputSchema),
+});
+
+const commandCheckOutputSchema = z.object({
+  name: z.string(),
+  status: z.enum(["ok", "warn", "error"]),
+  detail: z.string(),
+});
+
+const workspaceDataOutputSchema = z.object({
+  id: z.string(),
+  root: z.string(),
+  mode: z.string(),
+  exists: z.boolean().optional(),
+  sourceRoot: z.string().optional(),
+  worktree: z.unknown().optional(),
+});
+
+const gitWorkspaceOutputSchema = z.object({
+  isRepository: z.boolean(),
+  branch: z.string(),
+  head: z.string(),
+  clean: z.boolean(),
+  statusLines: z.array(z.string()),
+  recentCommits: z.array(z.string()),
+  error: z.string().optional(),
+});
+
+const packageDataOutputSchema = z.object({
+  name: z.string().optional(),
+  version: z.string().optional(),
+  scripts: z.record(z.string(), z.string()),
+  engines: z.record(z.string(), z.string()),
+  packageManager: z.string().optional(),
+});
+
+const doctorStructuredOutputSchema = structuredTextOutputSchema({
+  configuration: z.object({
+    toolMode: z.string(),
+    widgets: z.string(),
+    host: z.string(),
+    port: z.number(),
+    publicBaseUrl: z.string(),
+    allowedRoots: z.array(z.string()),
+    stateDir: z.string(),
+    worktreeRoot: z.string(),
+    agentDir: z.string(),
+    skillsEnabled: z.boolean(),
+    configuredShell: z.string().optional(),
+  }),
+  runtime: z.object({
+    platform: z.string(),
+    arch: z.string(),
+    node: z.string(),
+    cwd: z.string(),
+  }),
+  workspace: workspaceDataOutputSchema.optional(),
+  checks: z.array(commandCheckOutputSchema),
+  overall: z.enum(["ok", "warning", "error"]),
+});
+
+const workspaceInfoStructuredOutputSchema = structuredTextOutputSchema({
+  workspace: workspaceDataOutputSchema,
+  git: gitWorkspaceOutputSchema,
+  package: packageDataOutputSchema.optional(),
+});
+
+const changesGroupOutputSchema = z.object({
+  title: z.string(),
+  paths: z.array(z.string()),
+});
+
+const statusEntryOutputSchema = z.object({
+  indexStatus: z.string(),
+  worktreeStatus: z.string(),
+  path: z.string(),
+});
+
+const changesStructuredOutputSchema = structuredTextOutputSchema({
+  isRepository: z.boolean(),
+  clean: z.boolean(),
+  mode: z.enum(["summary", "stat", "patch"]),
+  staged: z.boolean(),
+  branch: z.string().optional(),
+  statusEntries: z.array(statusEntryOutputSchema),
+  groups: z.array(changesGroupOutputSchema),
+  stat: z.string().optional(),
+  truncated: z.boolean(),
+});
+
+const gitStatusStructuredOutputSchema = structuredTextOutputSchema({
+  isRepository: z.boolean(),
+  branch: z.string(),
+  clean: z.boolean(),
+  statusLines: z.array(z.string()),
+  truncated: z.boolean(),
+});
+
+const gitDiffStructuredOutputSchema = structuredTextOutputSchema({
+  isRepository: z.boolean(),
+  staged: z.boolean(),
+  stat: z.boolean(),
+  empty: z.boolean(),
+  truncated: z.boolean(),
+});
+
+const gitAddStructuredOutputSchema = structuredTextOutputSchema({
+  isRepository: z.boolean(),
+  paths: z.array(z.string()),
+  stagedCount: z.number(),
+  truncated: z.boolean(),
+});
+
+const gitCommitStructuredOutputSchema = structuredTextOutputSchema({
+  isRepository: z.boolean(),
+  message: z.string(),
+  committed: z.boolean(),
+  truncated: z.boolean(),
+});
+
+const gitLogStructuredOutputSchema = structuredTextOutputSchema({
+  isRepository: z.boolean(),
+  limit: z.number(),
+  commits: z.array(z.string()),
+  truncated: z.boolean(),
+});
+
 const workspaceSkillOutputSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -901,7 +1116,7 @@ function createMcpServer(
           .optional()
           .describe("Maximum number of lines to read."),
       },
-      outputSchema: resultOutputSchema(),
+      outputSchema: doctorStructuredOutputSchema,
       ...toolWidgetDescriptorMeta(config, "read"),
       annotations: { readOnlyHint: true },
     },
@@ -972,7 +1187,7 @@ function createMcpServer(
           .optional()
           .describe("Optional workspace identifier returned by open_workspace. When provided, workspace-specific diagnostics are included."),
       },
-      outputSchema: resultOutputSchema(),
+      outputSchema: workspaceInfoStructuredOutputSchema,
       ...toolWidgetDescriptorMeta(config, "workspace"),
       annotations: { readOnlyHint: true },
     },
@@ -1014,7 +1229,7 @@ function createMcpServer(
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
-      outputSchema: resultOutputSchema(),
+      outputSchema: entrypointsStructuredOutputSchema,
       ...toolWidgetDescriptorMeta(config, "workspace"),
       annotations: { readOnlyHint: true },
     },
@@ -1103,7 +1318,7 @@ function createMcpServer(
           maxSymbols: z.number().int().min(1).max(500).optional().describe("Maximum exported symbols. Defaults to 80, max 500."),
           maxImports: z.number().int().min(1).max(500).optional().describe("Maximum import/export entries. Defaults to 80, max 500."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: codeMapStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "workspace"),
         annotations: { readOnlyHint: true },
       },
@@ -1184,7 +1399,7 @@ function createMcpServer(
             .optional()
             .describe("Whether to show hidden files and directories. Defaults to false."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: symbolsStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "directory"),
         annotations: { readOnlyHint: true },
       },
@@ -1267,7 +1482,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum source files to scan. Defaults to 500, max 5000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: importsStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
@@ -1344,7 +1559,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum source files to scan. Defaults to 500, max 5000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: referencesStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
@@ -1415,7 +1630,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum source files to scan. Defaults to 500, max 5000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: changesStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
@@ -1718,7 +1933,7 @@ function createMcpServer(
             .string()
             .describe("Workspace identifier returned by open_workspace."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitStatusStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "show_changes"),
         annotations: { readOnlyHint: true },
       },
@@ -1784,7 +1999,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitDiffStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
@@ -1842,7 +2057,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitAddStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
@@ -1892,7 +2107,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitCommitStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
@@ -1945,7 +2160,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitLogStructuredOutputSchema,
         _meta: {},
         annotations: {
           readOnlyHint: false,
