@@ -119,6 +119,12 @@ one-time `approvalToken`. Retry the exact same command with `approvalToken` only
 after the user explicitly confirms. Tokens are scoped to the same workspace,
 working directory, command, and risk level.
 
+Write-like tools also protect sensitive paths using generic rules rather than
+hard-coded personal paths. Protected paths include workspace Git configuration
+and hooks, `.env` files, secret/token/private-key-like filenames, LocalSpace
+state/agent/worktree directories, home-directory roots, and platform system
+directories.
+
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
 does not require `LOCALSPACE_WIDGETS=changes`.

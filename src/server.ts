@@ -17,7 +17,7 @@ import {
 import express from "express";
 import type { Request, Response } from "express";
 import * as z from "zod/v4";
-import { applyPatch } from "./apply-patch.js";
+import { applyPatch, parsePatch } from "./apply-patch.js";
 import { CommandApprovalManager } from "./command-approval.js";
 import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
 import {
@@ -52,6 +52,7 @@ import { findEntrypointsData } from "./entrypoints.js";
 import { generateProjectMap } from "./project-map.js";
 import { findSymbolsData } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
+import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
@@ -1794,7 +1795,8 @@ function createMcpServer(
     async ({ workspaceId, ...input }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
-      workspaces.resolvePath(workspace, input.path);
+      const targetPath = workspaces.resolvePath(workspace, input.path);
+      assertWritablePath(targetPath, { workspaceRoot: workspace.root, config });
       const response = await writeFileTool(input, {
         cwd: workspace.root,
         root: workspace.root,
@@ -1881,7 +1883,8 @@ function createMcpServer(
     async ({ workspaceId, ...input }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
-      workspaces.resolvePath(workspace, input.path);
+      const targetPath = workspaces.resolvePath(workspace, input.path);
+      assertWritablePath(targetPath, { workspaceRoot: workspace.root, config });
       const response = await editFileTool(input, {
         cwd: workspace.root,
         root: workspace.root,
@@ -1969,6 +1972,14 @@ function createMcpServer(
       async ({ workspaceId, patch }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
+        const patchPaths = parsePatch(patch).flatMap((action) => {
+          if (action.kind === "update" && action.moveTo) return [action.path, action.moveTo];
+          return [action.path];
+        });
+        assertWritablePaths(
+          patchPaths.map((path) => workspaces.resolvePath(workspace, path)),
+          { workspaceRoot: workspace.root, config },
+        );
         const applied = await applyPatch(workspace.root, patch);
         const paths = applied.files.map((file) => file.path).join(", ");
         const result = `Applied patch to ${applied.files.length} file(s): ${paths}`;
@@ -2250,7 +2261,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: gitLogStructuredOutputSchema,
+        outputSchema: gitAddStructuredOutputSchema,
         _meta: {},
         annotations: {
           readOnlyHint: false,
@@ -2262,7 +2273,10 @@ function createMcpServer(
       async ({ workspaceId, paths, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
-        for (const path of paths) workspaces.resolvePath(workspace, path);
+        assertWritablePaths(
+          paths.map((path) => workspaces.resolvePath(workspace, path)),
+          { workspaceRoot: workspace.root, config },
+        );
         const data = await gitAddData(workspace.root, paths, { maxOutputChars });
         const content = [textBlock(data.text)];
         logToolCall(config, {

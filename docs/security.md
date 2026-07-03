@@ -86,6 +86,36 @@ Filesystem path containment applies to DevSpace file tools. Shell commands run
 as local commands and can do what your user account can do. This is why the MCP
 client must be trusted and the Owner password must stay private.
 
+High-risk `danger` commands are blocked before execution and require a one-time
+approval token after explicit user confirmation.
+
+## Sensitive Path Protection
+
+LocalSpace protects sensitive paths with generic cross-platform rules. It does
+not hard-code a user's personal absolute paths.
+
+Write-like tools block protected paths before modifying or staging files:
+
+- `write`
+- `edit`
+- `apply_patch`
+- `git_add`
+
+Protected path detection is based on:
+
+- the current workspace root, such as `.git/config` and `.git/hooks/**`
+- LocalSpace config roots, such as `stateDir`, `agentDir`, and `worktreeRoot`
+- the current user's home directory root from `os.homedir()`
+- operating system roots and system directories for the current platform
+- secret-like filenames such as `.env`, `.env.*`, `auth.json`, `.npmrc`,
+  `.pypirc`, private key extensions, and names containing `secret`, `token`, or
+  `credential`
+
+This protection is intentionally separate from the filesystem allowlist. The
+allowlist decides what a workspace may open; sensitive path protection decides
+which paths should not be modified or staged automatically inside an allowed
+workspace.
+
 ## Worktrees
 
 Managed worktrees reduce accidental edits to your active checkout, but they are

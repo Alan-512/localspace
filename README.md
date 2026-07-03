@@ -103,6 +103,7 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`write_stdin`**: Interact or poll running terminal processes.
 - `exec_command` adds non-blocking safety warnings for risky commands such as recursive deletion, force push, deploy/publish, elevated privileges, and shell file writes.
 - `exec_command` blocks high-risk `danger` commands until a one-time approval token is supplied after explicit user confirmation.
+- Write-like tools block generic sensitive paths such as `.env`, `.git/config`, `.git/hooks/**`, secret/token/private-key-like files, LocalSpace state directories, and platform system directories.
 - **`changes`**: Review current Git changes as plain text without requiring widget mode.
 - **`git_status`**, **`git_diff`**, **`git_add`**, **`git_commit`**, **`git_log`**: Dedicated Git workflow tools using fixed Git arguments.
 
