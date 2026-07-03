@@ -65,9 +65,9 @@ MCP clients discover metadata from:
 | Value | Behavior |
 | --- | --- |
 | `minimal` | Exposes `open_workspace`, `doctor`, `workspace_info`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
-| `full` | Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `project_map`, `symbols`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
+| `full` | Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
 | `codex` | Experimental. Exposes `open_workspace`, `doctor`, `workspace_info`, `read`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
-| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `read`, `project_map`, `symbols`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
+| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `read`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
 
 `LOCALSPACE_MINIMAL_TOOLS` remains a backward-compatible alias when
 `LOCALSPACE_TOOL_MODE` is unset: `1` selects `minimal` and `0` selects `full`.
@@ -86,6 +86,10 @@ and skips large/generated folders such as `.git`, `node_modules`, `dist`,
 `symbols` scans TypeScript and JavaScript files for top-level declarations and
 class methods. It reports file paths, line numbers, symbol kinds, symbol names,
 and export status. It supports name and kind filters plus result/file limits.
+
+`imports` scans TypeScript and JavaScript files for imports, dynamic imports,
+re-exports, and exported declarations. `references` scans TypeScript and
+JavaScript AST identifiers to find usage sites for a symbol name.
 
 `doctor` reports LocalSpace configuration and runtime diagnostics, including
 tool mode, widget mode, roots, state directories, Node/npm/Git availability, and

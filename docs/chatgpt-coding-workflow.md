@@ -24,6 +24,9 @@ or `ls`.
 For TypeScript or JavaScript projects, call `symbols` to locate declarations by
 name or kind before opening large files.
 
+Use `imports` to inspect file dependencies and export surfaces. Use `references`
+before changing a symbol to estimate where that identifier is used.
+
 Call `workspace_info` when you need the current branch, Git cleanliness, recent
 commits, and package scripts. Call `doctor` when commands, Git, shell selection,
 or LocalSpace connectivity behave unexpectedly.
@@ -172,6 +175,18 @@ It supports:
 The scan skips generated or dependency folders such as `.git`, `node_modules`,
 `dist`, `build`, `.next`, `.turbo`, `.cache`, `coverage`, `.localspace`, and
 `.devspace`.
+
+## Imports and References
+
+Use `imports` to scan TypeScript and JavaScript files for static imports,
+dynamic imports, re-exports, and exported declarations. It reports
+workspace-relative file paths, line numbers, imported/exported names, and module
+specifiers.
+
+Use `references` to find identifier references before editing a function, class,
+variable, or exported API. By default it excludes definitions so the result
+focuses on usage sites. Set `includeDefinitions: true` when you also need the
+declaration sites.
 
 ## Diagnostics
 

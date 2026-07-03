@@ -17,8 +17,8 @@ export const MAX_SYMBOL_MAX_RESULTS = 2_000;
 export const DEFAULT_SYMBOL_MAX_FILES = 500;
 export const MAX_SYMBOL_MAX_FILES = 5_000;
 
-const SYMBOL_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
-const SKIPPED_SYMBOL_DIRS = new Set([
+export const SYMBOL_EXTENSIONS = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
+export const SKIPPED_SYMBOL_DIRS = new Set([
   ".git",
   ".hg",
   ".svn",
@@ -83,7 +83,7 @@ function normalizeOptions(options: SymbolSearchOptions): NormalizedSymbolSearchO
   };
 }
 
-async function collectSourceFiles(startPath: string, maxFiles: number): Promise<string[]> {
+export async function collectSourceFiles(startPath: string, maxFiles: number): Promise<string[]> {
   const files: string[] = [];
   const startStat = await stat(startPath);
   if (startStat.isFile()) {
@@ -237,7 +237,7 @@ function formatSymbols(
   return lines.join("\n");
 }
 
-function isSourceFile(path: string): boolean {
+export function isSourceFile(path: string): boolean {
   const lower = path.toLowerCase();
   for (const extension of SYMBOL_EXTENSIONS) {
     if (lower.endsWith(extension)) return true;
@@ -245,12 +245,12 @@ function isSourceFile(path: string): boolean {
   return false;
 }
 
-function formatRelativePath(workspaceRoot: string, path: string): string {
+export function formatRelativePath(workspaceRoot: string, path: string): string {
   const rel = relative(workspaceRoot, path);
   return rel.split(sep).join("/");
 }
 
-function assertInsideRoot(workspaceRoot: string, targetPath: string): void {
+export function assertInsideRoot(workspaceRoot: string, targetPath: string): void {
   const rel = relative(workspaceRoot, targetPath);
   if (rel === "" || (!rel.startsWith("..") && rel !== ".." && !rel.includes(`..${sep}`))) return;
   throw new Error(`Path is outside workspace root: ${targetPath}`);
