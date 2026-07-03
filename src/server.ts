@@ -18,6 +18,7 @@ import express from "express";
 import type { Request, Response } from "express";
 import * as z from "zod/v4";
 import { applyPatch } from "./apply-patch.js";
+import { CommandApprovalManager } from "./command-approval.js";
 import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
 import {
   logEvent,
@@ -697,6 +698,12 @@ function processOutputSchema(): z.ZodRawShape {
     signal: z.string().optional(),
     wallTimeMs: z.number().nonnegative(),
     outputTruncated: z.boolean(),
+    blocked: z.boolean().optional(),
+    approvalRequired: z.boolean().optional(),
+    approvalToken: z.string().optional(),
+    approvalTokenExpiresAt: z.string().optional(),
+    approvalFailureReason: z.enum(["missing", "not_found", "expired", "mismatch"]).optional(),
+    commandApproved: z.boolean().optional(),
     commandRisk: z.enum(["none", "notice", "warning", "danger"]).optional(),
     commandSafetyFindings: z
       .array(z.object({
@@ -706,6 +713,62 @@ function processOutputSchema(): z.ZodRawShape {
       }))
       .optional(),
   });
+}
+
+function blockedCommandResult(
+  workspaceId: string,
+  command: string,
+  workingDirectory: string,
+  safety: CommandSafetyAnalysis,
+  approval: ReturnType<CommandApprovalManager["create"]>,
+  approvalResult: ReturnType<CommandApprovalManager["consume"]>,
+) {
+  const warning = formatCommandSafetyWarning(safety);
+  const result = [
+    "Command blocked: high-risk command requires approval.",
+    "",
+    warning,
+    "",
+    `Approval token: ${approval.token}`,
+    `Expires at: ${approval.expiresAt}`,
+    "",
+    "Run the exact same command with this approvalToken only after the user explicitly confirms.",
+  ].filter(Boolean).join("\n");
+  const content = [textBlock(result)];
+  return {
+    content,
+    _meta: {
+      tool: "exec_command",
+      card: {
+        workspaceId,
+        summary: {
+          command,
+          workingDirectory,
+          blocked: true,
+          approvalRequired: true,
+          approvalFailureReason: approvalResult.reason,
+          commandRisk: safety.level,
+          commandSafetyFindings: safety.findings.length,
+          ...textSummary(content),
+        },
+        payload: { content },
+      },
+    },
+    structuredContent: {
+      result,
+      running: false,
+      wallTimeMs: 0,
+      outputTruncated: false,
+      blocked: true,
+      approvalRequired: true,
+      approvalToken: approval.token,
+      approvalTokenExpiresAt: approval.expiresAt,
+      approvalFailureReason: approvalResult.reason,
+      commandApproved: false,
+      commandRisk: safety.level,
+      commandSafetyFindings: safety.findings,
+    },
+  };
 }
 
 function processToolResponse(
@@ -743,6 +806,7 @@ function processToolResponse(
       signal: snapshot.signal,
       wallTimeMs: snapshot.wallTimeMs,
       outputTruncated: snapshot.outputTruncated,
+      commandApproved: typeof summary.commandApproved === "boolean" ? summary.commandApproved : undefined,
       commandRisk: safety?.level,
       commandSafetyFindings: safety?.findings,
     },
@@ -755,6 +819,8 @@ function registerCodexProcessTools(
   workspaces: WorkspaceRegistry,
   processSessions: ProcessSessionManager,
 ): void {
+  const approvals = new CommandApprovalManager();
+
   registerAppTool(
     server,
     "exec_command",
@@ -789,16 +855,39 @@ function registerCodexProcessTools(
           .max(100_000)
           .optional()
           .describe("Approximate output token budget. Defaults to 10000."),
+        approvalToken: z
+          .string()
+          .optional()
+          .describe("One-time approval token returned by a previously blocked high-risk command."),
       },
       outputSchema: processOutputSchema(),
       ...toolWidgetDescriptorMeta(config, "shell"),
       annotations: SHELL_TOOL_ANNOTATIONS,
     },
-    async ({ workspaceId, cmd, tty, columns, rows, workingDirectory, yieldTimeMs, maxOutputTokens }) => {
+    async ({ workspaceId, cmd, tty, columns, rows, workingDirectory, yieldTimeMs, maxOutputTokens, approvalToken }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const cwd = workspaces.resolveWorkingDirectory(workspace, workingDirectory);
       const safety = analyzeCommandSafety(cmd);
+      const approvalContext = { workspaceId, cwd, command: cmd, safety };
+      const approval = safety.level === "danger"
+        ? approvals.consume(approvalToken, approvalContext)
+        : { approved: true };
+
+      if (safety.level === "danger" && !approval.approved) {
+        const request = approvals.create(approvalContext);
+        logToolCall(config, {
+          tool: "exec_command",
+          workspaceId,
+          workingDirectory: workingDirectory ?? ".",
+          command: cmd,
+          commandLength: cmd.length,
+          success: false,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        return blockedCommandResult(workspaceId, cmd, workingDirectory ?? ".", safety, request, approval);
+      }
+
       const snapshot = await processSessions.start({
         workspaceId,
         command: cmd,
@@ -823,6 +912,7 @@ function registerCodexProcessTools(
       return processToolResponse("exec_command", workspaceId, snapshot, {
         command: cmd,
         workingDirectory: workingDirectory ?? ".",
+        commandApproved: safety.level === "danger" ? approval.approved : undefined,
         running: snapshot.running,
         exitCode: snapshot.exitCode,
         wallTimeMs: snapshot.wallTimeMs,

@@ -215,6 +215,12 @@ status entries, and stat output. `git_status`, `git_diff`, `git_log`, `git_add`,
 and `git_commit` preserve text output while also exposing normalized fields such
 as clean state, commits, staged paths, and truncation status.
 
+High-risk shell commands are blocked before execution. When `exec_command`
+returns `blocked: true` and an `approvalToken`, ask the user to explicitly
+confirm before retrying the exact same command with that token. Approval tokens
+are one-time, time-limited, and scoped to the same workspace, working directory,
+command, and risk level.
+
 ## Diagnostics
 
 Use `doctor` to inspect the LocalSpace server environment. It reports:
