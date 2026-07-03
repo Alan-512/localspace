@@ -21,6 +21,9 @@ After opening a workspace, call `project_map` when you need a fast overview of
 the repo layout before drilling into specific files with `read`, `grep`, `glob`,
 or `ls`.
 
+For TypeScript or JavaScript projects, call `symbols` to locate declarations by
+name or kind before opening large files.
+
 Do not reopen the same folder unless:
 
 - the `workspaceId` is rejected as unknown
@@ -147,6 +150,24 @@ a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
 By default, LocalSpace uses `LOCALSPACE_TOOL_MODE=hybrid`, which combines the
 Codex-style editing and process tools with dedicated `project_map`, `grep`,
 `glob`, and `ls` inspection tools plus the plain-text `changes` review tool.
+
+## Symbol Search
+
+Use `symbols` to scan TypeScript and JavaScript files for declarations without
+building a full language-server index. It reports workspace-relative file paths,
+line numbers, symbol kinds, names, and whether the declaration is exported.
+
+It supports:
+
+- `query` for case-insensitive name filtering
+- `kind` for `class`, `function`, `interface`, `type`, `enum`, `variable`, or
+  `method`
+- `includeNonExported: false` to focus on public API symbols
+- `maxResults` and `maxFiles` to bound work on large repositories
+
+The scan skips generated or dependency folders such as `.git`, `node_modules`,
+`dist`, `build`, `.next`, `.turbo`, `.cache`, `coverage`, `.localspace`, and
+`.devspace`.
 
 ## Review Changes
 

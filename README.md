@@ -88,6 +88,7 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`open_workspace`**: Open an allowed project directory.
 - **`read`**: Direct file read/inspection.
 - **`project_map`**: Quickly view a compact project directory tree.
+- **`symbols`**: Locate TypeScript/JavaScript declarations before reading files.
 - **`apply_patch`**: Apply a Codex-style unified patch to edit files.
 - **`grep`**, **`glob`**, **`ls`**: Efficient directory and file structure inspection.
 - **`exec_command`**: Run terminal commands (compiles, tests, builds, git status, etc.).

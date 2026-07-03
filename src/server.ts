@@ -40,6 +40,7 @@ import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.
 import { getGitChanges } from "./git-changes.js";
 import { gitAdd, gitCommit, gitDiff, gitLog, gitStatus } from "./git-tools.js";
 import { generateProjectMap } from "./project-map.js";
+import { findSymbols } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
@@ -151,6 +152,7 @@ const toolNames = {
   glob: "glob",
   ls: "ls",
   projectMap: "project_map",
+  symbols: "symbols",
   changes: "changes",
   gitStatus: "git_status",
   gitDiff: "git_diff",
@@ -183,12 +185,12 @@ function serverInstructions(config: ServerConfig): string {
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
+    : `Prefer ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -994,6 +996,91 @@ function createMcpServer(
                 maxEntries: maxEntries ?? 300,
                 includeFiles: includeFiles ?? true,
                 showHidden: showHidden ?? false,
+                ...textSummary(content),
+              },
+              payload: { content },
+            },
+          },
+          structuredContent: {
+            result,
+          },
+        };
+      },
+    );
+
+    registerAppTool(
+      server,
+      toolNames.symbols,
+      {
+        title: "Symbols",
+        description:
+          "List TypeScript and JavaScript declarations under an open workspace path. Use this to locate functions, classes, interfaces, types, enums, variables, and class methods before reading files.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          path: z
+            .string()
+            .optional()
+            .describe("File or directory path relative to the workspace root. Defaults to '.'."),
+          query: z.string().optional().describe("Optional case-insensitive name substring filter."),
+          kind: z
+            .enum(["class", "function", "interface", "type", "enum", "variable", "method"])
+            .optional()
+            .describe("Optional symbol kind filter."),
+          includeNonExported: z.boolean().optional().describe("Whether to include non-exported symbols. Defaults to true."),
+          maxResults: z
+            .number()
+            .int()
+            .min(1)
+            .max(2_000)
+            .optional()
+            .describe("Maximum symbols to return. Defaults to 300, max 2000."),
+          maxFiles: z
+            .number()
+            .int()
+            .min(1)
+            .max(5_000)
+            .optional()
+            .describe("Maximum source files to scan. Defaults to 500, max 5000."),
+        },
+        outputSchema: resultOutputSchema(),
+        ...toolWidgetDescriptorMeta(config, "search"),
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, path, query, kind, includeNonExported, maxResults, maxFiles }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const relativePath = path ?? ".";
+        const absolutePath = workspaces.resolvePath(workspace, relativePath);
+        const result = await findSymbols(workspace.root, absolutePath, {
+          query,
+          kind,
+          includeNonExported,
+          maxResults,
+          maxFiles,
+        });
+        const content = [textBlock(result)];
+
+        logToolCall(config, {
+          tool: toolNames.symbols,
+          workspaceId,
+          path: relativePath,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.symbols,
+            card: {
+              workspaceId,
+              path: relativePath,
+              summary: {
+                query,
+                kind,
+                includeNonExported: includeNonExported ?? true,
+                maxResults: maxResults ?? 300,
+                maxFiles: maxFiles ?? 500,
                 ...textSummary(content),
               },
               payload: { content },
