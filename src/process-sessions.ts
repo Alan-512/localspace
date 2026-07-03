@@ -68,6 +68,7 @@ interface ProcessSession {
 interface ProcessSessionManagerOptions {
   maxBufferCharacters?: number;
   completedSessionTtlMs?: number;
+  shell?: string;
 }
 
 function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {
@@ -209,11 +210,13 @@ export class ProcessSessionManager {
   private readonly sessions = new Map<number, ProcessSession>();
   private readonly maxBufferCharacters: number;
   private readonly completedSessionTtlMs: number;
+  private readonly shell?: string;
   private nextSessionId = 1;
 
   constructor(options: ProcessSessionManagerOptions = {}) {
     this.maxBufferCharacters = options.maxBufferCharacters ?? DEFAULT_BUFFER_CHARACTERS;
     this.completedSessionTtlMs = options.completedSessionTtlMs ?? COMPLETED_SESSION_TTL_MS;
+    this.shell = options.shell;
   }
 
   async start(input: StartCommandInput): Promise<ProcessSnapshot> {
@@ -317,9 +320,17 @@ export class ProcessSessionManager {
   }
 
   private startPipe(session: ProcessSession, input: StartCommandInput): void {
-    const shell = resolveShellCommand(input.command);
+    const shell = resolveShellCommand(input.command, process.platform, shellEnvironment(this.shell));
     const detached = process.platform !== "win32";
-    const child = spawn(input.command, {
+    const child = this.shell
+      ? spawn(shell.executable, shell.args, {
+        cwd: input.cwd,
+        env: processEnvironment(),
+        stdio: "pipe",
+        windowsHide: true,
+        detached,
+      })
+      : spawn(input.command, {
       cwd: input.cwd,
       env: processEnvironment(),
       stdio: "pipe",
@@ -347,7 +358,7 @@ export class ProcessSessionManager {
       throw new Error("PTY support requires the optional node-pty dependency.");
     }
 
-    const shell = resolveShellCommand(input.command);
+    const shell = resolveShellCommand(input.command, process.platform, shellEnvironment(this.shell));
     let pty: import("node-pty").IPty;
     try {
       pty = nodePty.spawn(shell.executable, shell.args, {
@@ -419,4 +430,9 @@ export class ProcessSessionManager {
     if (session?.cleanupTimer) clearTimeout(session.cleanupTimer);
     this.sessions.delete(sessionId);
   }
+}
+
+function shellEnvironment(shell: string | undefined): NodeJS.ProcessEnv {
+  if (!shell) return process.env;
+  return { ...process.env, LOCALSPACE_SHELL: shell };
 }

@@ -133,6 +133,11 @@ The experimental Codex-style surface is enabled with
 - `exec_command`
 - `write_stdin`
 - `changes`
+- `git_status`
+- `git_diff`
+- `git_add`
+- `git_commit`
+- `git_log`
 
 In this mode, `write`, `edit`, `bash`, `grep`, `glob`, and `ls` are not
 registered. `exec_command` returns a process session ID when a command is still
@@ -156,6 +161,21 @@ on widget mode. It supports:
 Use this before summarizing work, committing, or asking the user to review a
 large patch.
 
+## Dedicated Git Tools
+
+Use the `git_*` tools for common repository workflow steps instead of shelling
+out through `exec_command`:
+
+- `git_status` shows branch and short status.
+- `git_diff` shows unstaged, staged, patch, or stat output.
+- `git_add` stages explicit workspace-relative paths after path validation.
+- `git_commit` commits staged changes with a message. Use it only when the user
+  asks to commit.
+- `git_log` shows recent commits.
+
+These tools use fixed `git` arguments through `execFile`; they do not accept raw
+commands and do not run through the configured shell.
+
 ## Show Changes
 
 By default, `LOCALSPACE_WIDGETS=full`.
@@ -174,6 +194,10 @@ checkpoint and advances that checkpoint after rendering the aggregate diff.
 On Windows, `exec_command` uses the platform default command shell by default.
 Portable commands such as `node`, `npm`, and `git` work directly. Bash-specific
 syntax still requires an explicit Bash or WSL invocation.
+
+Set `LOCALSPACE_SHELL` to make `exec_command` use a specific shell. Supported
+common values include `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, and
+`wsl.exe`. The dedicated `git_*` tools do not use this shell setting.
 
 ## Shell Use
 

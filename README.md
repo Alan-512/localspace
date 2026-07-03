@@ -93,6 +93,7 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`exec_command`**: Run terminal commands (compiles, tests, builds, git status, etc.).
 - **`write_stdin`**: Interact or poll running terminal processes.
 - **`changes`**: Review current Git changes as plain text without requiring widget mode.
+- **`git_status`**, **`git_diff`**, **`git_add`**, **`git_commit`**, **`git_log`**: Dedicated Git workflow tools using fixed Git arguments.
 
 ### Mental Model
 
@@ -114,6 +115,9 @@ LocalSpace supports Linux, macOS, and Windows environments. On Windows,
 `exec_command` uses the platform default command shell by default. Portable
 commands such as `node`, `npm`, and `git` work directly. Bash-specific syntax
 still requires an explicit Bash or WSL invocation.
+
+Set `LOCALSPACE_SHELL` when you want `exec_command` to use a specific shell such
+as `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, or `wsl.exe`.
 
 | Platform                                          | Status            | Notes                                          |
 | ------------------------------------------------- | ----------------- | ---------------------------------------------- |

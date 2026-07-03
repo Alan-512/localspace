@@ -25,6 +25,8 @@ assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_MINIMAL_TOOLS: "1" }).toolMode,
 assert.equal(loadConfig(baseEnv).skillsEnabled, true);
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SKILLS: "0" }).skillsEnabled, false);
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SKILLS: "1" }).skillsEnabled, true);
+assert.equal(loadConfig(baseEnv).shell, undefined);
+assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SHELL: "pwsh" }).shell, "pwsh");
 
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "invalid" }),
@@ -167,3 +169,18 @@ assert.deepEqual(fileConfig.allowedHosts, [
   "::1",
   "localspace.example.com",
 ]);
+
+const shellConfigDir = mkdtempSync(join(tmpdir(), "localspace-shell-config-test-"));
+writeFileSync(
+  join(shellConfigDir, "config.json"),
+  JSON.stringify({
+    allowedRoots: [process.cwd()],
+    shell: "bash",
+  }),
+);
+writeFileSync(
+  join(shellConfigDir, "auth.json"),
+  JSON.stringify({ ownerToken: "persisted-owner-token-long-enough" }),
+);
+assert.equal(loadConfig({ LOCALSPACE_CONFIG_DIR: shellConfigDir }).shell, "bash");
+assert.equal(loadConfig({ LOCALSPACE_CONFIG_DIR: shellConfigDir, LOCALSPACE_SHELL: "pwsh" }).shell, "pwsh");

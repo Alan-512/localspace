@@ -38,6 +38,7 @@ localspace config set publicBaseUrl https://localspace.example.com
 | `LOCALSPACE_OAUTH_OWNER_TOKEN` | Owner password for OAuth approval. Must be at least 16 characters. |
 | `LOCALSPACE_WORKTREE_ROOT` | Directory for managed Git worktrees. Defaults to `~/.localspace/worktrees`. |
 | `LOCALSPACE_STATE_DIR` | Directory for SQLite state. Defaults to `~/.local/share/localspace`. |
+| `LOCALSPACE_SHELL` | Optional shell executable for `exec_command`, for example `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, or `wsl.exe`. |
 
 ## OAuth
 
@@ -64,9 +65,9 @@ MCP clients discover metadata from:
 | Value | Behavior |
 | --- | --- |
 | `minimal` | Exposes `open_workspace`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
-| `full` | Exposes the minimal tools plus dedicated `project_map`, `grep`, `glob`, `ls`, and `changes` tools. |
-| `codex` | Experimental. Exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, `write_stdin`, and `changes`. Existing mutation and shell tools are hidden. |
-| `hybrid` | Default. Exposes `open_workspace`, `read`, `project_map`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, plus dedicated `grep`, `glob`, and `ls`. |
+| `full` | Exposes the minimal tools plus dedicated `project_map`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
+| `codex` | Experimental. Exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
+| `hybrid` | Default. Exposes `open_workspace`, `read`, `project_map`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
 
 `LOCALSPACE_MINIMAL_TOOLS` remains a backward-compatible alias when
 `LOCALSPACE_TOOL_MODE` is unset: `1` selects `minimal` and `0` selects `full`.
@@ -85,6 +86,31 @@ and skips large/generated folders such as `.git`, `node_modules`, `dist`,
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
 does not require `LOCALSPACE_WIDGETS=changes`.
+
+Dedicated Git tools are exposed in `full`, `codex`, and `hybrid` modes:
+
+- `git_status`
+- `git_diff`
+- `git_add`
+- `git_commit`
+- `git_log`
+
+They use fixed `git` arguments through `execFile` and do not use `LOCALSPACE_SHELL`.
+`git_commit` should only be used when the user asks to commit.
+
+## Shell Selection
+
+By default, `exec_command` uses `cmd.exe` on Windows and a POSIX shell on Linux
+or macOS. Set `LOCALSPACE_SHELL` to force a specific shell:
+
+```bash
+LOCALSPACE_SHELL="pwsh" localspace serve
+LOCALSPACE_SHELL="C:/Program Files/Git/bin/bash.exe" localspace serve
+LOCALSPACE_SHELL="wsl.exe" localspace serve
+```
+
+LocalSpace automatically chooses shell flags for common shells: `cmd`,
+PowerShell, `pwsh`, POSIX shells, Git Bash, and WSL.
 
 ## Widgets
 
@@ -147,6 +173,7 @@ LOCALSPACE_OAUTH_OWNER_TOKEN="$(openssl rand -base64 32)" \
 LOCALSPACE_ALLOWED_ROOTS="$HOME/personal,$HOME/work" \
 LOCALSPACE_PUBLIC_BASE_URL="https://localspace.example.com" \
 LOCALSPACE_WORKTREE_ROOT="$HOME/.localspace/worktrees" \
+LOCALSPACE_SHELL="pwsh" \
 LOCALSPACE_TOOL_MODE="hybrid" \
 LOCALSPACE_WIDGETS="full" \
 localspace serve

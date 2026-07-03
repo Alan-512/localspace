@@ -38,6 +38,7 @@ import {
 import { SingleUserOAuthProvider } from "./oauth-provider.js";
 import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.js";
 import { getGitChanges } from "./git-changes.js";
+import { gitAdd, gitCommit, gitDiff, gitLog, gitStatus } from "./git-tools.js";
 import { generateProjectMap } from "./project-map.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { formatPathForPrompt } from "./skills.js";
@@ -151,6 +152,11 @@ const toolNames = {
   ls: "ls",
   projectMap: "project_map",
   changes: "changes",
+  gitStatus: "git_status",
+  gitDiff: "git_diff",
+  gitAdd: "git_add",
+  gitCommit: "git_commit",
+  gitLog: "git_log",
   shell: "bash",
 } as const;
 
@@ -173,16 +179,16 @@ function serverInstructions(config: ServerConfig): string {
       : "";
 
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, and ${toolNames.changes} to review workspace modifications before summarizing or committing. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, git inspection, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} to review workspace modifications before summarizing or committing. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} to review workspace modifications before summarizing or committing. `;
+    : `Prefer ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -1362,6 +1368,272 @@ function createMcpServer(
         };
       },
     );
+
+    registerAppTool(
+      server,
+      toolNames.gitStatus,
+      {
+        title: "Git status",
+        description:
+          "Show Git branch and workspace status for an open workspace. Uses fixed git arguments and does not run through a shell.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          maxOutputChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(100_000)
+            .optional()
+            .describe("Maximum output characters. Defaults to 20000, max 100000."),
+        },
+        outputSchema: resultOutputSchema(),
+        _meta: {},
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, maxOutputChars }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const result = await gitStatus(workspace.root, { maxOutputChars });
+        const content = [textBlock(result)];
+        logToolCall(config, {
+          tool: toolNames.gitStatus,
+          workspaceId,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.gitStatus,
+            card: {
+              workspaceId,
+              summary: textSummary(content),
+              payload: { content },
+            },
+          },
+          structuredContent: { result },
+        };
+      },
+    );
+
+    registerAppTool(
+      server,
+      toolNames.gitDiff,
+      {
+        title: "Git diff",
+        description:
+          "Show Git diff output for an open workspace. Supports unstaged, staged, and stat output using fixed git arguments.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          staged: z.boolean().optional().describe("Show staged diff. Defaults to false."),
+          stat: z.boolean().optional().describe("Show diff stat instead of patch. Defaults to false."),
+          maxOutputChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(100_000)
+            .optional()
+            .describe("Maximum output characters. Defaults to 20000, max 100000."),
+        },
+        outputSchema: resultOutputSchema(),
+        _meta: {},
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, staged, stat, maxOutputChars }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const result = await gitDiff(workspace.root, { staged, stat, maxOutputChars });
+        const content = [textBlock(result)];
+        logToolCall(config, {
+          tool: toolNames.gitDiff,
+          workspaceId,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.gitDiff,
+            card: {
+              workspaceId,
+              summary: {
+                staged: staged ?? false,
+                stat: stat ?? false,
+                ...textSummary(content),
+              },
+              payload: { content },
+            },
+          },
+          structuredContent: { result },
+        };
+      },
+    );
+
+    registerAppTool(
+      server,
+      toolNames.gitAdd,
+      {
+        title: "Git add",
+        description:
+          "Stage specific workspace paths with git add. Uses fixed git arguments, validates each path stays inside the workspace, and does not run through a shell.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          paths: z.array(z.string()).min(1).describe("Workspace-relative paths to stage."),
+          maxOutputChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(100_000)
+            .optional()
+            .describe("Maximum output characters. Defaults to 20000, max 100000."),
+        },
+        outputSchema: resultOutputSchema(),
+        _meta: {},
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ workspaceId, paths, maxOutputChars }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        for (const path of paths) workspaces.resolvePath(workspace, path);
+        const result = await gitAdd(workspace.root, paths, { maxOutputChars });
+        const content = [textBlock(result)];
+        logToolCall(config, {
+          tool: toolNames.gitAdd,
+          workspaceId,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.gitAdd,
+            card: {
+              workspaceId,
+              summary: {
+                paths: paths.length,
+                ...textSummary(content),
+              },
+              payload: { content },
+            },
+          },
+          structuredContent: { result },
+        };
+      },
+    );
+
+    registerAppTool(
+      server,
+      toolNames.gitCommit,
+      {
+        title: "Git commit",
+        description:
+          "Commit staged changes with a message. Use only after the user explicitly asks to commit. Uses fixed git arguments and does not run through a shell.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          message: z.string().min(1).describe("Commit message."),
+          maxOutputChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(100_000)
+            .optional()
+            .describe("Maximum output characters. Defaults to 20000, max 100000."),
+        },
+        outputSchema: resultOutputSchema(),
+        _meta: {},
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      async ({ workspaceId, message, maxOutputChars }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const result = await gitCommit(workspace.root, { message, maxOutputChars });
+        const content = [textBlock(result)];
+        logToolCall(config, {
+          tool: toolNames.gitCommit,
+          workspaceId,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.gitCommit,
+            card: {
+              workspaceId,
+              summary: textSummary(content),
+              payload: { content },
+            },
+          },
+          structuredContent: { result },
+        };
+      },
+    );
+
+    registerAppTool(
+      server,
+      toolNames.gitLog,
+      {
+        title: "Git log",
+        description:
+          "Show recent Git commits for an open workspace using fixed git arguments.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          limit: z.number().int().min(1).max(100).optional().describe("Number of commits. Defaults to 10, max 100."),
+          maxOutputChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(100_000)
+            .optional()
+            .describe("Maximum output characters. Defaults to 20000, max 100000."),
+        },
+        outputSchema: resultOutputSchema(),
+        _meta: {},
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, limit, maxOutputChars }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const result = await gitLog(workspace.root, { limit, maxOutputChars });
+        const content = [textBlock(result)];
+        logToolCall(config, {
+          tool: toolNames.gitLog,
+          workspaceId,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.gitLog,
+            card: {
+              workspaceId,
+              summary: {
+                limit: limit ?? 10,
+                ...textSummary(content),
+              },
+              payload: { content },
+            },
+          },
+          structuredContent: { result },
+        };
+      },
+    );
   }
 
   if (config.toolMode === "full" || config.toolMode === "hybrid") {
@@ -1694,7 +1966,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const workspaceStore = createWorkspaceStore(config.stateDir);
   const workspaces = new WorkspaceRegistry(config, workspaceStore);
   const reviewCheckpoints = createReviewCheckpointManager();
-  const processSessions = new ProcessSessionManager();
+  const processSessions = new ProcessSessionManager({ shell: config.shell });
 
   if (config.logging.trustProxy) {
     app.set("trust proxy", true);

@@ -37,6 +37,9 @@ export function resolveShellCommand(
   platform: NodeJS.Platform = process.platform,
   environment: NodeJS.ProcessEnv = process.env,
 ): ShellCommand {
+  const localspaceShell = environment.LOCALSPACE_SHELL?.trim();
+  if (localspaceShell) return resolveConfiguredShellCommand(command, localspaceShell, platform);
+
   if (platform === "win32") {
     return {
       executable: environment.ComSpec ?? environment.COMSPEC ?? "cmd.exe",
@@ -54,6 +57,47 @@ export function resolveShellCommand(
   }
 
   return { executable: "/bin/sh", args: ["-c", command] };
+}
+
+function resolveConfiguredShellCommand(
+  command: string,
+  shell: string,
+  platform: NodeJS.Platform,
+): ShellCommand {
+  const shellName = basename(shell).toLowerCase();
+
+  if (shellName === "cmd" || shellName === "cmd.exe") {
+    return { executable: shell, args: ["/d", "/s", "/c", command] };
+  }
+
+  if (shellName === "powershell" || shellName === "powershell.exe") {
+    return {
+      executable: shell,
+      args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    };
+  }
+
+  if (shellName === "pwsh" || shellName === "pwsh.exe") {
+    return { executable: shell, args: ["-NoLogo", "-NoProfile", "-Command", command] };
+  }
+
+  if (shellName === "wsl" || shellName === "wsl.exe") {
+    return { executable: shell, args: ["bash", "-lc", command] };
+  }
+
+  if (LOGIN_SHELLS.has(shellName) || shellName === "bash.exe") {
+    return { executable: shell, args: ["-lc", command] };
+  }
+
+  if (POSIX_SHELLS.has(shellName) || shellName === "sh.exe") {
+    return { executable: shell, args: ["-c", command] };
+  }
+
+  if (platform === "win32") {
+    return { executable: shell, args: ["/d", "/s", "/c", command] };
+  }
+
+  return { executable: shell, args: ["-c", command] };
 }
 
 export function terminateProcessTree(

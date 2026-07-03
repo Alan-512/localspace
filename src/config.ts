@@ -25,6 +25,7 @@ export interface ServerConfig {
   skillsEnabled: boolean;
   skillPaths: string[];
   agentDir: string;
+  shell?: string;
   logging: LoggingConfig;
 }
 
@@ -111,6 +112,12 @@ function parsePathList(value: string | undefined): string[] {
       .map((entry) => entry.trim())
       .filter(Boolean) ?? []
   );
+}
+
+function parseOptionalPath(value: string | undefined): string | undefined {
+  const path = value?.trim();
+  if (!path) return undefined;
+  return expandHomePath(path);
 }
 
 function parseStringList(value: string | undefined, fallback: string[]): string[] {
@@ -237,6 +244,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     skillsEnabled: env.LOCALSPACE_SKILLS === undefined ? true : parseBoolean(env.LOCALSPACE_SKILLS),
     skillPaths: parsePathList(env.LOCALSPACE_SKILL_PATHS),
     agentDir: resolve(expandHomePath(env.LOCALSPACE_AGENT_DIR ?? files.config.agentDir ?? defaultAgentDir())),
+    shell: parseOptionalPath(env.LOCALSPACE_SHELL ?? files.config.shell),
     logging: parseLoggingConfig(env),
   };
 }

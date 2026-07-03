@@ -18,6 +18,7 @@ export interface LocalspaceUserConfig {
   stateDir?: string;
   worktreeRoot?: string;
   agentDir?: string;
+  shell?: string;
 }
 
 export interface LocalspaceAuthConfig {

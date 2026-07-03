@@ -21,6 +21,26 @@ assert.deepEqual(resolveShellCommand("echo ok", "linux", { SHELL: "/usr/bin/fish
   args: ["-c", "echo ok"],
 });
 
+assert.deepEqual(resolveShellCommand("echo ok", "win32", { LOCALSPACE_SHELL: "pwsh" }), {
+  executable: "pwsh",
+  args: ["-NoLogo", "-NoProfile", "-Command", "echo ok"],
+});
+
+assert.deepEqual(resolveShellCommand("echo ok", "win32", { LOCALSPACE_SHELL: "powershell.exe" }), {
+  executable: "powershell.exe",
+  args: ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "echo ok"],
+});
+
+assert.deepEqual(resolveShellCommand("echo ok", "win32", { LOCALSPACE_SHELL: "wsl.exe" }), {
+  executable: "wsl.exe",
+  args: ["bash", "-lc", "echo ok"],
+});
+
+assert.deepEqual(resolveShellCommand("echo ok", "linux", { LOCALSPACE_SHELL: "/bin/bash" }), {
+  executable: "/bin/bash",
+  args: ["-lc", "echo ok"],
+});
+
 const windowsCalls: string[] = [];
 terminateProcessTree(
   { pid: 42, kill: (signal) => (windowsCalls.push(`child:${signal}`), true) },
