@@ -17,6 +17,10 @@ ChatGPT should call `open_workspace` once for a project folder:
 The result includes a `workspaceId`. All later file, search, edit, show-changes,
 and shell calls should reuse that same `workspaceId`.
 
+After opening a workspace, call `project_map` when you need a fast overview of
+the repo layout before drilling into specific files with `read`, `grep`, `glob`,
+or `ls`.
+
 Do not reopen the same folder unless:
 
 - the `workspaceId` is rejected as unknown
@@ -117,6 +121,8 @@ command-line tools such as `rg`, `find`, and `ls` for search and directory
 inspection.
 
 Use `LOCALSPACE_TOOL_MODE=full` to restore dedicated search and directory tools.
+Full mode also exposes `project_map` for compact directory-tree inspection and
+`changes` for plain-text Git change review.
 
 The experimental Codex-style surface is enabled with
 `LOCALSPACE_TOOL_MODE=codex`. It exposes:
@@ -126,6 +132,7 @@ The experimental Codex-style surface is enabled with
 - `apply_patch`
 - `exec_command`
 - `write_stdin`
+- `changes`
 
 In this mode, `write`, `edit`, `bash`, `grep`, `glob`, and `ls` are not
 registered. `exec_command` returns a process session ID when a command is still
@@ -133,7 +140,21 @@ running after its yield window. Use `write_stdin` to poll it, send input, resize
 a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
 
 By default, LocalSpace uses `LOCALSPACE_TOOL_MODE=hybrid`, which combines the
-Codex-style editing and process tools with dedicated `grep`, `glob`, and `ls`.
+Codex-style editing and process tools with dedicated `project_map`, `grep`,
+`glob`, and `ls` inspection tools plus the plain-text `changes` review tool.
+
+## Review Changes
+
+Use `changes` to inspect the workspace's current Git changes without depending
+on widget mode. It supports:
+
+- `mode: "summary"` for branch, changed paths, untracked files, and diff stat
+- `mode: "stat"` for `git diff --stat`
+- `mode: "patch"` for patch text
+- `staged: true` to inspect staged changes
+
+Use this before summarizing work, committing, or asking the user to review a
+large patch.
 
 ## Show Changes
 

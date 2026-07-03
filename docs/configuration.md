@@ -64,9 +64,9 @@ MCP clients discover metadata from:
 | Value | Behavior |
 | --- | --- |
 | `minimal` | Exposes `open_workspace`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
-| `full` | Exposes the minimal tools plus dedicated `grep`, `glob`, and `ls` tools. |
-| `codex` | Experimental. Exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`. Existing mutation and shell tools are hidden. |
-| `hybrid` | Default. Exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, `write_stdin`, plus dedicated `grep`, `glob`, and `ls`. |
+| `full` | Exposes the minimal tools plus dedicated `project_map`, `grep`, `glob`, `ls`, and `changes` tools. |
+| `codex` | Experimental. Exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, `write_stdin`, and `changes`. Existing mutation and shell tools are hidden. |
+| `hybrid` | Default. Exposes `open_workspace`, `read`, `project_map`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, plus dedicated `grep`, `glob`, and `ls`. |
 
 `LOCALSPACE_MINIMAL_TOOLS` remains a backward-compatible alias when
 `LOCALSPACE_TOOL_MODE` is unset: `1` selects `minimal` and `0` selects `full`.
@@ -76,6 +76,15 @@ Codex-mode commands run without a PTY by default. Set `tty: true` on
 `exec_command` for interactive terminal programs. PTY support uses the optional
 `node-pty` dependency; `write_stdin` can send input, poll output, and resize PTY
 sessions.
+
+`project_map` renders a compact directory tree for an open workspace. It defaults
+to `depth: 3`, `maxEntries: 300`, `includeFiles: true`, and `showHidden: false`,
+and skips large/generated folders such as `.git`, `node_modules`, `dist`,
+`build`, `.next`, `.turbo`, `.cache`, `coverage`, `.localspace`, and `.devspace`.
+
+`changes` renders current Git changes as plain text. It supports `summary`,
+`stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
+does not require `LOCALSPACE_WIDGETS=changes`.
 
 ## Widgets
 

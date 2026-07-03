@@ -37,6 +37,8 @@ import {
 } from "./pi-tools.js";
 import { SingleUserOAuthProvider } from "./oauth-provider.js";
 import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.js";
+import { getGitChanges } from "./git-changes.js";
+import { generateProjectMap } from "./project-map.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
@@ -147,6 +149,8 @@ const toolNames = {
   grep: "grep",
   glob: "glob",
   ls: "ls",
+  projectMap: "project_map",
+  changes: "changes",
   shell: "bash",
 } as const;
 
@@ -169,16 +173,16 @@ function serverInstructions(config: ServerConfig): string {
       : "";
 
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, and ${toolNames.changes} to review workspace modifications before summarizing or committing. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for direct file reads and inspection. Use apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, and write_stdin to poll or interact with running processes. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, git inspection, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} to review workspace modifications before summarizing or committing. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. `;
+    : `Prefer ${toolNames.projectMap}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} to review workspace modifications before summarizing or committing. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -913,6 +917,90 @@ function createMcpServer(
     },
   );
 
+  if (config.toolMode === "full" || config.toolMode === "hybrid") {
+    registerAppTool(
+      server,
+      toolNames.projectMap,
+      {
+        title: "Project map",
+        description:
+          "Show a compact directory tree for an open workspace. Use this after open_workspace to quickly understand project structure before repeated ls/glob calls.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          path: z
+            .string()
+            .optional()
+            .describe("Directory path relative to the workspace root. Defaults to '.'."),
+          depth: z
+            .number()
+            .int()
+            .min(0)
+            .max(8)
+            .optional()
+            .describe("Directory depth to render. Defaults to 3, max 8."),
+          maxEntries: z
+            .number()
+            .int()
+            .min(1)
+            .max(2_000)
+            .optional()
+            .describe("Maximum entries to render. Defaults to 300, max 2000."),
+          includeFiles: z.boolean().optional().describe("Whether to include files. Defaults to true."),
+          showHidden: z
+            .boolean()
+            .optional()
+            .describe("Whether to show hidden files and directories. Defaults to false."),
+        },
+        outputSchema: resultOutputSchema(),
+        ...toolWidgetDescriptorMeta(config, "directory"),
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, path, depth, maxEntries, includeFiles, showHidden }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const relativePath = path ?? ".";
+        const absolutePath = workspaces.resolvePath(workspace, relativePath);
+        const result = await generateProjectMap(workspace.root, absolutePath, {
+          depth,
+          maxEntries,
+          includeFiles,
+          showHidden,
+        });
+        const content = [textBlock(result)];
+
+        logToolCall(config, {
+          tool: toolNames.projectMap,
+          workspaceId,
+          path: relativePath,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.projectMap,
+            card: {
+              workspaceId,
+              path: relativePath,
+              summary: {
+                depth: depth ?? 3,
+                maxEntries: maxEntries ?? 300,
+                includeFiles: includeFiles ?? true,
+                showHidden: showHidden ?? false,
+                ...textSummary(content),
+              },
+              payload: { content },
+            },
+          },
+          structuredContent: {
+            result,
+          },
+        };
+      },
+    );
+  }
+
   if (config.toolMode !== "codex" && config.toolMode !== "hybrid") {
   registerAppTool(
     server,
@@ -1203,6 +1291,73 @@ function createMcpServer(
           },
           structuredContent: {
             result: contentText(content),
+          },
+        };
+      },
+    );
+  }
+
+  if (config.toolMode === "codex" || config.toolMode === "hybrid" || config.toolMode === "full") {
+    registerAppTool(
+      server,
+      toolNames.changes,
+      {
+        title: "Changes",
+        description:
+          "Show current Git changes for an open workspace as plain text. Use this to review modifications before summarizing or committing. Does not require widget mode.",
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          mode: z
+            .enum(["summary", "stat", "patch"])
+            .optional()
+            .describe("Output mode. Defaults to summary."),
+          staged: z.boolean().optional().describe("Show staged changes. Defaults to false."),
+          maxOutputChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(100_000)
+            .optional()
+            .describe("Maximum output characters. Defaults to 20000, max 100000."),
+        },
+        outputSchema: resultOutputSchema(),
+        _meta: {},
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, mode, staged, maxOutputChars }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const result = await getGitChanges(workspace.root, {
+          mode,
+          staged,
+          maxOutputChars,
+        });
+        const content = [textBlock(result)];
+
+        logToolCall(config, {
+          tool: toolNames.changes,
+          workspaceId,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+
+        return {
+          content,
+          _meta: {
+            tool: toolNames.changes,
+            card: {
+              workspaceId,
+              summary: {
+                mode: mode ?? "summary",
+                staged: staged ?? false,
+                maxOutputChars: maxOutputChars ?? 20_000,
+                ...textSummary(content),
+              },
+              payload: { content },
+            },
+          },
+          structuredContent: {
+            result,
           },
         };
       },
