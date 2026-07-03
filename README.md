@@ -89,6 +89,9 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`doctor`**: Check LocalSpace runtime, config, shell, Git, Node, npm, and workspace diagnostics.
 - **`workspace_info`**: Summarize workspace root, Git status, recent commits, and package scripts.
 - **`session_summary`**: Summarize recent LocalSpace tool activity, commands, touched paths, blocked events, and approvals.
+- **`next_steps`**: Recommend the next coding workflow actions from workspace state and recent activity.
+- **`validate_plan`**: Recommend validation commands from package scripts without running them.
+- **`review_checklist`**: Show a pre-summary or pre-commit checklist based on Git state and validation scripts.
 - Workspace and Git tools return structured status data alongside text output.
 - **`entrypoints`**: Identify package entrypoints, likely source entry files, config files, and verification scripts.
 - **`read`**: Direct file read/inspection.

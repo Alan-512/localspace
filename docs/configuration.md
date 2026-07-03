@@ -131,6 +131,11 @@ defaulting to `audit.jsonl` under the LocalSpace state directory. Use
 `LOCALSPACE_AUDIT_LOG=0` to disable it and
 `LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` to tune in-memory retention.
 
+Workflow helper tools are read-only. `next_steps` recommends the next action,
+`validate_plan` recommends validation commands from package scripts without
+running them, and `review_checklist` summarizes pre-summary or pre-commit checks
+from Git state and detected validation scripts.
+
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
 does not require `LOCALSPACE_WIDGETS=changes`.

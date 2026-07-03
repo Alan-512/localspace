@@ -215,6 +215,11 @@ status entries, and stat output. `git_status`, `git_diff`, `git_log`, `git_add`,
 and `git_commit` preserve text output while also exposing normalized fields such
 as clean state, commits, staged paths, and truncation status.
 
+Use `next_steps` when you are unsure what to do next, `validate_plan` before
+running verification commands, and `review_checklist` before summarizing changes
+or committing. These tools are read-only; they recommend workflow actions but do
+not run commands or modify files.
+
 High-risk shell commands are blocked before execution. When `exec_command`
 returns `blocked: true` and an `approvalToken`, ask the user to explicitly
 confirm before retrying the exact same command with that token. Approval tokens
