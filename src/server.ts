@@ -58,6 +58,7 @@ import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
+import { createTaskSummary, createValidationSummary } from "./task-summary.js";
 import { createNextSteps, createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
 
 type Transport = StreamableHTTPServerTransport;
@@ -171,6 +172,8 @@ const toolNames = {
   validatePlan: "validate_plan",
   reviewChecklist: "review_checklist",
   nextSteps: "next_steps",
+  taskSummary: "task_summary",
+  validationSummary: "validation_summary",
   entrypoints: "entrypoints",
   codeMap: "code_map",
   projectMap: "project_map",
@@ -205,16 +208,16 @@ function serverInstructions(config: ServerConfig): string {
       : "";
 
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} before final task summaries, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.codeMap}, ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} before final task summaries, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.codeMap}, ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.entrypoints} for project entrypoints and verification scripts, ${toolNames.codeMap} for a combined project overview, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
+    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} before final task summaries, ${toolNames.entrypoints} for project entrypoints and verification scripts, ${toolNames.codeMap} for a combined project overview, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -441,6 +444,44 @@ const nextStepOutputSchema = z.object({
 
 const nextStepsOutputSchema = structuredTextOutputSchema({
   steps: z.array(nextStepOutputSchema),
+});
+
+const taskSummaryOutputSchema = structuredTextOutputSchema({
+  changedPaths: z.array(z.string()),
+  git: z.object({
+    dirty: z.boolean(),
+    staged: z.boolean(),
+    unstaged: z.boolean(),
+    untracked: z.boolean(),
+  }),
+  audit: z.object({
+    totalEvents: z.number(),
+    blockedEvents: z.number(),
+    approvedEvents: z.number(),
+    tools: z.record(z.string(), z.number()),
+  }),
+  validation: z.object({
+    recommendedCommands: z.array(z.string()),
+  }),
+  recommendedFinalResponse: z.array(z.string()),
+  warnings: z.array(z.string()),
+});
+
+const validationDetectedResultOutputSchema = z.object({
+  kind: z.enum(["typecheck", "test", "build", "lint", "smoke", "other"]),
+  command: z.string().optional(),
+  exitCode: z.number().int().optional(),
+  passed: z.boolean().optional(),
+});
+
+const validationSummaryOutputSchema = structuredTextOutputSchema({
+  commandPreviewEnabled: z.boolean(),
+  recommendedCommands: z.array(z.string()),
+  recentExecCommands: z.number(),
+  recentFailures: z.number(),
+  recentSuccesses: z.number(),
+  detectedResults: z.array(validationDetectedResultOutputSchema),
+  notes: z.array(z.string()),
 });
 
 const changesGroupOutputSchema = z.object({
@@ -2106,6 +2147,90 @@ function createMcpServer(
         content,
         _meta: {
           tool: toolNames.nextSteps,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result: data.text, ...data },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    toolNames.taskSummary,
+    {
+      title: "Task summary",
+      description: "Summarize changed paths, Git state, recent audit activity, recommended validation, warnings, and final-response guidance for the current task.",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+      },
+      outputSchema: taskSummaryOutputSchema,
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const audit = auditLog.summarize({ workspaceId, limit: 100 });
+      const data = await createTaskSummary(workspace.root, audit);
+      const content = [textBlock(data.text)];
+
+      logToolCall(config, {
+        tool: toolNames.taskSummary,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.taskSummary,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result: data.text, ...data },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    toolNames.validationSummary,
+    {
+      title: "Validation summary",
+      description: "Summarize recent validation-related exec_command audit events and recommended validation commands. Exact command classification requires LOCALSPACE_LOG_SHELL_COMMANDS=1.",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+      },
+      outputSchema: validationSummaryOutputSchema,
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const audit = auditLog.summarize({ workspaceId, limit: 100 });
+      const data = await createValidationSummary(workspace.root, audit);
+      const content = [textBlock(data.text)];
+
+      logToolCall(config, {
+        tool: toolNames.validationSummary,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.validationSummary,
           card: {
             workspaceId,
             summary: textSummary(content),

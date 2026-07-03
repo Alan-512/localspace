@@ -133,8 +133,11 @@ defaulting to `audit.jsonl` under the LocalSpace state directory. Use
 
 Workflow helper tools are read-only. `next_steps` recommends the next action,
 `validate_plan` recommends validation commands from package scripts without
-running them, and `review_checklist` summarizes pre-summary or pre-commit checks
-from Git state and detected validation scripts.
+running them, `review_checklist` summarizes pre-summary or pre-commit checks
+from Git state and detected validation scripts, `validation_summary` summarizes
+recent validation-related command activity, and `task_summary` summarizes changed
+paths, Git state, audit activity, validation recommendations, warnings, and
+final-response guidance.
 
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and

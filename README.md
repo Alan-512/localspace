@@ -92,6 +92,8 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`next_steps`**: Recommend the next coding workflow actions from workspace state and recent activity.
 - **`validate_plan`**: Recommend validation commands from package scripts without running them.
 - **`review_checklist`**: Show a pre-summary or pre-commit checklist based on Git state and validation scripts.
+- **`validation_summary`**: Summarize recent validation-related command activity and recommended validation commands.
+- **`task_summary`**: Summarize changed paths, Git state, audit activity, validation recommendations, and final-response guidance.
 - Workspace and Git tools return structured status data alongside text output.
 - **`entrypoints`**: Identify package entrypoints, likely source entry files, config files, and verification scripts.
 - **`read`**: Direct file read/inspection.

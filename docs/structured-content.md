@@ -30,6 +30,8 @@ Every structured tool keeps this compatibility field:
 | `next_steps` | `steps[]` |
 | `validate_plan` | `packageName`, `commands[]`, `missingScripts[]`, `notes[]` |
 | `review_checklist` | `dirty`, `staged`, `unstaged`, `untracked`, `changedPaths[]`, `checks[]`, `recommendedActions[]` |
+| `task_summary` | `changedPaths[]`, `git`, `audit`, `validation`, `recommendedFinalResponse[]`, `warnings[]` |
+| `validation_summary` | `commandPreviewEnabled`, `recommendedCommands[]`, `recentExecCommands`, `recentFailures`, `recentSuccesses`, `detectedResults[]`, `notes[]` |
 | `changes` | `isRepository`, `clean`, `mode`, `staged`, `branch`, `statusEntries[]`, `groups[]`, `stat`, `truncated` |
 | `git_status` | `isRepository`, `branch`, `clean`, `statusLines[]`, `truncated` |
 | `git_diff` | `isRepository`, `staged`, `stat`, `empty`, `truncated` |
