@@ -94,6 +94,8 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`review_checklist`**: Show a pre-summary or pre-commit checklist based on Git state and validation scripts.
 - **`validation_summary`**: Summarize recent validation-related command activity and recommended validation commands.
 - **`task_summary`**: Summarize changed paths, Git state, audit activity, validation recommendations, and final-response guidance.
+- **`final_report`**: Generate a standard task-final report from Git, validation, audit, warnings, and optional completion notes.
+- **`handoff_summary`**: Generate a Markdown handoff for continuing long tasks in a new chat/window.
 - Workspace and Git tools return structured status data alongside text output.
 - **`entrypoints`**: Identify package entrypoints, likely source entry files, config files, and verification scripts.
 - **`read`**: Direct file read/inspection.

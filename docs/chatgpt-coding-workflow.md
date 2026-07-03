@@ -218,8 +218,10 @@ as clean state, commits, staged paths, and truncation status.
 Use `next_steps` when you are unsure what to do next, `validate_plan` before
 running verification commands, `validation_summary` after validation,
 `review_checklist` before summarizing changes or committing, and `task_summary`
-before final task summaries. These tools are read-only; they recommend workflow
-actions and summarize state but do not run commands or modify files.
+or `final_report` before final task summaries. Use `handoff_summary` when a long
+conversation needs to continue in a new chat or window. These tools are
+read-only; they recommend workflow actions and summarize state but do not run
+commands or modify files.
 
 High-risk shell commands are blocked before execution. When `exec_command`
 returns `blocked: true` and an `approvalToken`, ask the user to explicitly
