@@ -46,6 +46,7 @@ import {
   type CommandSafetyAnalysis,
 } from "./command-safety.js";
 import { findImports, findReferences } from "./code-navigation.js";
+import { findEntrypoints } from "./entrypoints.js";
 import { generateProjectMap } from "./project-map.js";
 import { findSymbols } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
@@ -160,6 +161,7 @@ const toolNames = {
   ls: "ls",
   doctor: "doctor",
   workspaceInfo: "workspace_info",
+  entrypoints: "entrypoints",
   projectMap: "project_map",
   symbols: "symbols",
   imports: "imports",
@@ -192,16 +194,16 @@ function serverInstructions(config: ServerConfig): string {
       : "";
 
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
+    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.entrypoints} for project entrypoints and verification scripts, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -1031,6 +1033,47 @@ function createMcpServer(
         content,
         _meta: {
           tool: toolNames.workspaceInfo,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
+    toolNames.entrypoints,
+    {
+      title: "Entrypoints",
+      description: "Show package entrypoints, scripts, likely source entry files, suggested verification commands, and important config files for an open workspace.",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+      },
+      outputSchema: resultOutputSchema(),
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const result = await findEntrypoints(workspace.root);
+      const content = [textBlock(result)];
+
+      logToolCall(config, {
+        tool: toolNames.entrypoints,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.entrypoints,
           card: {
             workspaceId,
             summary: textSummary(content),

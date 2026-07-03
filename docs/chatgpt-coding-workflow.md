@@ -31,6 +31,10 @@ Call `workspace_info` when you need the current branch, Git cleanliness, recent
 commits, and package scripts. Call `doctor` when commands, Git, shell selection,
 or LocalSpace connectivity behave unexpectedly.
 
+Call `entrypoints` early in an unfamiliar project to identify package `main`,
+`bin`, `exports`, likely `src/*` source entry files, important config files, and
+the best verification scripts.
+
 Do not reopen the same folder unless:
 
 - the `workspaceId` is rejected as unknown
@@ -201,6 +205,11 @@ Use `doctor` to inspect the LocalSpace server environment. It reports:
 Use `workspace_info` after `open_workspace` to quickly inspect project state. It
 reports workspace root/mode, Git repository status, branch, short HEAD, dirty
 files, recent commits, and `package.json` name/version/engines/scripts.
+
+Use `entrypoints` to understand where execution begins. It reports package
+entrypoint fields, scripts, suggested verification commands, likely source entry
+files, and orientation/configuration files such as `tsconfig.json`, Vite config,
+`AGENTS.md`, and `README.md`.
 
 ## Review Changes
 
