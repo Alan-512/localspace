@@ -95,6 +95,7 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`symbols`**: Locate TypeScript/JavaScript declarations before reading files.
 - **`imports`**: Inspect TypeScript/JavaScript import and export relationships.
 - **`references`**: Find TypeScript/JavaScript identifier references before changing code.
+- Navigation tools return both plain text and structured content for model/UI consumption.
 - **`apply_patch`**: Apply a Codex-style unified patch to edit files.
 - **`grep`**, **`glob`**, **`ls`**: Efficient directory and file structure inspection.
 - **`exec_command`**: Run terminal commands (compiles, tests, builds, git status, etc.).

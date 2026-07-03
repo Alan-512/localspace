@@ -202,6 +202,12 @@ the most useful discovery tools into one response: `entrypoints`, a compact
 project tree, exported symbols, and import/export relationships. Use the
 specialized tools afterward when you need more depth.
 
+The navigation tools also return structured content in addition to plain text.
+For example, `symbols` returns `summary` and `symbols[]`; `imports` returns
+`summary` and `entries[]`; `references` returns `summary` and `references[]`;
+`entrypoints` returns package metadata, scripts, suggested verification commands,
+source entrypoints, and config files; and `code_map` aggregates those structures.
+
 ## Diagnostics
 
 Use `doctor` to inspect the LocalSpace server environment. It reports:

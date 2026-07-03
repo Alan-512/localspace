@@ -45,11 +45,11 @@ import {
   formatCommandSafetyWarning,
   type CommandSafetyAnalysis,
 } from "./command-safety.js";
-import { generateCodeMap } from "./code-map.js";
-import { findImports, findReferences } from "./code-navigation.js";
-import { findEntrypoints } from "./entrypoints.js";
+import { generateCodeMapData } from "./code-map.js";
+import { findImportsData, findReferencesData } from "./code-navigation.js";
+import { findEntrypointsData } from "./entrypoints.js";
 import { generateProjectMap } from "./project-map.js";
-import { findSymbols } from "./symbols.js";
+import { findSymbolsData } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
@@ -1062,8 +1062,8 @@ function createMcpServer(
     async ({ workspaceId }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
-      const result = await findEntrypoints(workspace.root);
-      const content = [textBlock(result)];
+      const data = await findEntrypointsData(workspace.root);
+      const content = [textBlock(data.text)];
 
       logToolCall(config, {
         tool: toolNames.entrypoints,
@@ -1082,7 +1082,7 @@ function createMcpServer(
             payload: { content },
           },
         },
-        structuredContent: { result },
+        structuredContent: { result: data.text, ...data },
       };
     },
   );
@@ -1112,14 +1112,14 @@ function createMcpServer(
         const workspace = workspaces.getWorkspace(workspaceId);
         const relativePath = path ?? ".";
         const absolutePath = workspaces.resolvePath(workspace, relativePath);
-        const result = await generateCodeMap(workspace.root, absolutePath, {
+        const data = await generateCodeMapData(workspace.root, absolutePath, {
           path: relativePath,
           depth,
           maxEntries,
           maxSymbols,
           maxImports,
         });
-        const content = [textBlock(result)];
+        const content = [textBlock(data.text)];
 
         logToolCall(config, {
           tool: toolNames.codeMap,
@@ -1146,7 +1146,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -1276,14 +1276,14 @@ function createMcpServer(
         const workspace = workspaces.getWorkspace(workspaceId);
         const relativePath = path ?? ".";
         const absolutePath = workspaces.resolvePath(workspace, relativePath);
-        const result = await findSymbols(workspace.root, absolutePath, {
+        const data = await findSymbolsData(workspace.root, absolutePath, {
           query,
           kind,
           includeNonExported,
           maxResults,
           maxFiles,
         });
-        const content = [textBlock(result)];
+        const content = [textBlock(data.text)];
 
         logToolCall(config, {
           tool: toolNames.symbols,
@@ -1311,9 +1311,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: {
-            result,
-          },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -1355,8 +1353,8 @@ function createMcpServer(
         const workspace = workspaces.getWorkspace(workspaceId);
         const relativePath = path ?? ".";
         const absolutePath = workspaces.resolvePath(workspace, relativePath);
-        const result = await findImports(workspace.root, absolutePath, { maxResults, maxFiles });
-        const content = [textBlock(result)];
+        const data = await findImportsData(workspace.root, absolutePath, { maxResults, maxFiles });
+        const content = [textBlock(data.text)];
 
         logToolCall(config, {
           tool: toolNames.imports,
@@ -1381,7 +1379,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );
@@ -1426,14 +1424,14 @@ function createMcpServer(
         const workspace = workspaces.getWorkspace(workspaceId);
         const relativePath = path ?? ".";
         const absolutePath = workspaces.resolvePath(workspace, relativePath);
-        const result = await findReferences(workspace.root, absolutePath, {
+        const data = await findReferencesData(workspace.root, absolutePath, {
           query,
           includeDefinitions,
           caseSensitive,
           maxResults,
           maxFiles,
         });
-        const content = [textBlock(result)];
+        const content = [textBlock(data.text)];
 
         logToolCall(config, {
           tool: toolNames.references,
@@ -1461,7 +1459,7 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result },
+          structuredContent: { result: data.text, ...data },
         };
       },
     );

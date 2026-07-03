@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { findImports, findReferences } from "./code-navigation.js";
+import { findImports, findImportsData, findReferences, findReferencesData } from "./code-navigation.js";
 
 const root = await mkdtemp(join(tmpdir(), "localspace-code-navigation-test-"));
 
@@ -44,6 +44,12 @@ try {
   assert.match(imports, /src\/helper\.ts:1 export \{ helper \}/);
   assert.doesNotMatch(imports, /bad/);
 
+  const importsData = await findImportsData(root, root);
+  assert.equal(importsData.summary.filesScanned, 2);
+  assert.ok(importsData.text.includes("Files scanned: 2"));
+  assert.ok(importsData.entries.some((entry) => entry.kind === "import" && entry.module === "./helper.js"));
+  assert.ok(importsData.entries.some((entry) => entry.kind === "dynamic-import" && entry.module === "./lazy.js"));
+
   const refs = await findReferences(root, root, { query: "answer" });
   assert.match(refs, /src\/main\.ts:7:\d+ reference answer/);
   assert.doesNotMatch(refs, /definition answer/);
@@ -51,6 +57,11 @@ try {
   const defs = await findReferences(root, root, { query: "answer", includeDefinitions: true });
   assert.match(defs, /definition answer/);
   assert.match(defs, /reference answer/);
+
+  const refsData = await findReferencesData(root, root, { query: "answer", includeDefinitions: true });
+  assert.equal(refsData.summary.query, "answer");
+  assert.ok(refsData.references.some((ref) => ref.kind === "definition" && ref.name === "answer"));
+  assert.ok(refsData.references.some((ref) => ref.kind === "reference" && ref.name === "answer"));
 
   const limited = await findReferences(root, root, { query: "renamedHelper", includeDefinitions: true, maxResults: 1 });
   assert.match(limited, /Results truncated: true/);

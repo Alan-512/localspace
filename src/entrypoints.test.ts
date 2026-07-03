@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { findEntrypoints } from "./entrypoints.js";
+import { findEntrypoints, findEntrypointsData } from "./entrypoints.js";
 
 const root = await mkdtemp(join(tmpdir(), "localspace-entrypoints-test-"));
 
@@ -52,6 +52,14 @@ try {
   assert.match(result, /tsconfig\.json/);
   assert.match(result, /vite\.config\.ts/);
   assert.match(result, /AGENTS\.md/);
+
+  const data = await findEntrypointsData(root);
+  assert.equal(data.packageInfo?.name, "entrypoint-fixture");
+  assert.equal(data.packageInfo?.bin[0]?.path, "dist/cli.js");
+  assert.ok(data.scripts.some((script) => script.name === "typecheck"));
+  assert.deepEqual(data.suggestedVerification, ["npm run typecheck", "npm run test", "npm run build"]);
+  assert.ok(data.sourceEntrypoints.some((entry) => entry.path === "src/server.ts"));
+  assert.ok(data.configFiles.includes("vite.config.ts"));
 } finally {
   await rm(root, { recursive: true, force: true });
 }

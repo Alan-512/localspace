@@ -19,7 +19,7 @@ const MAX_NAV_MAX_FILES = 5_000;
 const DEFAULT_NAV_MAX_RESULTS = 500;
 const MAX_NAV_MAX_RESULTS = 5_000;
 
-interface ImportExportEntry {
+export interface ImportExportEntry {
   file: string;
   line: number;
   kind: "import" | "export" | "dynamic-import";
@@ -27,7 +27,7 @@ interface ImportExportEntry {
   names: string[];
 }
 
-interface ReferenceEntry {
+export interface ReferenceEntry {
   file: string;
   line: number;
   column: number;
@@ -36,11 +36,40 @@ interface ReferenceEntry {
   context: string;
 }
 
+export interface ImportSearchResult {
+  summary: {
+    filesScanned: number;
+    truncatedFiles: boolean;
+    truncatedResults: boolean;
+  };
+  entries: ImportExportEntry[];
+  text: string;
+}
+
+export interface ReferenceSearchResult {
+  summary: {
+    query: string;
+    filesScanned: number;
+    truncatedFiles: boolean;
+    truncatedResults: boolean;
+  };
+  references: ReferenceEntry[];
+  text: string;
+}
+
 export async function findImports(
   workspaceRoot: string,
   startPath: string,
   options: ImportSearchOptions = {},
 ): Promise<string> {
+  return (await findImportsData(workspaceRoot, startPath, options)).text;
+}
+
+export async function findImportsData(
+  workspaceRoot: string,
+  startPath: string,
+  options: ImportSearchOptions = {},
+): Promise<ImportSearchResult> {
   assertInsideRoot(workspaceRoot, startPath);
   const maxFiles = clampInteger(options.maxFiles, DEFAULT_NAV_MAX_FILES, 1, MAX_NAV_MAX_FILES);
   const maxResults = clampInteger(options.maxResults, DEFAULT_NAV_MAX_RESULTS, 1, MAX_NAV_MAX_RESULTS);
@@ -52,11 +81,17 @@ export async function findImports(
     if (entries.length >= maxResults) break;
   }
 
-  return formatImportExportEntries(entries.slice(0, maxResults), {
+  const limited = entries.slice(0, maxResults);
+  const summary = {
     filesScanned: files.length,
     truncatedFiles: files.length >= maxFiles,
     truncatedResults: entries.length > maxResults,
-  });
+  };
+  return {
+    summary,
+    entries: limited,
+    text: formatImportExportEntries(limited, summary),
+  };
 }
 
 export async function findReferences(
@@ -64,9 +99,23 @@ export async function findReferences(
   startPath: string,
   options: ReferenceSearchOptions,
 ): Promise<string> {
+  return (await findReferencesData(workspaceRoot, startPath, options)).text;
+}
+
+export async function findReferencesData(
+  workspaceRoot: string,
+  startPath: string,
+  options: ReferenceSearchOptions,
+): Promise<ReferenceSearchResult> {
   assertInsideRoot(workspaceRoot, startPath);
   const query = options.query.trim();
-  if (!query) return "Query is required.";
+  if (!query) {
+    return {
+      summary: { query, filesScanned: 0, truncatedFiles: false, truncatedResults: false },
+      references: [],
+      text: "Query is required.",
+    };
+  }
   const maxFiles = clampInteger(options.maxFiles, DEFAULT_NAV_MAX_FILES, 1, MAX_NAV_MAX_FILES);
   const maxResults = clampInteger(options.maxResults, DEFAULT_NAV_MAX_RESULTS, 1, MAX_NAV_MAX_RESULTS);
   const files = await collectSourceFiles(startPath, maxFiles);
@@ -81,12 +130,18 @@ export async function findReferences(
     if (references.length >= maxResults) break;
   }
 
-  return formatReferences(references.slice(0, maxResults), {
+  const limited = references.slice(0, maxResults);
+  const summary = {
     query,
     filesScanned: files.length,
     truncatedFiles: files.length >= maxFiles,
     truncatedResults: references.length > maxResults,
-  });
+  };
+  return {
+    summary,
+    references: limited,
+    text: formatReferences(limited, summary),
+  };
 }
 
 function collectImportExportEntries(workspaceRoot: string, file: string): ImportExportEntry[] {

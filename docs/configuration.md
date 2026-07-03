@@ -104,6 +104,11 @@ files, suggested verification commands, and important config/orientation files.
 `code_map` aggregates entrypoints, a compact project tree, exported symbols, and
 import/export relationships for a bounded project overview.
 
+The code navigation tools return plain text for human-readable MCP hosts and
+structured content for model or UI consumers. `symbols`, `imports`,
+`references`, `entrypoints`, and `code_map` expose typed arrays and summaries in
+their `structuredContent` payloads while preserving the `result` text field.
+
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
 does not require `LOCALSPACE_WIDGETS=changes`.

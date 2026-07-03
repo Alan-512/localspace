@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { findSymbols } from "./symbols.js";
+import { findSymbols, findSymbolsData } from "./symbols.js";
 
 const root = await mkdtemp(join(tmpdir(), "localspace-symbols-test-"));
 
@@ -36,6 +36,13 @@ try {
   assert.match(all, /src\/sample\.ts:9 class exported Service/);
   assert.match(all, /src\/sample\.ts:10 method exported Service\.run/);
   assert.doesNotMatch(all, /ignored/);
+
+  const allData = await findSymbolsData(root, root, { includeNonExported: false });
+  assert.equal(allData.summary.filesScanned, 1);
+  assert.equal(allData.summary.truncatedResults, false);
+  assert.ok(allData.text.includes("Files scanned: 1"));
+  assert.ok(allData.symbols.some((symbol) => symbol.name === "greet" && symbol.kind === "function" && symbol.exported));
+  assert.ok(allData.symbols.every((symbol) => symbol.exported));
 
   const exportedOnly = await findSymbols(root, root, { includeNonExported: false });
   assert.match(exportedOnly, /PublicType/);

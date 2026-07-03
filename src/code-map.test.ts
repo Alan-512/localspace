@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { generateCodeMap } from "./code-map.js";
+import { generateCodeMap, generateCodeMapData } from "./code-map.js";
 
 const root = await mkdtemp(join(tmpdir(), "localspace-code-map-test-"));
 
@@ -26,6 +26,13 @@ try {
   assert.match(result, /function exported createServer/);
   assert.match(result, /## Imports and exports/);
   assert.match(result, /src\/cli\.ts:1 import from \.\/server\.js/);
+
+  const data = await generateCodeMapData(root, root, { maxSymbols: 10, maxImports: 10 });
+  assert.equal(data.scope, ".");
+  assert.equal(data.entrypoints.packageInfo?.name, "code-map-fixture");
+  assert.ok(data.symbols.symbols.some((symbol) => symbol.name === "createServer"));
+  assert.ok(data.imports.entries.some((entry) => entry.module === "./server.js"));
+  assert.ok(data.text.includes("Code map"));
 } finally {
   await rm(root, { recursive: true, force: true });
 }

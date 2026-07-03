@@ -14,9 +14,29 @@ interface PackageJson {
   scripts?: Record<string, string>;
 }
 
-interface Candidate {
+export interface Candidate {
   path: string;
   reason: string;
+}
+
+export interface EntrypointPackageInfo {
+  name?: string;
+  type?: string;
+  main?: string;
+  module?: string;
+  browser?: string;
+  types?: string;
+  bin: Array<{ name: string; path: string }>;
+  exports: string[];
+}
+
+export interface EntrypointSearchResult {
+  packageInfo?: EntrypointPackageInfo;
+  scripts: Array<{ name: string; command: string }>;
+  suggestedVerification: string[];
+  sourceEntrypoints: Candidate[];
+  configFiles: string[];
+  text: string;
 }
 
 const COMMON_CONFIG_FILES = [
@@ -57,18 +77,31 @@ const COMMON_SOURCE_ENTRYPOINTS = [
 ];
 
 export async function findEntrypoints(workspaceRoot: string): Promise<string> {
+  return (await findEntrypointsData(workspaceRoot)).text;
+}
+
+export async function findEntrypointsData(workspaceRoot: string): Promise<EntrypointSearchResult> {
   const packageJson = await readPackageJson(workspaceRoot);
   const [configFiles, candidates] = await Promise.all([
     existingPaths(workspaceRoot, COMMON_CONFIG_FILES),
     collectSourceCandidates(workspaceRoot, packageJson),
   ]);
+  const result: EntrypointSearchResult = {
+    packageInfo: packageJson ? packageInfo(packageJson) : undefined,
+    scripts: orderedScripts(packageJson),
+    suggestedVerification: suggestedVerification(packageJson),
+    sourceEntrypoints: candidates,
+    configFiles,
+    text: "",
+  };
 
   const lines = ["Entrypoints", ""];
-  formatPackageSection(lines, packageJson);
-  formatScriptSection(lines, packageJson);
+  formatPackageSection(lines, result.packageInfo);
+  formatScriptSection(lines, result.scripts, result.suggestedVerification);
   formatSourceSection(lines, candidates);
   formatConfigSection(lines, configFiles);
-  return lines.join("\n");
+  result.text = lines.join("\n");
+  return result;
 }
 
 async function readPackageJson(workspaceRoot: string): Promise<PackageJson | undefined> {
@@ -79,7 +112,35 @@ async function readPackageJson(workspaceRoot: string): Promise<PackageJson | und
   }
 }
 
-function formatPackageSection(lines: string[], packageJson: PackageJson | undefined): void {
+function packageInfo(packageJson: PackageJson): EntrypointPackageInfo {
+  return {
+    name: packageJson.name,
+    type: packageJson.type,
+    main: packageJson.main,
+    module: packageJson.module,
+    browser: typeof packageJson.browser === "string" ? packageJson.browser : undefined,
+    types: packageJson.types ?? packageJson.typings,
+    bin: normalizeBin(packageJson.bin),
+    exports: formatExports(packageJson.exports),
+  };
+}
+
+function orderedScripts(packageJson: PackageJson | undefined): Array<{ name: string; command: string }> {
+  const scripts = packageJson?.scripts ?? {};
+  const names = Object.keys(scripts).sort();
+  const preferred = ["dev", "start", "build", "typecheck", "test", "lint", "clean"];
+  const ordered = [...preferred.filter((name) => scripts[name]), ...names.filter((name) => !preferred.includes(name))];
+  return ordered.map((name) => ({ name, command: scripts[name] }));
+}
+
+function suggestedVerification(packageJson: PackageJson | undefined): string[] {
+  const scripts = packageJson?.scripts ?? {};
+  return ["typecheck", "test", "build", "lint"]
+    .filter((name) => scripts[name])
+    .map((name) => `npm run ${name}`);
+}
+
+function formatPackageSection(lines: string[], packageJson: EntrypointPackageInfo | undefined): void {
   lines.push("Package:");
   if (!packageJson) {
     lines.push("- package.json: not found", "");
@@ -91,41 +152,38 @@ function formatPackageSection(lines: string[], packageJson: PackageJson | undefi
   if (packageJson.main) lines.push(`- main: ${packageJson.main}`);
   if (packageJson.module) lines.push(`- module: ${packageJson.module}`);
   if (typeof packageJson.browser === "string") lines.push(`- browser: ${packageJson.browser}`);
-  if (packageJson.types ?? packageJson.typings) lines.push(`- types: ${packageJson.types ?? packageJson.typings}`);
+  if (packageJson.types) lines.push(`- types: ${packageJson.types}`);
 
-  const bins = normalizeBin(packageJson.bin);
-  if (bins.length > 0) {
+  if (packageJson.bin.length > 0) {
     lines.push("- bin:");
-    for (const bin of bins) lines.push(`  - ${bin.name}: ${bin.path}`);
+    for (const bin of packageJson.bin) lines.push(`  - ${bin.name}: ${bin.path}`);
   }
 
-  const exports = formatExports(packageJson.exports);
-  if (exports.length > 0) {
+  if (packageJson.exports.length > 0) {
     lines.push("- exports:");
-    for (const entry of exports.slice(0, 20)) lines.push(`  - ${entry}`);
-    if (exports.length > 20) lines.push(`  - ... (${exports.length - 20} more)`);
+    for (const entry of packageJson.exports.slice(0, 20)) lines.push(`  - ${entry}`);
+    if (packageJson.exports.length > 20) lines.push(`  - ... (${packageJson.exports.length - 20} more)`);
   }
   lines.push("");
 }
 
-function formatScriptSection(lines: string[], packageJson: PackageJson | undefined): void {
+function formatScriptSection(
+  lines: string[],
+  scripts: Array<{ name: string; command: string }>,
+  verification: string[],
+): void {
   lines.push("Scripts:");
-  const scripts = packageJson?.scripts ?? {};
-  const names = Object.keys(scripts).sort();
-  if (names.length === 0) {
+  if (scripts.length === 0) {
     lines.push("- none", "");
     return;
   }
 
-  const preferred = ["dev", "start", "build", "typecheck", "test", "lint", "clean"];
-  const ordered = [...preferred.filter((name) => scripts[name]), ...names.filter((name) => !preferred.includes(name))];
-  for (const name of ordered) lines.push(`- ${name}: ${scripts[name]}`);
+  for (const script of scripts) lines.push(`- ${script.name}: ${script.command}`);
   lines.push("");
 
-  const verification = ["typecheck", "test", "build", "lint"].filter((name) => scripts[name]);
   if (verification.length > 0) {
     lines.push("Suggested verification:");
-    for (const name of verification) lines.push(`- npm run ${name}`);
+    for (const command of verification) lines.push(`- ${command}`);
     lines.push("");
   }
 }

@@ -41,7 +41,7 @@ interface NormalizedSymbolSearchOptions {
   maxFiles: number;
 }
 
-interface SymbolEntry {
+export interface SymbolEntry {
   file: string;
   line: number;
   kind: SymbolKind;
@@ -49,11 +49,31 @@ interface SymbolEntry {
   exported: boolean;
 }
 
+export interface SymbolSearchSummary {
+  filesScanned: number;
+  truncatedFiles: boolean;
+  truncatedResults: boolean;
+}
+
+export interface SymbolSearchResult {
+  summary: SymbolSearchSummary;
+  symbols: SymbolEntry[];
+  text: string;
+}
+
 export async function findSymbols(
   workspaceRoot: string,
   startPath: string,
   options: SymbolSearchOptions = {},
 ): Promise<string> {
+  return (await findSymbolsData(workspaceRoot, startPath, options)).text;
+}
+
+export async function findSymbolsData(
+  workspaceRoot: string,
+  startPath: string,
+  options: SymbolSearchOptions = {},
+): Promise<SymbolSearchResult> {
   assertInsideRoot(workspaceRoot, startPath);
   const normalized = normalizeOptions(options);
   const files = await collectSourceFiles(startPath, normalized.maxFiles);
@@ -65,12 +85,16 @@ export async function findSymbols(
   }
 
   const limited = symbols.slice(0, normalized.maxResults);
-  const result = formatSymbols(limited, {
+  const summary = {
     filesScanned: files.length,
     truncatedFiles: files.length >= normalized.maxFiles,
     truncatedResults: symbols.length > normalized.maxResults,
-  });
-  return result;
+  };
+  return {
+    summary,
+    symbols: limited,
+    text: formatSymbols(limited, summary),
+  };
 }
 
 function normalizeOptions(options: SymbolSearchOptions): NormalizedSymbolSearchOptions {
