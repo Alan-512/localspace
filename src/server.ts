@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { relative } from "node:path";
 import { readFileSync } from "node:fs";
 import { access, realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,7 @@ import express from "express";
 import type { Request, Response } from "express";
 import * as z from "zod/v4";
 import { applyPatch, parsePatch } from "./apply-patch.js";
+import { AuditLogManager } from "./audit-log.js";
 import { CommandApprovalManager } from "./command-approval.js";
 import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
 import {
@@ -164,6 +166,7 @@ const toolNames = {
   ls: "ls",
   doctor: "doctor",
   workspaceInfo: "workspace_info",
+  sessionSummary: "session_summary",
   entrypoints: "entrypoints",
   codeMap: "code_map",
   projectMap: "project_map",
@@ -198,16 +201,16 @@ function serverInstructions(config: ServerConfig): string {
       : "";
 
   if (config.toolMode === "codex") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   if (config.toolMode === "hybrid") {
-    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.codeMap}, ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+    return `Use DevSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.codeMap}, ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
   }
 
   const inspection = config.toolMode !== "full"
     ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.entrypoints} for project entrypoints and verification scripts, ${toolNames.codeMap} for a combined project overview, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
+    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.entrypoints} for project entrypoints and verification scripts, ${toolNames.codeMap} for a combined project overview, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
 
   const skills = config.skillsEnabled
     ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
@@ -383,6 +386,19 @@ const workspaceInfoStructuredOutputSchema = structuredTextOutputSchema({
   package: packageDataOutputSchema.optional(),
 });
 
+const sessionSummaryOutputSchema = structuredTextOutputSchema({
+  totalEvents: z.number(),
+  successfulEvents: z.number(),
+  failedEvents: z.number(),
+  blockedEvents: z.number(),
+  approvedEvents: z.number(),
+  tools: z.record(z.string(), z.number()),
+  paths: z.array(z.string()),
+  commands: z.array(z.string()),
+  risks: z.record(z.string(), z.number()),
+  recentEvents: z.array(z.unknown()),
+});
+
 const changesGroupOutputSchema = z.object({
   title: z.string(),
   paths: z.array(z.string()),
@@ -548,6 +564,11 @@ function textSummary(content: ToolContent[]): {
     lines: text.length === 0 ? 0 : text.split("\n").length,
     characters: text.length,
   };
+}
+
+function workspaceRelativePath(workspaceRoot: string, absolutePath: string): string {
+  const rel = relative(workspaceRoot, absolutePath).split("\\").join("/");
+  return rel || ".";
 }
 
 function contentLineCount(content: string): number {
@@ -819,6 +840,7 @@ function registerCodexProcessTools(
   config: ServerConfig,
   workspaces: WorkspaceRegistry,
   processSessions: ProcessSessionManager,
+  auditLog: AuditLogManager,
 ): void {
   const approvals = new CommandApprovalManager();
 
@@ -877,6 +899,15 @@ function registerCodexProcessTools(
 
       if (safety.level === "danger" && !approval.approved) {
         const request = approvals.create(approvalContext);
+        auditLog.record({
+          tool: "exec_command",
+          workspaceId,
+          success: false,
+          blocked: true,
+          risk: safety.level,
+          commandPreview: config.logging.shellCommands ? commandPreview(cmd) : undefined,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
         logToolCall(config, {
           tool: "exec_command",
           workspaceId,
@@ -907,6 +938,18 @@ function registerCodexProcessTools(
         command: cmd,
         commandLength: cmd.length,
         success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      auditLog.record({
+        tool: "exec_command",
+        workspaceId,
+        success: snapshot.exitCode === undefined ? true : snapshot.exitCode === 0,
+        approved: safety.level === "danger" ? approval.approved : undefined,
+        risk: safety.level,
+        commandPreview: config.logging.shellCommands ? commandPreview(cmd) : undefined,
+        exitCode: snapshot.exitCode,
+        running: snapshot.running,
         durationMs: Math.round(performance.now() - startedAt),
       });
 
@@ -989,6 +1032,7 @@ function createMcpServer(
   workspaces: WorkspaceRegistry,
   reviewCheckpoints: ReturnType<typeof createReviewCheckpointManager>,
   processSessions: ProcessSessionManager,
+  auditLog: AuditLogManager,
 ): McpServer {
   const server = new McpServer(
     {
@@ -1133,6 +1177,13 @@ function createMcpServer(
         workspaceId: workspace.id,
         path: workspace.root,
         success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+      auditLog.record({
+        tool: "open_workspace",
+        workspaceId: workspace.id,
+        success: true,
+        paths: [workspace.root],
         durationMs: Math.round(performance.now() - startedAt),
       });
 
@@ -1320,7 +1371,7 @@ function createMcpServer(
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
-      outputSchema: entrypointsStructuredOutputSchema,
+      outputSchema: workspaceInfoStructuredOutputSchema,
       ...toolWidgetDescriptorMeta(config, "workspace"),
       annotations: { readOnlyHint: true },
     },
@@ -1354,6 +1405,48 @@ function createMcpServer(
 
   registerAppTool(
     server,
+    toolNames.sessionSummary,
+    {
+      title: "Session summary",
+      description: "Summarize recent LocalSpace tool activity, including file changes, commands, blocked events, approvals, and touched paths.",
+      inputSchema: {
+        workspaceId: z.string().optional().describe("Optional workspace identifier returned by open_workspace. Omit to summarize all recent workspaces."),
+        limit: z.number().int().min(1).max(500).optional().describe("Maximum recent audit events to summarize. Defaults to 50."),
+      },
+      outputSchema: sessionSummaryOutputSchema,
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId, limit }) => {
+      const startedAt = performance.now();
+      if (workspaceId) workspaces.getWorkspace(workspaceId);
+      const data = auditLog.summarize({ workspaceId, limit });
+      const content = [textBlock(data.text)];
+
+      logToolCall(config, {
+        tool: toolNames.sessionSummary,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.sessionSummary,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result: data.text, ...data },
+      };
+    },
+  );
+
+  registerAppTool(
+    server,
     toolNames.entrypoints,
     {
       title: "Entrypoints",
@@ -1361,7 +1454,7 @@ function createMcpServer(
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
-      outputSchema: resultOutputSchema(),
+      outputSchema: entrypointsStructuredOutputSchema,
       ...toolWidgetDescriptorMeta(config, "workspace"),
       annotations: { readOnlyHint: true },
     },
@@ -1825,6 +1918,15 @@ function createMcpServer(
         success: true,
         durationMs: Math.round(performance.now() - startedAt),
       });
+      auditLog.record({
+        tool: toolNames.write,
+        workspaceId,
+        success: true,
+        paths: [workspaceRelativePath(workspace.root, targetPath)],
+        additions: stats.additions,
+        removals: stats.removals,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
 
       return {
         ...response,
@@ -1915,6 +2017,15 @@ function createMcpServer(
         success: true,
         durationMs: Math.round(performance.now() - startedAt),
       });
+      auditLog.record({
+        tool: toolNames.edit,
+        workspaceId,
+        success: true,
+        paths: [workspaceRelativePath(workspace.root, targetPath)],
+        additions: stats.additions,
+        removals: stats.removals,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
 
       return {
         content: editContent,
@@ -1992,6 +2103,15 @@ function createMcpServer(
           tool: "apply_patch",
           workspaceId,
           success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        auditLog.record({
+          tool: "apply_patch",
+          workspaceId,
+          success: true,
+          paths: applied.files.map((file) => file.path),
+          additions: applied.additions,
+          removals: applied.removals,
           durationMs: Math.round(performance.now() - startedAt),
         });
 
@@ -2285,6 +2405,13 @@ function createMcpServer(
           success: true,
           durationMs: Math.round(performance.now() - startedAt),
         });
+        auditLog.record({
+          tool: toolNames.gitAdd,
+          workspaceId,
+          success: true,
+          paths,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
 
         return {
           content,
@@ -2322,7 +2449,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitCommitStructuredOutputSchema,
         _meta: {},
         annotations: {
           readOnlyHint: false,
@@ -2340,6 +2467,12 @@ function createMcpServer(
           tool: toolNames.gitCommit,
           workspaceId,
           success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        auditLog.record({
+          tool: toolNames.gitCommit,
+          workspaceId,
+          success: data.committed,
           durationMs: Math.round(performance.now() - startedAt),
         });
 
@@ -2376,7 +2509,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: resultOutputSchema(),
+        outputSchema: gitLogStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
@@ -2715,7 +2848,7 @@ function createMcpServer(
   }
 
   if (config.toolMode === "codex" || config.toolMode === "hybrid") {
-    registerCodexProcessTools(server, config, workspaces, processSessions);
+    registerCodexProcessTools(server, config, workspaces, processSessions, auditLog);
   }
 
   return server;
@@ -2742,6 +2875,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const workspaces = new WorkspaceRegistry(config, workspaceStore);
   const reviewCheckpoints = createReviewCheckpointManager();
   const processSessions = new ProcessSessionManager({ shell: config.shell });
+  const auditLog = new AuditLogManager(config.audit);
 
   if (config.logging.trustProxy) {
     app.set("trust proxy", true);
@@ -2865,7 +2999,7 @@ export function createServer(config = loadConfig()): RunningServer {
           }
         };
 
-        const server = createMcpServer(config, workspaces, reviewCheckpoints, processSessions);
+        const server = createMcpServer(config, workspaces, reviewCheckpoints, processSessions, auditLog);
         await server.connect(transport);
       } else {
         sendJsonRpcError(res, 400, -32000, "No valid MCP session");

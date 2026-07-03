@@ -26,6 +26,7 @@ Every structured tool keeps this compatibility field:
 | --- | --- |
 | `doctor` | `configuration`, `runtime`, `workspace`, `checks[]`, `overall` |
 | `workspace_info` | `workspace`, `git`, `package` |
+| `session_summary` | `totalEvents`, `successfulEvents`, `failedEvents`, `blockedEvents`, `approvedEvents`, `tools`, `paths`, `commands`, `risks`, `recentEvents` |
 | `changes` | `isRepository`, `clean`, `mode`, `staged`, `branch`, `statusEntries[]`, `groups[]`, `stat`, `truncated` |
 | `git_status` | `isRepository`, `branch`, `clean`, `statusLines[]`, `truncated` |
 | `git_diff` | `isRepository`, `staged`, `stat`, `empty`, `truncated` |

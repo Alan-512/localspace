@@ -27,6 +27,9 @@ assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SKILLS: "0" }).skillsEnabled, f
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SKILLS: "1" }).skillsEnabled, true);
 assert.equal(loadConfig(baseEnv).shell, undefined);
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SHELL: "pwsh" }).shell, "pwsh");
+assert.equal(loadConfig(baseEnv).audit.enabled, true);
+assert.equal(loadConfig(baseEnv).audit.maxMemoryEvents, 1000);
+assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_AUDIT_LOG: "0" }).audit.enabled, false);
 
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "invalid" }),

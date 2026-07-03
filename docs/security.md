@@ -128,3 +128,23 @@ By default, DevSpace logs requests and tool calls. Shell command previews are
 disabled unless `LOCALSPACE_LOG_SHELL_COMMANDS=1`.
 
 Do not enable shell command logging if commands may contain secrets.
+
+## Audit Log
+
+LocalSpace keeps an audit trail for key coding actions. It records recent events
+in memory for `session_summary` and appends JSONL records to disk by default.
+
+Audited events include workspace openings, file writes, file edits, patches,
+dedicated Git staging/commits, shell command execution, blocked shell commands,
+and approval-token usage. Shell command previews are only included when
+`LOCALSPACE_LOG_SHELL_COMMANDS=1`.
+
+Configuration:
+
+```text
+LOCALSPACE_AUDIT_LOG=1
+LOCALSPACE_AUDIT_LOG_PATH=/path/to/audit.jsonl
+LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS=1000
+```
+
+Set `LOCALSPACE_AUDIT_LOG=0` to disable audit logging.

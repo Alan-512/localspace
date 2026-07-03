@@ -125,6 +125,12 @@ and hooks, `.env` files, secret/token/private-key-like filenames, LocalSpace
 state/agent/worktree directories, home-directory roots, and platform system
 directories.
 
+Audit logging is enabled by default. It records recent events in memory for
+`session_summary` and appends JSONL records to `LOCALSPACE_AUDIT_LOG_PATH`,
+defaulting to `audit.jsonl` under the LocalSpace state directory. Use
+`LOCALSPACE_AUDIT_LOG=0` to disable it and
+`LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` to tune in-memory retention.
+
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
 does not require `LOCALSPACE_WIDGETS=changes`.

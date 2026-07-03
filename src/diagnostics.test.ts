@@ -110,6 +110,11 @@ function testConfig(root: string): ServerConfig {
       shellCommands: false,
       trustProxy: false,
     },
+    audit: {
+      enabled: true,
+      path: join(root, "state", "audit.jsonl"),
+      maxMemoryEvents: 1000,
+    },
   };
 }
 

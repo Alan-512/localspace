@@ -5,6 +5,7 @@ import { expandHomePath } from "./roots.js";
 import type { LoggingConfig, LogFormat, LogLevel } from "./logger.js";
 import type { OAuthConfig } from "./oauth-provider.js";
 import { loadLocalspaceFiles } from "./user-config.js";
+import { defaultAuditLogPath, type AuditLogConfig } from "./audit-log.js";
 
 export type ToolMode = "minimal" | "full" | "codex" | "hybrid";
 export type WidgetMode = "off" | "changes" | "full";
@@ -27,6 +28,7 @@ export interface ServerConfig {
   agentDir: string;
   shell?: string;
   logging: LoggingConfig;
+  audit: AuditLogConfig;
 }
 
 function parsePort(value: string | number | undefined): number {
@@ -152,6 +154,14 @@ function parseLoggingConfig(env: NodeJS.ProcessEnv): LoggingConfig {
   };
 }
 
+function parseAuditConfig(env: NodeJS.ProcessEnv, stateDir: string): AuditLogConfig {
+  return {
+    enabled: env.LOCALSPACE_AUDIT_LOG === undefined ? true : parseBoolean(env.LOCALSPACE_AUDIT_LOG),
+    path: resolve(expandHomePath(env.LOCALSPACE_AUDIT_LOG_PATH ?? defaultAuditLogPath(stateDir))),
+    maxMemoryEvents: parsePositiveInteger(env.LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS, 1_000, "LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS"),
+  };
+}
+
 function parseWidgetMode(value: string | undefined): WidgetMode {
   if (!value || value === "full") return "full";
   if (value === "off" || value === "changes") return value;
@@ -229,6 +239,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     new URL(publicBaseUrl).hostname,
     ...(files.config.allowedHosts ?? []),
   ];
+  const stateDir = resolve(expandHomePath(env.LOCALSPACE_STATE_DIR ?? files.config.stateDir ?? defaultStateDir()));
 
   return {
     host,
@@ -239,13 +250,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     publicBaseUrl,
     toolMode: parseToolMode(env),
     widgets: parseWidgetMode(env.LOCALSPACE_WIDGETS),
-    stateDir: resolve(expandHomePath(env.LOCALSPACE_STATE_DIR ?? files.config.stateDir ?? defaultStateDir())),
+    stateDir,
     worktreeRoot: resolve(expandHomePath(env.LOCALSPACE_WORKTREE_ROOT ?? files.config.worktreeRoot ?? defaultWorktreeRoot())),
     skillsEnabled: env.LOCALSPACE_SKILLS === undefined ? true : parseBoolean(env.LOCALSPACE_SKILLS),
     skillPaths: parsePathList(env.LOCALSPACE_SKILL_PATHS),
     agentDir: resolve(expandHomePath(env.LOCALSPACE_AGENT_DIR ?? files.config.agentDir ?? defaultAgentDir())),
     shell: parseOptionalPath(env.LOCALSPACE_SHELL ?? files.config.shell),
     logging: parseLoggingConfig(env),
+    audit: parseAuditConfig(env, stateDir),
   };
 }
 
