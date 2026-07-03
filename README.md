@@ -91,6 +91,7 @@ LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). 
 - **`entrypoints`**: Identify package entrypoints, likely source entry files, config files, and verification scripts.
 - **`read`**: Direct file read/inspection.
 - **`project_map`**: Quickly view a compact project directory tree.
+- **`code_map`**: Combine entrypoints, project structure, exported symbols, and imports/exports into one overview.
 - **`symbols`**: Locate TypeScript/JavaScript declarations before reading files.
 - **`imports`**: Inspect TypeScript/JavaScript import and export relationships.
 - **`references`**: Find TypeScript/JavaScript identifier references before changing code.

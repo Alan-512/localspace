@@ -35,6 +35,9 @@ Call `entrypoints` early in an unfamiliar project to identify package `main`,
 `bin`, `exports`, likely `src/*` source entry files, important config files, and
 the best verification scripts.
 
+Call `code_map` when you need one compact overview of the project. It combines
+entrypoints, a directory tree, exported symbols, and import/export relationships.
+
 Do not reopen the same folder unless:
 
 - the `workspaceId` is rejected as unknown
@@ -191,6 +194,13 @@ Use `references` to find identifier references before editing a function, class,
 variable, or exported API. By default it excludes definitions so the result
 focuses on usage sites. Set `includeDefinitions: true` when you also need the
 declaration sites.
+
+## Code Map
+
+Use `code_map` as a first-pass overview for unfamiliar projects. It aggregates
+the most useful discovery tools into one response: `entrypoints`, a compact
+project tree, exported symbols, and import/export relationships. Use the
+specialized tools afterward when you need more depth.
 
 ## Diagnostics
 

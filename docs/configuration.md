@@ -65,9 +65,9 @@ MCP clients discover metadata from:
 | Value | Behavior |
 | --- | --- |
 | `minimal` | Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
-| `full` | Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `entrypoints`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
+| `full` | Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `entrypoints`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
 | `codex` | Experimental. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
-| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
+| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
 
 `LOCALSPACE_MINIMAL_TOOLS` remains a backward-compatible alias when
 `LOCALSPACE_TOOL_MODE` is unset: `1` selects `minimal` and `0` selects `full`.
@@ -100,6 +100,9 @@ and package metadata/scripts for an open workspace.
 
 `entrypoints` reports package entrypoint fields, scripts, likely source entry
 files, suggested verification commands, and important config/orientation files.
+
+`code_map` aggregates entrypoints, a compact project tree, exported symbols, and
+import/export relationships for a bounded project overview.
 
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
