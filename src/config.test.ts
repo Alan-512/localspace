@@ -20,7 +20,6 @@ assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "minimal" }).toolMod
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "full" }).toolMode, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "codex" }).toolMode, "codex");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "hybrid" }).toolMode, "hybrid");
-assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "lean" }).toolMode, "lean");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_MINIMAL_TOOLS: "0" }).toolMode, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_MINIMAL_TOOLS: "1" }).toolMode, "minimal");
 assert.equal(loadConfig(baseEnv).skillsEnabled, true);

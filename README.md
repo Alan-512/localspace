@@ -184,7 +184,6 @@ same commands become `localspace init`, `localspace serve`, and
 | Mode | Status | Best for |
 | --- | --- | --- |
 | `hybrid` | Default | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and workflow summaries. |
-| `lean` | Available | Lower tool/schema context for ChatGPT sessions that only need workspace open, diagnostics, read/search/list, patch, process, changes, and handoff tools. |
 | `codex` | Experimental | A smaller Codex-like surface: workspace, read, patch, command, process, changes, and Git tools. |
 | `full` | Available | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
 | `minimal` | Available | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |

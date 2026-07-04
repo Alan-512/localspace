@@ -7,7 +7,7 @@ import type { OAuthConfig } from "./oauth-provider.js";
 import { loadLocalspaceFiles } from "./user-config.js";
 import { defaultAuditLogPath, type AuditLogConfig } from "./audit-log.js";
 
-export type ToolMode = "minimal" | "full" | "codex" | "hybrid" | "lean";
+export type ToolMode = "minimal" | "full" | "codex" | "hybrid";
 export type WidgetMode = "off" | "changes" | "full";
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -84,7 +84,7 @@ function parseBoolean(value: string | undefined): boolean {
 
 function parseToolMode(env: NodeJS.ProcessEnv): ToolMode {
   const mode = env.LOCALSPACE_TOOL_MODE;
-  if (mode === "minimal" || mode === "full" || mode === "codex" || mode === "hybrid" || mode === "lean") return mode;
+  if (mode === "minimal" || mode === "full" || mode === "codex" || mode === "hybrid") return mode;
   if (mode) throw new Error(`Invalid LOCALSPACE_TOOL_MODE: ${mode}`);
 
   if (env.LOCALSPACE_MINIMAL_TOOLS !== undefined) {
