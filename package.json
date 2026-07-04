@@ -1,6 +1,6 @@
 {
   "name": "@alan-512/localspace",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Expose a secure local coding workspace through an MCP server.",
   "homepage": "https://github.com/Alan-512/localspace#readme",
   "bugs": {
