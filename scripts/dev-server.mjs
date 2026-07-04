@@ -14,7 +14,7 @@ let stoppingForRestart = false;
 let shuttingDown = false;
 
 function log(message) {
-  console.error(`[devspace:dev] ${message}`);
+  console.error(`[localspace:dev] ${message}`);
 }
 
 function start() {
