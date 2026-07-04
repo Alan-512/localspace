@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   loadSkills,
   type Skill,
@@ -20,8 +21,16 @@ export interface SkillReadResolution {
   isSkillFile: boolean;
 }
 
+export function builtInSkillPaths(): string[] {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const skillsDirectory = resolve(moduleDirectory, "..", "skills");
+
+  return existsSync(skillsDirectory) ? [skillsDirectory] : [];
+}
+
 export function effectiveSkillPaths(config: ServerConfig, cwd: string): string[] {
   const defaultPaths = [
+    ...builtInSkillPaths(),
     join(homedir(), ".agents", "skills"),
     resolve(cwd, ".agents", "skills"),
     join(config.agentDir, "skills"),

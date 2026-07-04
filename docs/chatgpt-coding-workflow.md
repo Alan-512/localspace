@@ -100,6 +100,19 @@ new context during later tool calls.
 
 Skills are enabled by default for coding-agent workflows.
 
+LocalSpace ships built-in workflow skills for progressive disclosure:
+
+- `localspace-code-editing`
+- `localspace-code-navigation`
+- `localspace-validation`
+- `localspace-git-review`
+- `localspace-release`
+- `localspace-handoff`
+
+These skills do not dynamically hide or reveal MCP tools. LocalSpace keeps the
+default `hybrid` tool surface available, while skills defer the longer workflow
+guidance until the current task needs it.
+
 LocalSpace discovers standard Agent Skills from:
 
 - `~/.agents/skills`
@@ -122,9 +135,16 @@ Skill paths may be outside the workspace. LocalSpace only permits reading:
 
 Set `LOCALSPACE_SKILLS=0` to hide skills from workspace output.
 
-## Tool Names
+## Tool Surface
 
-LocalSpace exposes these tool names in minimal mode:
+LocalSpace is hybrid-first. By default, `LOCALSPACE_TOOL_MODE=hybrid` combines
+the Codex-style editing and process tools with dedicated `project_map`, `grep`,
+`glob`, and `ls` inspection tools plus the plain-text `changes` review tool.
+
+Compatibility modes remain available, but they are not the primary product
+surface.
+
+Minimal mode exposes:
 
 - `open_workspace`
 - `read`
@@ -132,9 +152,8 @@ LocalSpace exposes these tool names in minimal mode:
 - `edit`
 - `bash`
 
-Set `LOCALSPACE_TOOL_MODE=minimal` to expose only this small tool surface. In
-that mode, dedicated `grep`, `glob`, and `ls` tools are hidden. Use `bash` with
-command-line tools such as `rg`, `find`, and `ls` for search and directory
+In `minimal`, dedicated `grep`, `glob`, and `ls` tools are hidden. Use `bash`
+with command-line tools such as `rg`, `find`, and `ls` for search and directory
 inspection.
 
 Use `LOCALSPACE_TOOL_MODE=full` to restore dedicated search and directory tools.
@@ -160,10 +179,6 @@ In this mode, `write`, `edit`, `bash`, `grep`, `glob`, and `ls` are not
 registered. `exec_command` returns a process session ID when a command is still
 running after its yield window. Use `write_stdin` to poll it, send input, resize
 a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
-
-By default, LocalSpace uses `LOCALSPACE_TOOL_MODE=hybrid`, which combines the
-Codex-style editing and process tools with dedicated `project_map`, `grep`,
-`glob`, and `ls` inspection tools plus the plain-text `changes` review tool.
 
 ## Symbol Search
 

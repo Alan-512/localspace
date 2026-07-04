@@ -177,16 +177,21 @@ same commands become `localspace init`, `localspace serve`, and
 
 ---
 
-## Tool Modes
+## Tool Surface
 
-`LOCALSPACE_TOOL_MODE` controls which tools are exposed.
+LocalSpace is designed around the default `hybrid` tool surface. It combines
+safe workspace inspection, Codex-style patching, process tools, code navigation,
+Git helpers, and workflow summaries for ChatGPT coding sessions.
+
+`LOCALSPACE_TOOL_MODE` still exists for compatibility and advanced experiments,
+but normal users should keep the default `hybrid` mode.
 
 | Mode | Status | Best for |
 | --- | --- | --- |
-| `hybrid` | Default | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and workflow summaries. |
-| `codex` | Experimental | A smaller Codex-like surface: workspace, read, patch, command, process, changes, and Git tools. |
-| `full` | Available | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
-| `minimal` | Available | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |
+| `hybrid` | Default and recommended | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and workflow summaries. |
+| `codex` | Experimental compatibility | A smaller Codex-like surface: workspace, read, patch, command, process, changes, and Git tools. |
+| `full` | Legacy compatibility | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
+| `minimal` | Legacy compatibility | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |
 
 Example:
 
@@ -195,6 +200,12 @@ LOCALSPACE_TOOL_MODE="hybrid" node dist/cli.js serve
 ```
 
 See [`docs/configuration.md`](docs/configuration.md) for the complete reference.
+
+LocalSpace also ships built-in workflow skills. `open_workspace` advertises only
+their names, descriptions, and `SKILL.md` paths; the model should read the
+matching skill only when the current task needs that workflow. This keeps
+workflow guidance progressively loaded while the `hybrid` tool surface remains
+the single recommended default.
 
 ---
 

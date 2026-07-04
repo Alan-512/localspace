@@ -4,6 +4,7 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { loadConfig } from "./config.js";
 import {
+  builtInSkillPaths,
   effectiveSkillPaths,
   formatPathForPrompt,
   loadWorkspaceSkills,
@@ -141,6 +142,13 @@ try {
     PORT: "1",
   });
   const loaded = loadWorkspaceSkills(config, projectRoot);
+  assert.equal(builtInSkillPaths().length >= 1, true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-code-editing"), true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-code-navigation"), true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-validation"), true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-git-review"), true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-release"), true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-handoff"), true);
   assert.equal(loaded.skills.some((skill) => skill.name === "agent-global-skill"), true);
   assert.equal(loaded.skills.some((skill) => skill.name === "agent-project-skill"), true);
   assert.equal(loaded.skills.some((skill) => skill.name === "claude-global-skill"), true);
