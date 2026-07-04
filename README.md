@@ -9,6 +9,7 @@
 <p align="center">A secure local coding workspace for ChatGPT and other MCP hosts.</p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@alan512/localspace"><img alt="npm" src="https://img.shields.io/npm/v/@alan512/localspace?style=flat-square" /></a>
   <a href="https://github.com/Alan-512/localspace/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Alan-512/localspace/ci.yml?style=flat-square&branch=main" /></a>
   <a href="https://github.com/Alan-512/localspace/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
   <a href="https://github.com/Alan-512/localspace"><img alt="MCP" src="https://img.shields.io/badge/MCP-local%20coding%20workspace-7c3aed?style=flat-square" /></a>
@@ -78,7 +79,15 @@ On Windows, portable commands such as `node`, `npm`, and `git` work directly.
 Bash-specific commands still require Git Bash, WSL, MSYS2, Cygwin Bash, or an
 explicit shell configured with `LOCALSPACE_SHELL`.
 
-### 2. Install and build from this checkout
+### 2. Install LocalSpace
+
+Install the published package:
+
+```bash
+npm install -g @alan512/localspace
+```
+
+Or, if you are developing LocalSpace from this checkout:
 
 ```bash
 npm install
@@ -88,8 +97,10 @@ npm run build
 ### 3. Initialize LocalSpace
 
 ```bash
-node dist/cli.js init
+localspace init
 ```
+
+From a local checkout, use `node dist/cli.js init` instead.
 
 During setup, choose:
 
@@ -132,8 +143,10 @@ https://your-tunnel-host.example.com/mcp
 ### 5. Start LocalSpace
 
 ```bash
-node dist/cli.js serve
+localspace serve
 ```
+
+From a local checkout, use `node dist/cli.js serve` instead.
 
 When the MCP client connects, LocalSpace shows an Owner approval page. Enter the
 Owner password only when you intentionally want that client to access this
@@ -159,21 +172,20 @@ For long or risky changes, prefer an isolated managed worktree:
 
 ```bash
 # Check local runtime, config, Git, shell, and dependency health
-node dist/cli.js doctor
+localspace doctor
 
-# Start the MCP server from a built checkout
-node dist/cli.js serve
+# Start the MCP server
+localspace serve
 
 # Start with a temporary public URL override
-LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" node dist/cli.js serve
+LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" localspace serve
 
 # Persist a stable public URL
-node dist/cli.js config set publicBaseUrl https://localspace.example.com
+localspace config set publicBaseUrl https://localspace.example.com
 ```
 
-If you install LocalSpace as a package, the CLI binary is `localspace`, so the
-same commands become `localspace init`, `localspace serve`, and
-`localspace doctor`.
+If you are running from a local checkout, replace `localspace` with
+`node dist/cli.js` after running `npm run build`.
 
 ---
 
