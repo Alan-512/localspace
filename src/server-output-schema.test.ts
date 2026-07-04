@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const source = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
+
+const expectedSchemas = new Map([
+  ["toolNames.read", "resultOutputSchema"],
+  ["toolNames.doctor", "doctorStructuredOutputSchema"],
+  ["toolNames.workspaceInfo", "workspaceInfoStructuredOutputSchema"],
+  ["toolNames.projectMap", "resultOutputSchema"],
+  ["toolNames.symbols", "symbolsStructuredOutputSchema"],
+  ["toolNames.imports", "importsStructuredOutputSchema"],
+  ["toolNames.references", "referencesStructuredOutputSchema"],
+  ["\"show_changes\"", "resultOutputSchema"],
+  ["toolNames.changes", "changesStructuredOutputSchema"],
+  ["toolNames.gitStatus", "gitStatusStructuredOutputSchema"],
+  ["toolNames.gitDiff", "gitDiffStructuredOutputSchema"],
+  ["toolNames.gitAdd", "gitAddStructuredOutputSchema"],
+  ["toolNames.gitCommit", "gitCommitStructuredOutputSchema"],
+  ["toolNames.gitLog", "gitLogStructuredOutputSchema"],
+]);
+
+for (const [toolRef, expectedSchema] of expectedSchemas) {
+  assert.equal(outputSchemaNameForTool(toolRef), expectedSchema, `${toolRef} outputSchema`);
+}
+
+function outputSchemaNameForTool(toolRef: string): string {
+  const registrationPattern = new RegExp(
+    `registerAppTool\\(\\s*server,\\s*${escapeRegExp(toolRef)}\\s*,\\s*\\{([\\s\\S]*?)\\n\\s*\\},\\s*async`,
+    "m",
+  );
+  const registration = registrationPattern.exec(source);
+  assert.ok(registration, `Missing registerAppTool block for ${toolRef}`);
+
+  const descriptor = registration[1] ?? "";
+  const outputSchema = /outputSchema:\s*([A-Za-z0-9_]+)/.exec(descriptor);
+  assert.ok(outputSchema, `Missing outputSchema for ${toolRef}`);
+  return outputSchema[1] ?? "";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

@@ -1396,7 +1396,7 @@ function createMcpServer(
           .optional()
           .describe("Maximum number of lines to read."),
       },
-      outputSchema: doctorStructuredOutputSchema,
+      outputSchema: resultOutputSchema(),
       ...toolWidgetDescriptorMeta(config, "read"),
       annotations: { readOnlyHint: true },
     },
@@ -1467,7 +1467,7 @@ function createMcpServer(
           .optional()
           .describe("Optional workspace identifier returned by open_workspace. When provided, workspace-specific diagnostics are included."),
       },
-      outputSchema: workspaceInfoStructuredOutputSchema,
+      outputSchema: doctorStructuredOutputSchema,
       ...toolWidgetDescriptorMeta(config, "workspace"),
       annotations: { readOnlyHint: true },
     },
@@ -1721,7 +1721,7 @@ function createMcpServer(
             .optional()
             .describe("Whether to show hidden files and directories. Defaults to false."),
         },
-        outputSchema: symbolsStructuredOutputSchema,
+        outputSchema: resultOutputSchema(),
         ...toolWidgetDescriptorMeta(config, "directory"),
         annotations: { readOnlyHint: true },
       },
@@ -1804,7 +1804,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum source files to scan. Defaults to 500, max 5000."),
         },
-        outputSchema: importsStructuredOutputSchema,
+        outputSchema: symbolsStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
@@ -1881,7 +1881,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum source files to scan. Defaults to 500, max 5000."),
         },
-        outputSchema: referencesStructuredOutputSchema,
+        outputSchema: importsStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
@@ -1952,7 +1952,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum source files to scan. Defaults to 500, max 5000."),
         },
-        outputSchema: changesStructuredOutputSchema,
+        outputSchema: referencesStructuredOutputSchema,
         ...toolWidgetDescriptorMeta(config, "search"),
         annotations: { readOnlyHint: true },
       },
@@ -2604,7 +2604,7 @@ function createMcpServer(
             .string()
             .describe("Workspace identifier returned by open_workspace."),
         },
-        outputSchema: gitStatusStructuredOutputSchema,
+        outputSchema: resultOutputSchema(),
         ...toolWidgetDescriptorMeta(config, "show_changes"),
         annotations: { readOnlyHint: true },
       },
@@ -2670,7 +2670,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: gitDiffStructuredOutputSchema,
+        outputSchema: changesStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
@@ -2728,7 +2728,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: gitAddStructuredOutputSchema,
+        outputSchema: gitStatusStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
@@ -2778,7 +2778,7 @@ function createMcpServer(
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
         },
-        outputSchema: gitCommitStructuredOutputSchema,
+        outputSchema: gitDiffStructuredOutputSchema,
         _meta: {},
         annotations: { readOnlyHint: true },
       },
