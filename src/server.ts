@@ -21,7 +21,7 @@ import * as z from "zod/v4";
 import { applyPatch, parsePatch } from "./apply-patch.js";
 import { AuditLogManager } from "./audit-log.js";
 import { CommandApprovalManager } from "./command-approval.js";
-import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
+import { loadConfig, type ServerConfig, type ToolMode, type WidgetMode } from "./config.js";
 import {
   logEvent,
   requestIp,
@@ -192,6 +192,34 @@ const toolNames = {
   shell: "bash",
 } as const;
 
+function hasAdvancedNavigationTools(mode: ToolMode): boolean {
+  return mode === "full" || mode === "hybrid";
+}
+
+function hasLegacyMutationAndShellTools(mode: ToolMode): boolean {
+  return mode !== "codex" && mode !== "hybrid" && mode !== "lean";
+}
+
+function hasPatchTool(mode: ToolMode): boolean {
+  return mode === "codex" || mode === "hybrid" || mode === "lean";
+}
+
+function hasPlainChangesTool(mode: ToolMode): boolean {
+  return mode === "codex" || mode === "hybrid" || mode === "full" || mode === "lean";
+}
+
+function hasDedicatedGitTools(mode: ToolMode): boolean {
+  return mode === "codex" || mode === "hybrid" || mode === "full";
+}
+
+function hasDedicatedSearchTools(mode: ToolMode): boolean {
+  return mode === "full" || mode === "hybrid" || mode === "lean";
+}
+
+function hasCodexProcessTools(mode: ToolMode): boolean {
+  return mode === "codex" || mode === "hybrid" || mode === "lean";
+}
+
 interface ToolLogFields {
   tool: string;
   workspaceId?: string;
@@ -216,6 +244,10 @@ function serverInstructions(config: ServerConfig): string {
 
   if (config.toolMode === "hybrid") {
     return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} or ${toolNames.finalReport} before final task summaries, ${toolNames.handoffSummary} when a new chat/window handoff is needed, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.codeMap}, ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
+  }
+
+  if (config.toolMode === "lean") {
+    return `Use LocalSpace as a lean local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. This profile intentionally exposes a compact tool surface to reduce MCP tool/schema context: use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.read} for direct file reads, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection, apply_patch for all file modifications, exec_command for tests, builds, Git inspection, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} to review modifications before summarizing, and ${toolNames.handoffSummary} when a new chat/window handoff is needed. Advanced navigation, dedicated git_* tools, and the broader workflow-summary tools are not exposed in lean mode. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
   }
 
   const inspection = config.toolMode !== "full"
@@ -973,6 +1005,72 @@ function processToolResponse(
   };
 }
 
+function registerHandoffSummaryTool(
+  server: McpServer,
+  config: ServerConfig,
+  workspaces: WorkspaceRegistry,
+  auditLog: AuditLogManager,
+): void {
+  registerAppTool(
+    server,
+    toolNames.handoffSummary,
+    {
+      title: "Handoff summary",
+      description: "Generate a Markdown handoff summary for continuing the task in a new chat or window, including project path, latest commit, phase, validation, warnings, and next prompt.",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+        taskTitle: z.string().optional().describe("Optional task or phase title to include indirectly through the generated report."),
+        completed: z.array(z.string()).optional().describe("Optional completed-work bullets to include in the generated report context."),
+        remaining: z.array(z.string()).optional().describe("Optional remaining-task bullets to include in the generated report context."),
+        currentPhase: z.string().optional().describe("Current phase or status label for the handoff."),
+        completedPhases: z.array(z.string()).optional().describe("Completed phase bullets for the handoff."),
+        remainingTasks: z.array(z.string()).optional().describe("Remaining task bullets for the handoff."),
+        knownWarnings: z.array(z.string()).optional().describe("Known warnings or caveats for the next chat."),
+        nextPrompt: z.string().optional().describe("Exact suggested first prompt for the next chat."),
+      },
+      outputSchema: handoffSummaryOutputSchema,
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ workspaceId, taskTitle, completed, remaining, currentPhase, completedPhases, remainingTasks, knownWarnings, nextPrompt }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const audit = auditLog.summarize({ workspaceId, limit: 100 });
+      const data = await createHandoffSummary(workspace.root, audit, {
+        taskTitle,
+        completed,
+        remaining,
+        currentPhase,
+        completedPhases,
+        remainingTasks,
+        knownWarnings,
+        nextPrompt,
+      });
+      const content = [textBlock(data.text)];
+
+      logToolCall(config, {
+        tool: toolNames.handoffSummary,
+        workspaceId,
+        success: true,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+
+      return {
+        content,
+        _meta: {
+          tool: toolNames.handoffSummary,
+          card: {
+            workspaceId,
+            summary: textSummary(content),
+            payload: { content },
+          },
+        },
+        structuredContent: { result: data.text, ...data },
+      };
+    },
+  );
+}
+
 function registerCodexProcessTools(
   server: McpServer,
   config: ServerConfig,
@@ -1541,6 +1639,7 @@ function createMcpServer(
     },
   );
 
+  if (config.toolMode !== "lean") {
   registerAppTool(
     server,
     toolNames.sessionSummary,
@@ -1623,8 +1722,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
-  if (config.toolMode === "full" || config.toolMode === "hybrid") {
+  if (hasAdvancedNavigationTools(config.toolMode)) {
     registerAppTool(
       server,
       toolNames.codeMap,
@@ -2002,7 +2102,7 @@ function createMcpServer(
     );
   }
 
-  if (config.toolMode !== "codex" && config.toolMode !== "hybrid") {
+  if (hasLegacyMutationAndShellTools(config.toolMode)) {
   registerAppTool(
     server,
     toolNames.write,
@@ -2500,7 +2600,11 @@ function createMcpServer(
   );
   }
 
-  if (config.toolMode === "codex" || config.toolMode === "hybrid") {
+  if (config.toolMode === "lean") {
+    registerHandoffSummaryTool(server, config, workspaces, auditLog);
+  }
+
+  if (hasPatchTool(config.toolMode)) {
     registerAppTool(
       server,
       "apply_patch",
@@ -2647,7 +2751,7 @@ function createMcpServer(
     );
   }
 
-  if (config.toolMode === "codex" || config.toolMode === "hybrid" || config.toolMode === "full") {
+  if (hasPlainChangesTool(config.toolMode)) {
     registerAppTool(
       server,
       toolNames.changes,
@@ -2710,7 +2814,9 @@ function createMcpServer(
         };
       },
     );
+  }
 
+  if (hasDedicatedGitTools(config.toolMode)) {
     registerAppTool(
       server,
       toolNames.gitStatus,
@@ -2994,7 +3100,7 @@ function createMcpServer(
     );
   }
 
-  if (config.toolMode === "full" || config.toolMode === "hybrid") {
+  if (hasDedicatedSearchTools(config.toolMode)) {
     registerAppTool(
       server,
       toolNames.grep,
@@ -3205,7 +3311,7 @@ function createMcpServer(
     );
   }
 
-  if (config.toolMode !== "codex" && config.toolMode !== "hybrid") {
+  if (hasLegacyMutationAndShellTools(config.toolMode)) {
   registerAppTool(
     server,
     toolNames.shell,
@@ -3297,7 +3403,7 @@ function createMcpServer(
   );
   }
 
-  if (config.toolMode === "codex" || config.toolMode === "hybrid") {
+  if (hasCodexProcessTools(config.toolMode)) {
     registerCodexProcessTools(server, config, workspaces, processSessions, auditLog);
   }
 

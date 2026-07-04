@@ -165,6 +165,27 @@ By default, LocalSpace uses `LOCALSPACE_TOOL_MODE=hybrid`, which combines the
 Codex-style editing and process tools with dedicated `project_map`, `grep`,
 `glob`, and `ls` inspection tools plus the plain-text `changes` review tool.
 
+Use `LOCALSPACE_TOOL_MODE=lean` when a host is sensitive to tool/schema context
+size. Lean mode keeps the practical coding loop while hiding advanced navigation,
+dedicated `git_*`, legacy mutation/shell, and most workflow-summary tools. It
+exposes:
+
+- `open_workspace`
+- `doctor`
+- `workspace_info`
+- `read`
+- `grep`
+- `glob`
+- `ls`
+- `apply_patch`
+- `exec_command`
+- `write_stdin`
+- `changes`
+- `handoff_summary`
+
+Lean mode is a static tool profile. It does not claim runtime progressive tool
+disclosure; whether a host can dynamically refresh `tools/list` is host-specific.
+
 ## Symbol Search
 
 Use `symbols` to scan TypeScript and JavaScript files for declarations without
