@@ -188,6 +188,31 @@ node dist/cli.js doctor
 
 Confirm your expected shell tools are available.
 
+## ChatGPT Shows `Failed To Fetch Template`
+
+This usually means ChatGPT failed to load the optional Apps iframe template. It
+does not necessarily mean the LocalSpace tool call failed.
+
+First check whether the tool still returned normal text or structured output. If
+tools such as `read`, `grep`, `git_status`, or `doctor` still return data, the
+MCP server is still working and the problem is limited to the optional widget UI.
+
+To reduce iframe usage, run with:
+
+```bash
+LOCALSPACE_WIDGETS=changes node dist/cli.js serve
+```
+
+In `changes` mode, LocalSpace attaches widget UI only to `open_workspace` and
+`show_changes`. Other tools still return text and structured output without
+loading the workspace iframe.
+
+To disable widget UI completely:
+
+```bash
+LOCALSPACE_WIDGETS=off node dist/cli.js serve
+```
+
 ## Skills Do Not Appear
 
 Skills are enabled by default. Check:
@@ -214,12 +239,18 @@ If a skill appears in `open_workspace`, the model must read that skill's
 
 ## Review Card Does Not Appear
 
-Per-tool widget cards are enabled by default with:
+Per-tool workspace widgets are enabled by default with:
 
 ```bash
 LOCALSPACE_WIDGETS=full
 ```
 
-The aggregate `show_changes` tool is only exposed with
-`LOCALSPACE_WIDGETS=changes`. Plain MCP clients may ignore ChatGPT Apps widget
-metadata and only show text results.
+The aggregate `show_changes` tool is exposed only with:
+
+```bash
+LOCALSPACE_WIDGETS=changes
+```
+
+Plain MCP clients may ignore ChatGPT Apps widget metadata and only show text
+results. ChatGPT's normal "called tool" cards are platform tool-call logs, not
+LocalSpace workspace widgets.
