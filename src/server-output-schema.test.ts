@@ -24,6 +24,10 @@ for (const [toolRef, expectedSchema] of expectedSchemas) {
   assert.equal(outputSchemaNameForTool(toolRef), expectedSchema, `${toolRef} outputSchema`);
 }
 
+assert.equal(toolWidgetKindForTool('"open_workspace"'), '"open_workspace"');
+assert.equal(toolWidgetKindForTool("toolNames.doctor"), '"workspace"');
+assert.match(source, /case "changes":\s*return kind === "open_workspace" \|\| kind === "show_changes";/);
+
 function outputSchemaNameForTool(toolRef: string): string {
   const registrationPattern = new RegExp(
     `registerAppTool\\(\\s*server,\\s*${escapeRegExp(toolRef)}\\s*,\\s*\\{([\\s\\S]*?)\\n\\s*\\},\\s*async`,
@@ -36,6 +40,20 @@ function outputSchemaNameForTool(toolRef: string): string {
   const outputSchema = /outputSchema:\s*([A-Za-z0-9_]+)/.exec(descriptor);
   assert.ok(outputSchema, `Missing outputSchema for ${toolRef}`);
   return outputSchema[1] ?? "";
+}
+
+function toolWidgetKindForTool(toolRef: string): string {
+  const registrationPattern = new RegExp(
+    `registerAppTool\\(\\s*server,\\s*${escapeRegExp(toolRef)}\\s*,\\s*\\{([\\s\\S]*?)\\n\\s*\\},\\s*async`,
+    "m",
+  );
+  const registration = registrationPattern.exec(source);
+  assert.ok(registration, `Missing registerAppTool block for ${toolRef}`);
+
+  const descriptor = registration[1] ?? "";
+  const widgetMeta = /toolWidgetDescriptorMeta\(config,\s*("[^"]+")\)/.exec(descriptor);
+  assert.ok(widgetMeta, `Missing widget metadata for ${toolRef}`);
+  return widgetMeta[1] ?? "";
 }
 
 function escapeRegExp(value: string): string {

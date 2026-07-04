@@ -108,6 +108,7 @@ interface DiffStats {
 }
 
 type ToolWidgetKind =
+  | "open_workspace"
   | "workspace"
   | "read"
   | "write"
@@ -137,7 +138,7 @@ function shouldAttachWidget(mode: WidgetMode, kind: ToolWidgetKind): boolean {
     case "off":
       return false;
     case "changes":
-      return kind === "workspace" || kind === "show_changes";
+      return kind === "open_workspace" || kind === "show_changes";
     case "full":
       return true;
   }
@@ -1261,7 +1262,7 @@ function createMcpServer(
         skillDiagnostics: z.array(z.unknown()),
         instruction: z.string(),
       },
-      ...toolWidgetDescriptorMeta(config, "workspace"),
+      ...toolWidgetDescriptorMeta(config, "open_workspace"),
       annotations: { readOnlyHint: true },
     },
     async ({ path, mode, baseRef }) => {
