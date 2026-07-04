@@ -1,157 +1,287 @@
 <p align="center">
   <picture>
-    <img src="https://raw.githubusercontent.com/Alan-512/localspace/main/docs/assets/devspace-logo-light.png" alt="LocalSpace logo" width="140">
+    <img src="docs/assets/localspace-logo-light.svg" alt="LocalSpace logo" width="140">
   </picture>
 </p>
 
 <h1 align="center">LocalSpace</h1>
 
-<p align="center">Bring a Codex-style coding workflow to ChatGPT.</p>
+<p align="center">A secure local coding workspace for ChatGPT and other MCP hosts.</p>
 
 <p align="center">
   <a href="https://github.com/Alan-512/localspace/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Alan-512/localspace/ci.yml?style=flat-square&branch=main" /></a>
-  <a href="https://github.com/Alan-512/localspace/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/npm/l/%40waishnav%2Fdevspace?style=flat-square" /></a>
+  <a href="https://github.com/Alan-512/localspace/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" /></a>
+  <a href="https://github.com/Alan-512/localspace"><img alt="MCP" src="https://img.shields.io/badge/MCP-local%20coding%20workspace-7c3aed?style=flat-square" /></a>
 </p>
 
-**Give ChatGPT a secure connection to your own machine and Turn ChatGPT into Codex**
+LocalSpace lets ChatGPT, Claude, or another MCP-capable client work directly in
+selected folders on your own machine. It exposes file inspection, scoped edits,
+code search, Git review, command execution, validation summaries, and handoff
+tools through a self-hosted MCP server.
 
-LocalSpace is a self-hosted MCP server that lets ChatGPT read, edit, search, and run code in your real local projects — your files, your tools, your terminal — without uploading anything to a third party. You run it on your machine, expose it through a tunnel you control, and approve the connection with a password only you have.
+Use it when you want a Codex-style loop in ChatGPT: inspect the repository, read
+project instructions, make focused changes, run local tests, review diffs, and
+continue long tasks across chat windows.
+
+<p align="center">
+  <img src="docs/assets/localspace-feature-showcase.png" alt="LocalSpace feature showcase" width="860">
+</p>
+
+> **Security note**
+>
+> LocalSpace is remote access to selected local folders. Your files stay on your
+> machine unless a connected MCP client explicitly asks LocalSpace to read or
+> modify them through tool calls. Only connect clients you trust, keep the Owner
+> password private, and keep your allowed roots narrow.
 
 ---
 
-### 💖 Acknowledgement & Credits
-LocalSpace is a fork of and built upon the original project [DevSpace](https://github.com/Waishnav/devspace) created by [Waishnav](https://x.com/wshxnv). We thank them for their great work in bringing Codex-style workflows to ChatGPT. This repository is customized and extended for hybrid coding assistant workflows.
+## Why LocalSpace?
 
-## Installation
+LocalSpace is designed for hybrid human + AI coding sessions where the model is
+inside your real development environment, but every capability remains explicit
+and inspectable.
 
-LocalSpace requires Node `>=22.19 <27`.
+- **Local-first coding**: work with your actual projects, package manager, Git
+  repository, scripts, and terminal.
+- **Workspace-based access**: open one approved folder or managed worktree, then
+  reuse the returned `workspaceId` for all later operations.
+- **Codex-style editing**: use `read`, `apply_patch`, `exec_command`,
+  `write_stdin`, `changes`, and dedicated `git_*` tools.
+- **Fast code orientation**: use `project_map`, `entrypoints`, `symbols`,
+  `imports`, `references`, and `code_map` before changing unfamiliar code.
+- **Workflow guidance**: use `doctor`, `workspace_info`, `next_steps`,
+  `validate_plan`, `review_checklist`, `validation_summary`, `task_summary`,
+  `final_report`, and `handoff_summary` to keep long sessions grounded.
+- **Safety rails**: use filesystem allowlists, OAuth owner approval, Host header
+  checks, sensitive-path protection, command risk warnings, danger-command
+  approval tokens, and audit logs.
 
-Install the dependencies:
+LocalSpace does **not** replace your judgment. Shell access is intentionally
+powerful, so treat a connected MCP client like a trusted coding partner with
+access to your machine.
+
+---
+
+## Quick Start
+
+### 1. Install requirements
+
+LocalSpace requires:
+
+- Node `>=22.19 <27`
+- npm
+- Git
+- a public HTTPS URL that forwards to the local LocalSpace server
+
+On Windows, portable commands such as `node`, `npm`, and `git` work directly.
+Bash-specific commands still require Git Bash, WSL, MSYS2, Cygwin Bash, or an
+explicit shell configured with `LOCALSPACE_SHELL`.
+
+### 2. Install and build from this checkout
 
 ```bash
 npm install
 npm run build
 ```
 
-Then initialize and start the server:
+### 3. Initialize LocalSpace
 
 ```bash
 node dist/cli.js init
-node dist/cli.js serve
 ```
 
-During setup, LocalSpace asks for:
+During setup, choose:
 
-- the local project folders ChatGPT is allowed to open through LocalSpace
+- the local folders that MCP clients may open as workspaces
 - the local port, usually `7676` or `7680`
-- your public HTTPS base URL from Cloudflare Tunnel, ngrok, Pinggy, Tailscale Funnel, or another reverse proxy
+- the public HTTPS base URL for your tunnel or reverse proxy
 
-Use the public origin without `/mcp` during setup:
+Enter the public base URL as an origin only, without `/mcp`:
 
 ```text
 https://your-tunnel-host.example.com
 ```
 
-You will configure your MCP client with the public `/mcp` URL after setup.
-
-When the client connects, LocalSpace opens an Owner password approval page. Enter the Owner password printed by `init`. It is also stored in:
+The Owner password is printed during setup and stored in:
 
 ```text
 ~/.localspace/auth.json
 ```
 
-*(Note: LocalSpace has full backward-compatibility and automatically falls back to your old `~/.devspace/auth.json` if it exists.)*
+Keep this password private. LocalSpace also keeps a backward-compatible fallback
+for legacy auth files from earlier installs.
 
-Keep that password private.
+### 4. Start your tunnel
 
-## Connect Your MCP Client
+LocalSpace does not create the public tunnel for you. Use Cloudflare Tunnel,
+ngrok, Pinggy, Tailscale Funnel, or another HTTPS reverse proxy.
 
-The default local endpoint is:
+Point the tunnel to your local server, for example:
 
 ```text
-http://127.0.0.1:7680/mcp
+http://127.0.0.1:7680
 ```
 
-Most users should connect through a public HTTPS tunnel:
+Then configure your MCP client with:
 
 ```text
 https://your-tunnel-host.example.com/mcp
 ```
 
-## Tool Modes & What ChatGPT Can Do
-
-Once connected, ChatGPT can open one of your approved project folders as a workspace. From there, it can inspect the repo, make scoped edits, run commands, and show you what changed.
-
-LocalSpace supports multiple tool modes (`minimal`, `full`, `codex`, `hybrid`). By default, it runs in the **`hybrid`** mode, which gives the LLM the best balance of safety and power:
-
-### Hybrid Mode Tools (Default)
-- **`open_workspace`**: Open an allowed project directory.
-- **`doctor`**: Check LocalSpace runtime, config, shell, Git, Node, npm, and workspace diagnostics.
-- **`workspace_info`**: Summarize workspace root, Git status, recent commits, and package scripts.
-- **`session_summary`**: Summarize recent LocalSpace tool activity, commands, touched paths, blocked events, and approvals.
-- **`next_steps`**: Recommend the next coding workflow actions from workspace state and recent activity.
-- **`validate_plan`**: Recommend validation commands from package scripts without running them.
-- **`review_checklist`**: Show a pre-summary or pre-commit checklist based on Git state and validation scripts.
-- **`validation_summary`**: Summarize recent validation-related command activity and recommended validation commands.
-- **`task_summary`**: Summarize changed paths, Git state, audit activity, validation recommendations, and final-response guidance.
-- **`final_report`**: Generate a standard task-final report from Git, validation, audit, warnings, and optional completion notes.
-- **`handoff_summary`**: Generate a Markdown handoff for continuing long tasks in a new chat/window.
-- Workspace and Git tools return structured status data alongside text output.
-- **`entrypoints`**: Identify package entrypoints, likely source entry files, config files, and verification scripts.
-- **`read`**: Direct file read/inspection.
-- **`project_map`**: Quickly view a compact project directory tree.
-- **`code_map`**: Combine entrypoints, project structure, exported symbols, and imports/exports into one overview.
-- **`symbols`**: Locate TypeScript/JavaScript declarations before reading files.
-- **`imports`**: Inspect TypeScript/JavaScript import and export relationships.
-- **`references`**: Find TypeScript/JavaScript identifier references before changing code.
-- Navigation tools return both plain text and structured content for model/UI consumption. See [`docs/structured-content.md`](docs/structured-content.md).
-- **`apply_patch`**: Apply a Codex-style unified patch to edit files.
-- **`grep`**, **`glob`**, **`ls`**: Efficient directory and file structure inspection.
-- **`exec_command`**: Run terminal commands (compiles, tests, builds, git status, etc.).
-- **`write_stdin`**: Interact or poll running terminal processes.
-- `exec_command` adds non-blocking safety warnings for risky commands such as recursive deletion, force push, deploy/publish, elevated privileges, and shell file writes.
-- `exec_command` blocks high-risk `danger` commands until a one-time approval token is supplied after explicit user confirmation.
-- Write-like tools block generic sensitive paths such as `.env`, `.git/config`, `.git/hooks/**`, secret/token/private-key-like files, LocalSpace state directories, and platform system directories.
-- Audit logging is enabled by default and writes JSONL events to the LocalSpace state directory.
-- **`changes`**: Review current Git changes as plain text without requiring widget mode.
-- **`git_status`**, **`git_diff`**, **`git_add`**, **`git_commit`**, **`git_log`**: Dedicated Git workflow tools using fixed Git arguments.
-
-### Mental Model
-
-LocalSpace is remote access to selected local folders.
-
-You decide which roots are allowed. The MCP client still has powerful local capabilities inside an opened workspace, including shell execution. Treat a connected client like a trusted coding partner with access to your machine.
-
-For a normal ChatGPT coding session:
-
-1. Start your tunnel.
-2. Run `node dist/cli.js serve`.
-3. Connect the MCP client to your public `/mcp` URL.
-4. Approve the connection with the Owner password.
-5. Ask ChatGPT to open a project inside one of your allowed roots.
-
-## Platform Support
-
-LocalSpace supports Linux, macOS, and Windows environments. On Windows,
-`exec_command` uses the platform default command shell by default. Portable
-commands such as `node`, `npm`, and `git` work directly. Bash-specific syntax
-still requires an explicit Bash or WSL invocation.
-
-Set `LOCALSPACE_SHELL` when you want `exec_command` to use a specific shell such
-as `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, or `wsl.exe`.
-
-| Platform                                          | Status            | Notes                                          |
-| ------------------------------------------------- | ----------------- | ---------------------------------------------- |
-| Linux                                             | Supported         | Requires Node, npm, Git, and Bash.             |
-| macOS                                             | Supported         | Requires Node, npm, Git, and Bash.             |
-| Windows with Git Bash, WSL, MSYS2, or Cygwin Bash | Supported         | Use Bash or WSL for Bash-specific syntax.      |
-| Windows PowerShell or `cmd.exe` only              | Supported for common commands | Bash-specific scripts still require Bash or WSL. |
-
-Run this to inspect your local setup:
+### 5. Start LocalSpace
 
 ```bash
-node dist/cli.js doctor
+node dist/cli.js serve
 ```
+
+When the MCP client connects, LocalSpace shows an Owner approval page. Enter the
+Owner password only when you intentionally want that client to access this
+server.
+
+### 6. Open a project from ChatGPT
+
+Ask your MCP client to open one of the approved folders:
+
+```text
+@localspace Open ~/work/my-project and inspect the current git status.
+```
+
+For long or risky changes, prefer an isolated managed worktree:
+
+```text
+@localspace Open ~/work/my-project in worktree mode and implement the next task.
+```
+
+---
+
+## Common Commands
+
+```bash
+# Check local runtime, config, Git, shell, and dependency health
+node dist/cli.js doctor
+
+# Start the MCP server from a built checkout
+node dist/cli.js serve
+
+# Start with a temporary public URL override
+LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" node dist/cli.js serve
+
+# Persist a stable public URL
+node dist/cli.js config set publicBaseUrl https://localspace.example.com
+```
+
+If you install LocalSpace as a package, the CLI binary is `localspace`, so the
+same commands become `localspace init`, `localspace serve`, and
+`localspace doctor`.
+
+---
+
+## Tool Modes
+
+`LOCALSPACE_TOOL_MODE` controls which tools are exposed.
+
+| Mode | Status | Best for |
+| --- | --- | --- |
+| `hybrid` | Default | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and workflow summaries. |
+| `codex` | Experimental | A smaller Codex-like surface: workspace, read, patch, command, process, changes, and Git tools. |
+| `full` | Available | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
+| `minimal` | Available | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |
+
+Example:
+
+```bash
+LOCALSPACE_TOOL_MODE="hybrid" node dist/cli.js serve
+```
+
+See [`docs/configuration.md`](docs/configuration.md) for the complete reference.
+
+---
+
+## What ChatGPT Can Do
+
+
+In the default `hybrid` mode, ChatGPT can:
+
+- open an approved checkout or managed worktree with `open_workspace`
+- inspect project state with `doctor`, `workspace_info`, and `entrypoints`
+- read files directly with `read`
+- map unfamiliar projects with `project_map` and `code_map`
+- search code with `grep`, `glob`, `ls`, `symbols`, `imports`, and `references`
+- edit files with `apply_patch`
+- run commands with `exec_command` and interact with running processes through
+  `write_stdin`
+- review changes with `changes`, `git_status`, `git_diff`, and `git_log`
+- stage and commit explicit files with `git_add` and `git_commit` when the user
+  asks for it
+- summarize progress with `session_summary`, `validation_summary`,
+  `task_summary`, `final_report`, and `handoff_summary`
+
+The workflow tools are intentionally read-only unless their names clearly imply
+mutation, such as `apply_patch`, `exec_command`, `git_add`, or `git_commit`.
+
+---
+
+## Security Model
+
+LocalSpace has multiple safety layers, but it is still a tool for trusted local
+development access.
+
+| Layer | Purpose |
+| --- | --- |
+| Filesystem allowlist | Only configured roots can be opened as workspaces. |
+| OAuth owner approval | A connecting MCP client must be approved with your Owner password. |
+| Host allowlist | LocalSpace derives allowed hosts from local and public configuration. |
+| Sensitive path protection | Write-like tools block `.env`, Git config/hooks, secret-like files, LocalSpace state paths, home roots, and system directories. |
+| Command warnings | Risky shell patterns are surfaced before or with command execution. |
+| Danger-command approval | High-risk commands require an explicit one-time approval token. |
+| Audit log | Important coding actions are recorded for review and session summaries. |
+
+Good allowed roots are narrow project folders such as:
+
+```text
+~/work
+~/personal/open-source
+C:\Users\alice\dev
+```
+
+Avoid broad roots such as `~`, `/`, or `C:\`.
+
+Read more in [`docs/security.md`](docs/security.md).
+
+---
+
+## ChatGPT Workflow
+
+A strong LocalSpace session usually follows this loop:
+
+1. Open the target folder once with `open_workspace`.
+2. Read returned `AGENTS.md` or equivalent project instructions.
+3. Inspect the repo with `workspace_info`, `entrypoints`, `project_map`, or
+   `code_map`.
+4. Make small, scoped edits with `apply_patch`.
+5. Run the most relevant validation commands.
+6. Review `changes` or `git_diff` before summarizing.
+7. Use `final_report` or `handoff_summary` at natural stopping points.
+
+For detailed model-facing guidance, see
+[`docs/chatgpt-coding-workflow.md`](docs/chatgpt-coding-workflow.md).
+
+---
+
+## Documentation
+
+- [`docs/setup.md`](docs/setup.md): setup walkthrough
+- [`docs/configuration.md`](docs/configuration.md): commands, environment
+  variables, tool modes, widgets, skills, and logging
+- [`docs/security.md`](docs/security.md): security model and operational cautions
+- [`docs/chatgpt-coding-workflow.md`](docs/chatgpt-coding-workflow.md): how an
+  MCP host should use LocalSpace during coding tasks
+- [`docs/structured-content.md`](docs/structured-content.md): structured output
+  returned by navigation, Git, diagnostics, and workflow tools
+- [`docs/gotchas.md`](docs/gotchas.md): common setup and workflow pitfalls
+
+---
 
 ## Local Development
 
@@ -165,3 +295,27 @@ npm test
 npm run build
 npm run start
 ```
+
+Before finalizing changes, run at least:
+
+```bash
+npm run typecheck
+npm test
+```
+
+---
+
+## Credits
+
+LocalSpace started as a fork of
+[DevSpace](https://github.com/Waishnav/devspace) by
+[Waishnav](https://x.com/wshxnv). The original project demonstrated a practical
+way to bring local coding workflows to MCP hosts.
+
+LocalSpace builds on that foundation with its own branding, CLI/config paths,
+hybrid tool modes, structured output, code navigation, Git helpers, command
+safety, audit logs, workflow summaries, and long-session handoff support.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

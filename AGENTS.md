@@ -1,17 +1,18 @@
-# DevSpace
+# LocalSpace
 
 This project exposes a local development workspace over MCP so ChatGPT, Claude,
 or another MCP-capable host can operate directly on this machine's approved
 development directories.
 
 The goal is not to delegate work to a separate local coding agent. The MCP host
-should call tools that read files, edit files, search code, and run shell
-commands directly against approved local project roots.
+should call tools that read files, edit files, search code, apply patches, run
+validation commands, and review Git state directly against approved local
+project roots.
 
 Pi's SDK is currently used as the backend adapter for mature local coding
-primitives such as read, edit, write, grep, find, ls, and bash. DevSpace wraps
+primitives such as read, edit, write, grep, find, ls, and bash. LocalSpace wraps
 those primitives behind a remote Streamable HTTP MCP interface, suitable for use
-through a Cloudflare Tunnel.
+through a user-controlled tunnel or HTTPS reverse proxy.
 
 The model-facing workflow is workspace based. MCP clients should call
 `open_workspace` once per local project directory or worktree, then reuse the
@@ -29,5 +30,5 @@ Core constraints:
   core design, not a later add-on.
 - Start with a narrow filesystem allowlist.
 - Prefer explicit, inspectable tool calls over autonomous local agent loops.
-- Keep the first version small enough to validate with real ChatGPT/Claude MCP
-  clients before adding UI or workflow features.
+- Keep releases small enough to validate with real ChatGPT/Claude MCP clients
+  before adding broader workflow or UI features.

@@ -2,20 +2,23 @@
 
 This page collects the setup issues users are most likely to hit.
 
-## `devspace` Command Not Found
+## `localspace` Command Not Found
 
-Use `npx`:
+If you are running from a local checkout, build first and use the compiled CLI:
 
 ```bash
-npx @waishnav/devspace init
-npx @waishnav/devspace serve
+npm install
+npm run build
+node dist/cli.js init
+node dist/cli.js serve
 ```
 
-If you installed globally, confirm npm's global bin directory is on `PATH`.
+If you installed LocalSpace as a package, confirm npm's global bin directory is
+on `PATH`.
 
 ## Unsupported Node Version
 
-DevSpace requires Node `>=22.19 <27`.
+LocalSpace requires Node `>=22.19 <27`.
 
 Check:
 
@@ -40,7 +43,7 @@ npm rebuild better-sqlite3
 Then run:
 
 ```bash
-npx @waishnav/devspace doctor
+node dist/cli.js doctor
 ```
 
 Release starts run a native dependency check before launching.
@@ -62,7 +65,7 @@ https://your-tunnel-host.example.com/mcp
 If you saved the wrong value:
 
 ```bash
-npx @waishnav/devspace config set publicBaseUrl https://your-tunnel-host.example.com
+node dist/cli.js config set publicBaseUrl https://your-tunnel-host.example.com
 ```
 
 ## Tunnel URL Changed
@@ -72,23 +75,23 @@ Temporary tunnels often change URLs between runs.
 For a one-off run:
 
 ```bash
-LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" localspace serve
+LOCALSPACE_PUBLIC_BASE_URL="https://new-tunnel.example.com" node dist/cli.js serve
 ```
 
 For a stable URL:
 
 ```bash
-npx @waishnav/devspace config set publicBaseUrl https://devspace.example.com
+node dist/cli.js config set publicBaseUrl https://localspace.example.com
 ```
 
 ## Host Header Or 403 Problems
 
-DevSpace derives allowed hosts from the configured public URL.
+LocalSpace derives allowed hosts from the configured public URL.
 
 Run:
 
 ```bash
-npx @waishnav/devspace doctor
+node dist/cli.js doctor
 ```
 
 Confirm the public URL hostname appears in allowed hosts. If you changed tunnel
@@ -97,12 +100,12 @@ URLs, update `publicBaseUrl`.
 Use this only for intentional local debugging:
 
 ```bash
-LOCALSPACE_ALLOWED_HOSTS="*" localspace serve
+LOCALSPACE_ALLOWED_HOSTS="*" node dist/cli.js serve
 ```
 
 ## OAuth Redirect Host Rejected
 
-By default, DevSpace allows redirects for:
+By default, LocalSpace allows redirects for:
 
 ```text
 chatgpt.com
@@ -113,7 +116,7 @@ localhost
 If another MCP client uses a different redirect host, configure:
 
 ```bash
-LOCALSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS="chatgpt.com,example.com" localspace serve
+LOCALSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS="chatgpt.com,example.com" node dist/cli.js serve
 ```
 
 ## Owner Password Not Accepted
@@ -121,13 +124,13 @@ LOCALSPACE_OAUTH_ALLOWED_REDIRECT_HOSTS="chatgpt.com,example.com" localspace ser
 Make sure you are entering the Owner password from:
 
 ```text
-~/.devspace/auth.json
+~/.localspace/auth.json
 ```
 
 To regenerate setup:
 
 ```bash
-npx @waishnav/devspace init --force
+node dist/cli.js init --force
 ```
 
 ## Unknown `workspaceId`
@@ -146,13 +149,13 @@ The path must be inside one of the allowed roots configured during setup.
 Run:
 
 ```bash
-npx @waishnav/devspace config get
+node dist/cli.js config get
 ```
 
 Then either open a project under an allowed root or rerun setup:
 
 ```bash
-npx @waishnav/devspace init --force
+node dist/cli.js init --force
 ```
 
 ## Worktree Mode Fails
@@ -180,7 +183,7 @@ Cygwin Bash.
 Run:
 
 ```bash
-localspace doctor
+node dist/cli.js doctor
 ```
 
 Confirm your expected shell tools are available.
@@ -190,7 +193,7 @@ Confirm your expected shell tools are available.
 Skills are enabled by default. Check:
 
 ```bash
-LOCALSPACE_SKILLS=1 localspace serve
+LOCALSPACE_SKILLS=1 node dist/cli.js serve
 ```
 
 LocalSpace looks in standard Agent Skills locations:
@@ -203,7 +206,8 @@ It also checks compatibility and custom paths:
 - `LOCALSPACE_AGENT_DIR/skills`, defaulting to `~/.codex/skills`
 - additional paths from `LOCALSPACE_SKILL_PATHS`
 
-Legacy project paths such as `.pi/skills` can be added through `LOCALSPACE_SKILL_PATHS` when needed.
+Legacy project paths such as `.pi/skills` can be added through
+`LOCALSPACE_SKILL_PATHS` when needed.
 
 If a skill appears in `open_workspace`, the model must read that skill's
 `SKILL.md` before reading other files inside the skill directory.

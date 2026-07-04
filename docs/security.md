@@ -1,6 +1,6 @@
 # Security Model
 
-DevSpace exposes local coding capabilities over MCP. Treat it as remote access
+LocalSpace exposes local coding capabilities over MCP. Treat it as remote access
 to your development machine.
 
 The security model is simple:
@@ -12,7 +12,7 @@ The security model is simple:
 
 ## Filesystem Allowlist
 
-DevSpace only opens workspaces under configured roots.
+LocalSpace only opens workspaces under configured roots.
 
 Good examples:
 
@@ -34,13 +34,13 @@ reach.
 
 ## Owner Password
 
-`devspace init` generates an Owner password and stores it in:
+`localspace init` generates an Owner password and stores it in:
 
 ```text
-~/.devspace/auth.json
+~/.localspace/auth.json
 ```
 
-When an MCP client connects, DevSpace shows an approval page. Enter the Owner
+When an MCP client connects, LocalSpace shows an approval page. Enter the Owner
 password only when you intentionally want that client to access this server.
 
 For env-driven deployments, set a long random value:
@@ -62,19 +62,20 @@ https://your-tunnel-host.example.com
 
 Do not include `/mcp` in `LOCALSPACE_PUBLIC_BASE_URL`.
 
-By default, DevSpace derives allowed Host headers from the local host and public
-URL. Use `LOCALSPACE_ALLOWED_HOSTS=*` only for intentional local debugging.
+By default, LocalSpace derives allowed Host headers from the local host and
+public URL. Use `LOCALSPACE_ALLOWED_HOSTS=*` only for intentional local
+debugging.
 
 ## Tunnels
 
-DevSpace does not manage tunnels. Your tunnel or reverse proxy should point to:
+LocalSpace does not manage tunnels. Your tunnel or reverse proxy should point to:
 
 ```text
 http://127.0.0.1:7676
 ```
 
 Prefer adding Cloudflare Access, Tailscale identity controls, or equivalent
-protection in front of public tunnels. DevSpace OAuth still protects the MCP
+protection in front of public tunnels. LocalSpace OAuth still protects the MCP
 endpoint, but the tunnel URL should not be treated as a secret.
 
 ## Shell Access
@@ -82,7 +83,7 @@ endpoint, but the tunnel URL should not be treated as a secret.
 The shell tool is powerful by design. It is meant for tests, builds, git, and
 package scripts.
 
-Filesystem path containment applies to DevSpace file tools. Shell commands run
+Filesystem path containment applies to LocalSpace file tools. Shell commands run
 as local commands and can do what your user account can do. This is why the MCP
 client must be trusted and the Owner password must stay private.
 
@@ -124,7 +125,7 @@ sessions.
 
 ## Logs
 
-By default, DevSpace logs requests and tool calls. Shell command previews are
+By default, LocalSpace logs requests and tool calls. Shell command previews are
 disabled unless `LOCALSPACE_LOG_SHELL_COMMANDS=1`.
 
 Do not enable shell command logging if commands may contain secrets.

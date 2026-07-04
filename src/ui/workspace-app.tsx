@@ -68,7 +68,7 @@ async function boot(): Promise<void> {
   render();
 
   app = new App(
-    { name: "devspace-tool-cards", version: "0.4.0" },
+    { name: "localspace-tool-cards", version: "0.4.0" },
     {},
   );
 

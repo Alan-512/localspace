@@ -1,6 +1,6 @@
 # ChatGPT Coding Workflow
 
-DevSpace brings a Codex-style coding-agent loop to ChatGPT and other MCP hosts:
+LocalSpace brings a Codex-style coding-agent loop to ChatGPT and other MCP hosts:
 inspect the repo, follow local instructions, make scoped edits, run
 verification, and show the user what changed.
 
@@ -47,7 +47,7 @@ Do not reopen the same folder unless:
 
 ## Checkout Mode
 
-Checkout mode is the default. DevSpace opens the actual directory:
+Checkout mode is the default. LocalSpace opens the actual directory:
 
 ```json
 {
@@ -71,19 +71,19 @@ Use worktree mode for isolated parallel work:
 Managed worktrees are created under:
 
 ```text
-~/.devspace/worktrees
+~/.localspace/worktrees
 ```
 
 Worktree mode requires a Git repository with at least one commit. It starts from
 `HEAD` unless `baseRef` is provided.
 
 Uncommitted source checkout changes are not copied into the managed worktree.
-DevSpace reports when the source checkout was dirty so the model can decide how
+LocalSpace reports when the source checkout was dirty so the model can decide how
 to proceed with the user.
 
 ## Project Instructions
 
-When a workspace opens, DevSpace loads root-level instruction files:
+When a workspace opens, LocalSpace loads root-level instruction files:
 
 - `AGENTS.md`
 - `AGENTS.MD`
@@ -100,7 +100,7 @@ new context during later tool calls.
 
 Skills are enabled by default for coding-agent workflows.
 
-DevSpace discovers standard Agent Skills from:
+LocalSpace discovers standard Agent Skills from:
 
 - `~/.agents/skills`
 - project `.agents/skills`
@@ -180,8 +180,7 @@ It supports:
 - `maxResults` and `maxFiles` to bound work on large repositories
 
 The scan skips generated or dependency folders such as `.git`, `node_modules`,
-`dist`, `build`, `.next`, `.turbo`, `.cache`, `coverage`, `.localspace`, and
-`.devspace`.
+`dist`, `build`, `.next`, `.turbo`, `.cache`, `coverage`, and `.localspace`.
 
 ## Imports and References
 
@@ -308,7 +307,7 @@ to expose the aggregate show-changes flow.
 
 When `show_changes` is exposed, models should call it exactly once after the
 final file modification in any turn that changes files. The tool only requires
-the `workspaceId`; DevSpace automatically compares against the last shown
+the `workspaceId`; LocalSpace automatically compares against the last shown
 checkpoint and advances that checkpoint after rendering the aggregate diff.
 
 On Windows, `exec_command` uses the platform default command shell by default.

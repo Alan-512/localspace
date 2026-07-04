@@ -2,6 +2,14 @@
   "name": "@alan-512/localspace",
   "version": "1.0.3",
   "description": "Expose a secure local coding workspace through an MCP server.",
+  "homepage": "https://github.com/Alan-512/localspace#readme",
+  "bugs": {
+    "url": "https://github.com/Alan-512/localspace/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Alan-512/localspace.git"
+  },
   "type": "module",
   "main": "dist/server.js",
   "engines": {
@@ -29,8 +37,14 @@
     "test": "tsx src/config.test.ts && tsx src/ui/card-types.test.ts && tsx src/ui/patch-display.test.ts && tsx src/apply-patch.test.ts && tsx src/project-map.test.ts && tsx src/symbols.test.ts && tsx src/code-navigation.test.ts && tsx src/code-map.test.ts && tsx src/entrypoints.test.ts && tsx src/diagnostics.test.ts && tsx src/command-safety.test.ts && tsx src/command-approval.test.ts && tsx src/sensitive-paths.test.ts && tsx src/audit-log.test.ts && tsx src/workflow-tools.test.ts && tsx src/task-summary.test.ts && tsx src/final-report.test.ts && tsx src/git-changes.test.ts && tsx src/git-tools.test.ts && tsx src/process-platform.test.ts && tsx src/process-sessions.test.ts && tsx src/roots.test.ts && tsx src/skills.test.ts && tsx src/workspaces.test.ts && tsx src/review-checkpoints.test.ts && tsx src/oauth-store.test.ts && tsx src/cli.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "mcp",
+    "chatgpt",
+    "coding-agent",
+    "local-workspace",
+    "developer-tools"
+  ],
+  "author": "Alan-512",
   "license": "MIT",
   "dependencies": {
     "@clack/prompts": "^1.5.1",

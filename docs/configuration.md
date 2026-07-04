@@ -81,7 +81,7 @@ sessions.
 `project_map` renders a compact directory tree for an open workspace. It defaults
 to `depth: 3`, `maxEntries: 300`, `includeFiles: true`, and `showHidden: false`,
 and skips large/generated folders such as `.git`, `node_modules`, `dist`,
-`build`, `.next`, `.turbo`, `.cache`, `coverage`, `.localspace`, and `.devspace`.
+`build`, `.next`, `.turbo`, `.cache`, `coverage`, and `.localspace`.
 
 `symbols` scans TypeScript and JavaScript files for top-level declarations and
 class methods. It reports file paths, line numbers, symbol kinds, symbol names,
