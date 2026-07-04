@@ -296,8 +296,41 @@ async function checkCommand(name: string, args: string[], cwd: string): Promise<
     const detail = (result.stdout || result.stderr).trim() || "available";
     return { name, status: "ok", detail };
   } catch (error) {
+    if (process.platform === "win32") {
+      return checkCommandWithWindowsShellFallback(name, args, cwd, error);
+    }
     return { name, status: "error", detail: errorMessage(error) };
   }
+}
+
+async function checkCommandWithWindowsShellFallback(
+  name: string,
+  args: string[],
+  cwd: string,
+  directError: unknown,
+): Promise<CommandCheck> {
+  const shell = resolveShellCommand(shellCommand([name, ...args]), "win32", process.env);
+
+  try {
+    const result = await execFileAsync(shell.executable, shell.args, { cwd, timeout: 5_000 });
+    const detail = (result.stdout || result.stderr).trim() || "available";
+    return { name, status: "ok", detail };
+  } catch (shellError) {
+    return {
+      name,
+      status: "error",
+      detail: `${errorMessage(directError)}; shell fallback failed: ${errorMessage(shellError)}`,
+    };
+  }
+}
+
+function shellCommand(parts: string[]): string {
+  return parts.map(quoteShellArg).join(" ");
+}
+
+function quoteShellArg(part: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(part)) return part;
+  return `"${part.replace(/(["^%])/g, "^$1")}"`;
 }
 
 async function checkShell(config: ServerConfig, cwd: string): Promise<CommandCheck> {

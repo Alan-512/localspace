@@ -63,6 +63,7 @@ try {
   const doctorData = await generateDoctorReportData(config, { workspace });
   assert.equal(doctorData.configuration.toolMode, "hybrid");
   assert.equal(doctorData.workspace?.id, "ws_test");
+  assert.ok(doctorData.checks.some((check) => check.name === "npm" && check.status === "ok"));
   assert.ok(doctorData.checks.some((check) => check.name === "git" && check.status === "ok"));
   assert.match(doctorData.text, /LocalSpace doctor/);
 } finally {
