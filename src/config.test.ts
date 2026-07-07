@@ -30,6 +30,21 @@ assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_SHELL: "pwsh" }).shell, "pwsh")
 assert.equal(loadConfig(baseEnv).audit.enabled, true);
 assert.equal(loadConfig(baseEnv).audit.maxMemoryEvents, 1000);
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_AUDIT_LOG: "0" }).audit.enabled, false);
+assert.deepEqual(loadConfig(baseEnv).mcpSessions, {
+  idleTtlMs: 3600000,
+  cleanupIntervalMs: 60000,
+  maxSessions: 16,
+});
+assert.deepEqual(loadConfig({
+  ...baseEnv,
+  LOCALSPACE_MCP_SESSION_IDLE_TTL_MS: "120000",
+  LOCALSPACE_MCP_SESSION_CLEANUP_INTERVAL_MS: "5000",
+  LOCALSPACE_MCP_MAX_SESSIONS: "4",
+}).mcpSessions, {
+  idleTtlMs: 120000,
+  cleanupIntervalMs: 5000,
+  maxSessions: 4,
+});
 
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "invalid" }),
@@ -46,6 +61,14 @@ assert.throws(
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "invalid" }),
   /Invalid LOCALSPACE_TOOL_MODE: invalid/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, LOCALSPACE_MCP_SESSION_IDLE_TTL_MS: "0" }),
+  /Invalid LOCALSPACE_MCP_SESSION_IDLE_TTL_MS: 0/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, LOCALSPACE_MCP_MAX_SESSIONS: "0" }),
+  /Invalid LOCALSPACE_MCP_MAX_SESSIONS: 0/,
 );
 
 assert.deepEqual(loadConfig(baseEnv).logging, {

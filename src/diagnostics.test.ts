@@ -56,6 +56,7 @@ try {
   assert.match(doctor, /LocalSpace doctor/);
   assert.match(doctor, /tool mode: hybrid/);
   assert.match(doctor, /Workspace:/);
+  assert.match(doctor, /MCP max sessions: 16/);
   assert.match(doctor, /OK node:/);
   assert.match(doctor, /OK git:/);
   assert.match(doctor, /Overall:/);
@@ -115,6 +116,11 @@ function testConfig(root: string): ServerConfig {
       enabled: true,
       path: join(root, "state", "audit.jsonl"),
       maxMemoryEvents: 1000,
+    },
+    mcpSessions: {
+      idleTtlMs: 3600000,
+      cleanupIntervalMs: 60000,
+      maxSessions: 16,
     },
   };
 }

@@ -40,6 +40,23 @@ localspace config set publicBaseUrl https://localspace.example.com
 | `LOCALSPACE_STATE_DIR` | Directory for SQLite state. Defaults to `~/.local/share/localspace`. |
 | `LOCALSPACE_SHELL` | Optional shell executable for `exec_command`, for example `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, or `wsl.exe`. |
 
+## MCP Session Lifecycle
+
+LocalSpace keeps one in-memory MCP transport per active client session. To avoid
+stale browser or tunnel reconnections accumulating until Node.js runs out of
+heap, sessions are now bounded and cleaned up automatically.
+
+| Variable | Default |
+| --- | --- |
+| `LOCALSPACE_MCP_SESSION_IDLE_TTL_MS` | `3600000` |
+| `LOCALSPACE_MCP_SESSION_CLEANUP_INTERVAL_MS` | `60000` |
+| `LOCALSPACE_MCP_MAX_SESSIONS` | `16` |
+
+When a session is idle past the TTL, LocalSpace closes and removes it. When the
+session cap is exceeded, the least recently used session is removed first. MCP
+clients can reconnect and call `open_workspace` again if they try to use a
+session that has already expired.
+
 ## OAuth
 
 LocalSpace uses a single-user OAuth approval flow.

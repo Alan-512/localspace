@@ -40,6 +40,7 @@ export interface DoctorReportData {
     agentDir: string;
     skillsEnabled: boolean;
     configuredShell?: string;
+    mcpSessions: ServerConfig["mcpSessions"];
   };
   runtime: {
     platform: NodeJS.Platform;
@@ -114,6 +115,7 @@ export async function generateDoctorReportData(
       agentDir: config.agentDir,
       skillsEnabled: config.skillsEnabled,
       configuredShell: config.shell,
+      mcpSessions: config.mcpSessions,
     },
     runtime: {
       platform: process.platform,
@@ -146,6 +148,9 @@ function formatDoctorReport(data: DoctorReportData): string {
   lines.push(`- agent dir: ${data.configuration.agentDir}`);
   lines.push(`- skills: ${data.configuration.skillsEnabled ? "enabled" : "disabled"}`);
   lines.push(`- configured shell: ${data.configuration.configuredShell ?? "default"}`);
+  lines.push(`- MCP session idle TTL: ${data.configuration.mcpSessions.idleTtlMs} ms`);
+  lines.push(`- MCP session cleanup interval: ${data.configuration.mcpSessions.cleanupIntervalMs} ms`);
+  lines.push(`- MCP max sessions: ${data.configuration.mcpSessions.maxSessions}`);
   lines.push("");
 
   lines.push("Runtime:");

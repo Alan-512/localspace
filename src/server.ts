@@ -61,6 +61,7 @@ import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
 import { createFinalReport, createHandoffSummary } from "./final-report.js";
 import { createTaskSummary, createValidationSummary } from "./task-summary.js";
 import { createNextSteps, createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
+import { McpSessionRegistry, type McpSessionRegistryEvent } from "./mcp-session-registry.js";
 
 type Transport = StreamableHTTPServerTransport;
 const WORKSPACE_APP_URI = "ui://localspace/workspace-app.html";
@@ -3313,7 +3314,9 @@ export function createServer(config = loadConfig()): RunningServer {
     host: config.host,
     ...(allowedHosts ? { allowedHosts } : {}),
   });
-  const transports = new Map<string, Transport>();
+  const transports = new McpSessionRegistry<Transport>(config.mcpSessions, (event) => {
+    logMcpSessionEvent(config, event);
+  });
   const mcpUrl = new URL("/mcp", config.publicBaseUrl);
   const resourceServerUrl = resourceUrlFromServerUrl(mcpUrl);
   const oauthProvider = new SingleUserOAuthProvider(config.oauth, mcpUrl, config.stateDir);
@@ -3431,22 +3434,14 @@ export function createServer(config = loadConfig()): RunningServer {
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (newSessionId) => {
-            if (transport) transports.set(newSessionId, transport);
-            logEvent(config.logging, "info", "mcp_session_created", {
-              requestId,
-              sessionIdPrefix: sessionIdPrefix(newSessionId),
-              ...requestLogFields(req, config),
-            });
+            if (transport) transports.add(newSessionId, transport);
           },
         });
 
         transport.onclose = () => {
           const closedSessionId = transport?.sessionId;
           if (closedSessionId) {
-            transports.delete(closedSessionId);
-            logEvent(config.logging, "info", "mcp_session_closed", {
-              sessionIdPrefix: sessionIdPrefix(closedSessionId),
-            });
+            transports.delete(closedSessionId, "client_closed", { closeTransport: false });
           }
         };
 
@@ -3477,10 +3472,21 @@ export function createServer(config = loadConfig()): RunningServer {
       if (closed) return;
       closed = true;
       processSessions.shutdown();
+      transports.closeAll("server_shutdown");
       oauthProvider.close();
       workspaceStore.close?.();
     },
   };
+}
+
+function logMcpSessionEvent(config: ServerConfig, event: McpSessionRegistryEvent): void {
+  logEvent(config.logging, "info", event.action === "created" ? "mcp_session_created" : "mcp_session_closed", {
+    sessionIdPrefix: sessionIdPrefix(event.sessionId),
+    reason: event.reason,
+    activeSessions: event.activeSessions,
+    ageMs: event.ageMs,
+    idleMs: event.idleMs,
+  });
 }
 
 async function isMainModule(): Promise<boolean> {

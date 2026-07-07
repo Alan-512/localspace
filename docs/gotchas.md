@@ -142,6 +142,18 @@ project.
 Workspace session metadata is persisted, but clients should still treat
 `open_workspace` as the way to begin a fresh working session.
 
+## Long-Running Server Memory Growth
+
+If LocalSpace runs for many hours while an MCP client repeatedly reconnects,
+stale MCP transports can accumulate when a browser tab or tunnel does not close
+the old session cleanly. LocalSpace now bounds this state with idle cleanup and a
+maximum active MCP session cap. See `LOCALSPACE_MCP_SESSION_IDLE_TTL_MS`,
+`LOCALSPACE_MCP_SESSION_CLEANUP_INTERVAL_MS`, and
+`LOCALSPACE_MCP_MAX_SESSIONS` in `configuration.md`.
+
+If a client tries to use a session that has expired, reconnect the MCP server in
+the client and call `open_workspace` again.
+
 ## Workspace Path Rejected
 
 The path must be inside one of the allowed roots configured during setup.

@@ -6,6 +6,12 @@ import type { LoggingConfig, LogFormat, LogLevel } from "./logger.js";
 import type { OAuthConfig } from "./oauth-provider.js";
 import { loadLocalspaceFiles } from "./user-config.js";
 import { defaultAuditLogPath, type AuditLogConfig } from "./audit-log.js";
+import {
+  DEFAULT_MCP_MAX_SESSIONS,
+  DEFAULT_MCP_SESSION_CLEANUP_INTERVAL_MS,
+  DEFAULT_MCP_SESSION_IDLE_TTL_MS,
+  type McpSessionConfig,
+} from "./mcp-session-registry.js";
 
 export type ToolMode = "minimal" | "full" | "codex" | "hybrid";
 export type WidgetMode = "off" | "changes" | "full";
@@ -29,6 +35,7 @@ export interface ServerConfig {
   shell?: string;
   logging: LoggingConfig;
   audit: AuditLogConfig;
+  mcpSessions: McpSessionConfig;
 }
 
 function parsePort(value: string | number | undefined): number {
@@ -162,6 +169,26 @@ function parseAuditConfig(env: NodeJS.ProcessEnv, stateDir: string): AuditLogCon
   };
 }
 
+function parseMcpSessionConfig(env: NodeJS.ProcessEnv): McpSessionConfig {
+  return {
+    idleTtlMs: parsePositiveInteger(
+      env.LOCALSPACE_MCP_SESSION_IDLE_TTL_MS,
+      DEFAULT_MCP_SESSION_IDLE_TTL_MS,
+      "LOCALSPACE_MCP_SESSION_IDLE_TTL_MS",
+    ),
+    cleanupIntervalMs: parsePositiveInteger(
+      env.LOCALSPACE_MCP_SESSION_CLEANUP_INTERVAL_MS,
+      DEFAULT_MCP_SESSION_CLEANUP_INTERVAL_MS,
+      "LOCALSPACE_MCP_SESSION_CLEANUP_INTERVAL_MS",
+    ),
+    maxSessions: parsePositiveInteger(
+      env.LOCALSPACE_MCP_MAX_SESSIONS,
+      DEFAULT_MCP_MAX_SESSIONS,
+      "LOCALSPACE_MCP_MAX_SESSIONS",
+    ),
+  };
+}
+
 function parseWidgetMode(value: string | undefined): WidgetMode {
   if (!value || value === "full") return "full";
   if (value === "off" || value === "changes") return value;
@@ -258,6 +285,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     shell: parseOptionalPath(env.LOCALSPACE_SHELL ?? files.config.shell),
     logging: parseLoggingConfig(env),
     audit: parseAuditConfig(env, stateDir),
+    mcpSessions: parseMcpSessionConfig(env),
   };
 }
 
