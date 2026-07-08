@@ -1,6 +1,6 @@
-export const DEFAULT_MCP_SESSION_IDLE_TTL_MS = 60 * 60 * 1_000;
+export const DEFAULT_MCP_SESSION_IDLE_TTL_MS = 4 * 60 * 60 * 1_000;
 export const DEFAULT_MCP_SESSION_CLEANUP_INTERVAL_MS = 60_000;
-export const DEFAULT_MCP_MAX_SESSIONS = 16;
+export const DEFAULT_MCP_MAX_SESSIONS = 128;
 
 export interface McpSessionConfig {
   idleTtlMs: number;

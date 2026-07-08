@@ -48,9 +48,9 @@ heap, sessions are now bounded and cleaned up automatically.
 
 | Variable | Default |
 | --- | --- |
-| `LOCALSPACE_MCP_SESSION_IDLE_TTL_MS` | `3600000` |
+| `LOCALSPACE_MCP_SESSION_IDLE_TTL_MS` | `14400000` |
 | `LOCALSPACE_MCP_SESSION_CLEANUP_INTERVAL_MS` | `60000` |
-| `LOCALSPACE_MCP_MAX_SESSIONS` | `16` |
+| `LOCALSPACE_MCP_MAX_SESSIONS` | `128` |
 
 When a session is idle past the TTL, LocalSpace closes and removes it. When the
 session cap is exceeded, the least recently used session is removed first. MCP

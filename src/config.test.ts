@@ -31,9 +31,9 @@ assert.equal(loadConfig(baseEnv).audit.enabled, true);
 assert.equal(loadConfig(baseEnv).audit.maxMemoryEvents, 1000);
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_AUDIT_LOG: "0" }).audit.enabled, false);
 assert.deepEqual(loadConfig(baseEnv).mcpSessions, {
-  idleTtlMs: 3600000,
+  idleTtlMs: 14400000,
   cleanupIntervalMs: 60000,
-  maxSessions: 16,
+  maxSessions: 128,
 });
 assert.deepEqual(loadConfig({
   ...baseEnv,
