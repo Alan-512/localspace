@@ -62,9 +62,9 @@ import { createFinalReport, createHandoffSummary } from "./final-report.js";
 import { createTaskSummary, createValidationSummary } from "./task-summary.js";
 import { createNextSteps, createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
 import { McpSessionRegistry, type McpSessionRegistryEvent } from "./mcp-session-registry.js";
+import { createWorkspaceAppResourceUri } from "./workspace-app-resource.js";
 
 type Transport = StreamableHTTPServerTransport;
-const WORKSPACE_APP_URI = "ui://localspace/workspace-app.html";
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
 const WRITE_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
@@ -102,6 +102,13 @@ interface WorkspaceAppManifestEntry {
 }
 
 type WorkspaceAppManifest = Record<string, WorkspaceAppManifestEntry>;
+
+interface WorkspaceAppBuild {
+  entry: WorkspaceAppManifestEntry;
+  resourceUri: string;
+}
+
+let cachedWorkspaceAppBuild: WorkspaceAppBuild | undefined;
 
 interface DiffStats {
   additions: number;
@@ -154,7 +161,7 @@ function toolWidgetDescriptorMeta(
   return {
     _meta: {
       ui: {
-        resourceUri: WORKSPACE_APP_URI,
+        resourceUri: getWorkspaceAppBuild().resourceUri,
         visibility: ["model"],
       },
     },
@@ -764,12 +771,20 @@ function uiManifestUrl(): URL {
   return new URL("../dist/ui/.vite/manifest.json", import.meta.url);
 }
 
-function readWorkspaceAppManifest(): WorkspaceAppManifest {
-  return JSON.parse(readFileSync(uiManifestUrl(), "utf8")) as WorkspaceAppManifest;
+function readWorkspaceAppManifest(): {
+  source: string;
+  manifest: WorkspaceAppManifest;
+} {
+  const source = readFileSync(uiManifestUrl(), "utf8");
+  return {
+    source,
+    manifest: JSON.parse(source) as WorkspaceAppManifest,
+  };
 }
 
-function getWorkspaceAppManifestEntry(): WorkspaceAppManifestEntry {
-  const manifest = readWorkspaceAppManifest();
+function getWorkspaceAppManifestEntry(
+  manifest: WorkspaceAppManifest,
+): WorkspaceAppManifestEntry {
   const entry = manifest[WORKSPACE_APP_MANIFEST_ENTRY];
 
   if (!entry?.file) {
@@ -779,13 +794,27 @@ function getWorkspaceAppManifestEntry(): WorkspaceAppManifestEntry {
   return entry;
 }
 
+function getWorkspaceAppBuild(): WorkspaceAppBuild {
+  if (cachedWorkspaceAppBuild) return cachedWorkspaceAppBuild;
+
+  const { source, manifest } = readWorkspaceAppManifest();
+  const entry = getWorkspaceAppManifestEntry(manifest);
+  cachedWorkspaceAppBuild = {
+    entry,
+    resourceUri: createWorkspaceAppResourceUri(source),
+  };
+  return cachedWorkspaceAppBuild;
+}
+
 function assetUrl(baseUrl: string, assetPath: string): string {
   return `${baseUrl}/${assetPath.replace(/^\/+/, "")}`;
 }
 
-function workspaceAppHtml(config: ServerConfig): string {
+function workspaceAppHtml(
+  config: ServerConfig,
+  entry: WorkspaceAppManifestEntry,
+): string {
   const baseUrl = assetBaseUrl(config);
-  const entry = getWorkspaceAppManifestEntry();
   const stylesheets = (entry.css ?? [])
     .map(
       (stylesheet) =>
@@ -832,8 +861,9 @@ function setAssetHeaders(res: Response): void {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
 }
 
-async function assertWorkspaceAppAssets(): Promise<void> {
-  const entry = getWorkspaceAppManifestEntry();
+async function assertWorkspaceAppAssets(
+  entry: WorkspaceAppManifestEntry,
+): Promise<void> {
   const candidates = [entry.file, ...(entry.css ?? [])].map(
     (assetPath) => new URL(`../dist/ui/${assetPath}`, import.meta.url),
   );
@@ -1174,6 +1204,7 @@ function createMcpServer(
   processSessions: ProcessSessionManager,
   auditLog: AuditLogManager,
 ): McpServer {
+  const workspaceApp = getWorkspaceAppBuild();
   const server = new McpServer(
     {
       name: "localspace",
@@ -1190,7 +1221,7 @@ function createMcpServer(
   registerAppResource(
     server,
     "LocalSpace Diff Card",
-    WORKSPACE_APP_URI,
+    workspaceApp.resourceUri,
     {
       description: "Interactive card for viewing LocalSpace file diffs.",
       _meta: {
@@ -1200,13 +1231,13 @@ function createMcpServer(
       },
     },
     async () => {
-      await assertWorkspaceAppAssets();
+      await assertWorkspaceAppAssets(workspaceApp.entry);
       return {
         contents: [
           {
-            uri: WORKSPACE_APP_URI,
+            uri: workspaceApp.resourceUri,
             mimeType: RESOURCE_MIME_TYPE,
-            text: workspaceAppHtml(config),
+            text: workspaceAppHtml(config, workspaceApp.entry),
             _meta: {
               ui: {
                 csp: appCsp(config),

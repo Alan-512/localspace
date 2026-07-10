@@ -205,6 +205,19 @@ Confirm your expected shell tools are available.
 This usually means ChatGPT failed to load the optional Apps iframe template. It
 does not necessarily mean the LocalSpace tool call failed.
 
+ChatGPT caches app templates by their `ui://` resource URI. LocalSpace derives a
+versioned resource URI from the complete Vite build manifest, so any rebuilt UI
+asset produces a new template cache key instead of leaving new tool results tied
+to an older bundle that may no longer exist.
+
+After updating LocalSpace, rebuild and restart the server, then reconnect it in
+ChatGPT so the client receives the new tool descriptor and template URI:
+
+```bash
+npm run build
+npm start
+```
+
 First check whether the tool still returned normal text or structured output. If
 tools such as `read`, `grep`, `git_status`, or `doctor` still return data, the
 MCP server is still working and the problem is limited to the optional widget UI.
