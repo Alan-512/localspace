@@ -203,15 +203,22 @@ Confirm your expected shell tools are available.
 ## ChatGPT Shows `Failed To Fetch Template`
 
 This usually means ChatGPT failed to load the optional Apps iframe template. It
-does not necessarily mean the LocalSpace tool call failed.
+does not necessarily mean the LocalSpace tool call failed. The failure can also
+be intermittent: a later result may render normally in the same conversation
+without restarting LocalSpace or reconnecting the MCP server.
 
-ChatGPT caches app templates by their `ui://` resource URI. LocalSpace derives a
-versioned resource URI from the complete Vite build manifest, so any rebuilt UI
-asset produces a new template cache key instead of leaving new tool results tied
-to an older bundle that may no longer exist.
+LocalSpace derives a versioned `ui://` resource URI from the complete Vite build
+manifest. This is a cache-safety measure: any rebuilt UI asset produces a new
+template cache key instead of leaving new tool results tied to an older bundle
+that may no longer exist. It does not prove that stale template caching caused a
+particular intermittent failure, and it should not be treated as a confirmed
+root-cause fix without reproducing the failure and correlating it with server
+logs.
 
 After updating LocalSpace, rebuild and restart the server, then reconnect it in
-ChatGPT so the client receives the new tool descriptor and template URI:
+ChatGPT so the client can receive the new tool descriptor and template URI. This
+step validates deployment of the cache-safety change; it does not establish the
+root cause of an earlier intermittent error:
 
 ```bash
 npm run build
@@ -221,6 +228,12 @@ npm start
 First check whether the tool still returned normal text or structured output. If
 tools such as `read`, `grep`, `git_status`, or `doctor` still return data, the
 MCP server is still working and the problem is limited to the optional widget UI.
+
+When investigating a recurrence, correlate the visible error with LocalSpace
+request logs. Check for failed `resources/read` requests, unknown MCP sessions,
+and static asset 404 or 5xx responses. If no matching request reached LocalSpace,
+that suggests the failure occurred in the host-side template loading path rather
+than the tool handler itself.
 
 To reduce iframe usage, run with:
 
