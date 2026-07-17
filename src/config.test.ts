@@ -11,10 +11,19 @@ const baseEnv = {
   LOCALSPACE_OAUTH_OWNER_TOKEN: "test-owner-token-that-is-long-enough",
 };
 
-assert.equal(loadConfig(baseEnv).widgets, "full");
+assert.equal(loadConfig(baseEnv).widgets, "changes");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "changes" }).widgets, "changes");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "full" }).widgets, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_WIDGETS: "off" }).widgets, "off");
+assert.equal(loadConfig(baseEnv).mcpTransportMode, "stateless");
+assert.equal(
+  loadConfig({ ...baseEnv, LOCALSPACE_MCP_TRANSPORT_MODE: "stateful" }).mcpTransportMode,
+  "stateful",
+);
+assert.equal(
+  loadConfig({ ...baseEnv, LOCALSPACE_MCP_TRANSPORT_MODE: "stateless" }).mcpTransportMode,
+  "stateless",
+);
 assert.equal(loadConfig(baseEnv).toolMode, "hybrid");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "minimal" }).toolMode, "minimal");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "full" }).toolMode, "full");
@@ -61,6 +70,10 @@ assert.throws(
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "invalid" }),
   /Invalid LOCALSPACE_TOOL_MODE: invalid/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, LOCALSPACE_MCP_TRANSPORT_MODE: "invalid" }),
+  /Invalid LOCALSPACE_MCP_TRANSPORT_MODE: invalid/,
 );
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_MCP_SESSION_IDLE_TTL_MS: "0" }),

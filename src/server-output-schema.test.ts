@@ -26,6 +26,9 @@ for (const [toolRef, expectedSchema] of expectedSchemas) {
 
 assert.equal(toolWidgetKindForTool('"open_workspace"'), '"open_workspace"');
 assert.equal(toolWidgetKindForTool("toolNames.doctor"), '"workspace"');
+assert.equal(toolWidgetKindForTool('"exec_command"'), '"shell"');
+assert.equal(toolWidgetKindForTool('"write_stdin"'), '"shell"');
+assert.equal(toolWidgetKindForTool('"show_changes"'), '"show_changes"');
 assert.match(source, /case "changes":\s*return kind === "open_workspace" \|\| kind === "show_changes";/);
 
 function outputSchemaNameForTool(toolRef: string): string {

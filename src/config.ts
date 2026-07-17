@@ -15,6 +15,7 @@ import {
 
 export type ToolMode = "minimal" | "full" | "codex" | "hybrid";
 export type WidgetMode = "off" | "changes" | "full";
+export type McpTransportMode = "stateful" | "stateless";
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -27,6 +28,7 @@ export interface ServerConfig {
   publicBaseUrl: string;
   toolMode: ToolMode;
   widgets: WidgetMode;
+  mcpTransportMode: McpTransportMode;
   stateDir: string;
   worktreeRoot: string;
   skillsEnabled: boolean;
@@ -189,9 +191,16 @@ function parseMcpSessionConfig(env: NodeJS.ProcessEnv): McpSessionConfig {
   };
 }
 
+function parseMcpTransportMode(value: string | undefined): McpTransportMode {
+  if (!value || value === "stateless") return "stateless";
+  if (value === "stateful") return "stateful";
+
+  throw new Error(`Invalid LOCALSPACE_MCP_TRANSPORT_MODE: ${value}`);
+}
+
 function parseWidgetMode(value: string | undefined): WidgetMode {
-  if (!value || value === "full") return "full";
-  if (value === "off" || value === "changes") return value;
+  if (!value || value === "changes") return "changes";
+  if (value === "off" || value === "full") return value;
 
   throw new Error(`Invalid LOCALSPACE_WIDGETS: ${value}`);
 }
@@ -277,6 +286,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     publicBaseUrl,
     toolMode: parseToolMode(env),
     widgets: parseWidgetMode(env.LOCALSPACE_WIDGETS),
+    mcpTransportMode: parseMcpTransportMode(env.LOCALSPACE_MCP_TRANSPORT_MODE),
     stateDir,
     worktreeRoot: resolve(expandHomePath(env.LOCALSPACE_WORKTREE_ROOT ?? files.config.worktreeRoot ?? defaultWorktreeRoot())),
     skillsEnabled: env.LOCALSPACE_SKILLS === undefined ? true : parseBoolean(env.LOCALSPACE_SKILLS),

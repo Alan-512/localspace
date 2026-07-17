@@ -378,6 +378,7 @@ const doctorStructuredOutputSchema = structuredTextOutputSchema({
   configuration: z.object({
     toolMode: z.string(),
     widgets: z.string(),
+    mcpTransportMode: z.string(),
     host: z.string(),
     port: z.number(),
     publicBaseUrl: z.string(),
@@ -1011,9 +1012,8 @@ function registerCodexProcessTools(
   workspaces: WorkspaceRegistry,
   processSessions: ProcessSessionManager,
   auditLog: AuditLogManager,
+  approvals: CommandApprovalManager,
 ): void {
-  const approvals = new CommandApprovalManager();
-
   registerAppTool(
     server,
     "exec_command",
@@ -1203,6 +1203,7 @@ function createMcpServer(
   reviewCheckpoints: ReturnType<typeof createReviewCheckpointManager>,
   processSessions: ProcessSessionManager,
   auditLog: AuditLogManager,
+  commandApprovals: CommandApprovalManager,
 ): McpServer {
   const workspaceApp = getWorkspaceAppBuild();
   const server = new McpServer(
@@ -3331,7 +3332,14 @@ function createMcpServer(
   }
 
   if (config.toolMode === "codex" || config.toolMode === "hybrid") {
-    registerCodexProcessTools(server, config, workspaces, processSessions, auditLog);
+    registerCodexProcessTools(
+      server,
+      config,
+      workspaces,
+      processSessions,
+      auditLog,
+      commandApprovals,
+    );
   }
 
   return server;
@@ -3345,9 +3353,11 @@ export function createServer(config = loadConfig()): RunningServer {
     host: config.host,
     ...(allowedHosts ? { allowedHosts } : {}),
   });
-  const transports = new McpSessionRegistry<Transport>(config.mcpSessions, (event) => {
-    logMcpSessionEvent(config, event);
-  });
+  const transports = config.mcpTransportMode === "stateful"
+    ? new McpSessionRegistry<Transport>(config.mcpSessions, (event) => {
+        logMcpSessionEvent(config, event);
+      })
+    : undefined;
   const mcpUrl = new URL("/mcp", config.publicBaseUrl);
   const resourceServerUrl = resourceUrlFromServerUrl(mcpUrl);
   const oauthProvider = new SingleUserOAuthProvider(config.oauth, mcpUrl, config.stateDir);
@@ -3361,6 +3371,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const reviewCheckpoints = createReviewCheckpointManager();
   const processSessions = new ProcessSessionManager({ shell: config.shell });
   const auditLog = new AuditLogManager(config.audit);
+  const commandApprovals = new CommandApprovalManager();
 
   if (config.logging.trustProxy) {
     app.set("trust proxy", true);
@@ -3453,12 +3464,58 @@ export function createServer(config = loadConfig()): RunningServer {
     });
 
     try {
-      let transport: Transport | undefined;
+      if (config.mcpTransportMode === "stateless") {
+        if (req.method !== "POST") {
+          res.setHeader("Allow", "POST");
+          sendJsonRpcError(res, 405, -32000, "Method not allowed in stateless mode");
+          return;
+        }
 
+        const statelessTransport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+          enableJsonResponse: true,
+        });
+        const statelessServer = createMcpServer(
+          config,
+          workspaces,
+          reviewCheckpoints,
+          processSessions,
+          auditLog,
+          commandApprovals,
+        );
+
+        await statelessServer.connect(statelessTransport);
+        try {
+          await statelessTransport.handleRequest(req, res, req.body);
+        } finally {
+          try {
+            await statelessServer.close();
+          } catch (error) {
+            logEvent(config.logging, "warn", "mcp_stateless_cleanup_error", {
+              requestId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+        return;
+      }
+
+      let transport: Transport | undefined;
+      if (!transports) {
+        throw new Error("Stateful MCP session registry is unavailable.");
+      }
       if (sessionId) {
         transport = transports.get(sessionId);
         if (!transport) {
-          sendJsonRpcError(res, 404, -32000, "Unknown MCP session");
+          logEvent(config.logging, "warn", "mcp_session_not_found", {
+            requestId,
+            method: req.method,
+            sessionIdPrefix: sessionIdPrefix(sessionId),
+            isInitialize: initializeRequest,
+            activeSessions: transports.size(),
+            ...requestLogFields(req, config),
+          });
+          sendJsonRpcError(res, 404, -32001, "Session not found");
           return;
         }
       } else if (initializeRequest) {
@@ -3476,7 +3533,14 @@ export function createServer(config = loadConfig()): RunningServer {
           }
         };
 
-        const server = createMcpServer(config, workspaces, reviewCheckpoints, processSessions, auditLog);
+        const server = createMcpServer(
+          config,
+          workspaces,
+          reviewCheckpoints,
+          processSessions,
+          auditLog,
+          commandApprovals,
+        );
         await server.connect(transport);
       } else {
         sendJsonRpcError(res, 400, -32000, "No valid MCP session");
@@ -3503,7 +3567,7 @@ export function createServer(config = loadConfig()): RunningServer {
       if (closed) return;
       closed = true;
       processSessions.shutdown();
-      transports.closeAll("server_shutdown");
+      transports?.closeAll("server_shutdown");
       oauthProvider.close();
       workspaceStore.close?.();
     },
@@ -3537,6 +3601,7 @@ if (await isMainModule()) {
     console.log(`allowed roots: ${config.allowedRoots.join(", ")}`);
     console.log("auth: oauth owner-token flow required");
     console.log(`logging: ${config.logging.level} ${config.logging.format}`);
+    console.log(`mcp transport: ${config.mcpTransportMode}`);
     console.log(`request logging: ${config.logging.requests ? "enabled" : "disabled"}`);
     console.log(`asset logging: ${config.logging.assets ? "enabled" : "disabled"}`);
     console.log(`trust proxy: ${config.logging.trustProxy ? "enabled" : "disabled"}`);

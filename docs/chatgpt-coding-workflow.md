@@ -312,17 +312,14 @@ explain the risk, while preserving the user's ability to run legitimate commands
 
 ## Show Changes
 
-By default, `LOCALSPACE_WIDGETS=full`.
+By default, `LOCALSPACE_WIDGETS=changes`.
 
-In that mode, LocalSpace attaches widget UI to the exposed workspace, file, edit,
-and shell tools. The aggregate `show_changes` tool is not exposed by default.
-
-Use `LOCALSPACE_WIDGETS=off` to disable widget UI, or `LOCALSPACE_WIDGETS=changes`
-to expose the aggregate show-changes flow.
-
-In `changes` mode, widget UI is attached only to `open_workspace` and
+In this mode, widget UI is attached only to `open_workspace` and
 `show_changes`; other tools continue to return plain text and structured output
 without loading the workspace iframe.
+
+Use `LOCALSPACE_WIDGETS=full` to attach widget UI to exposed workspace, file,
+edit, and shell tools, or `LOCALSPACE_WIDGETS=off` to disable widget UI.
 
 When `show_changes` is exposed, models should call it exactly once after the
 final file modification in any turn that changes files. The tool only requires

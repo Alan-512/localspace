@@ -31,6 +31,7 @@ export interface DoctorReportData {
   configuration: {
     toolMode: ServerConfig["toolMode"];
     widgets: ServerConfig["widgets"];
+    mcpTransportMode: ServerConfig["mcpTransportMode"];
     host: string;
     port: number;
     publicBaseUrl: string;
@@ -106,6 +107,7 @@ export async function generateDoctorReportData(
     configuration: {
       toolMode: config.toolMode,
       widgets: config.widgets,
+      mcpTransportMode: config.mcpTransportMode,
       host: config.host,
       port: config.port,
       publicBaseUrl: config.publicBaseUrl,
@@ -138,6 +140,7 @@ function formatDoctorReport(data: DoctorReportData): string {
   lines.push("Configuration:");
   lines.push(`- tool mode: ${data.configuration.toolMode}`);
   lines.push(`- widgets: ${data.configuration.widgets}`);
+  lines.push(`- MCP transport mode: ${data.configuration.mcpTransportMode}`);
   lines.push(`- host: ${data.configuration.host}`);
   lines.push(`- port: ${data.configuration.port}`);
   lines.push(`- public base URL: ${data.configuration.publicBaseUrl}`);

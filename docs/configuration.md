@@ -39,12 +39,36 @@ localspace config set publicBaseUrl https://localspace.example.com
 | `LOCALSPACE_WORKTREE_ROOT` | Directory for managed Git worktrees. Defaults to `~/.localspace/worktrees`. |
 | `LOCALSPACE_STATE_DIR` | Directory for SQLite state. Defaults to `~/.local/share/localspace`. |
 | `LOCALSPACE_SHELL` | Optional shell executable for `exec_command`, for example `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, or `wsl.exe`. |
+| `LOCALSPACE_MCP_TRANSPORT_MODE` | MCP transport mode. Defaults to `stateless`; set `stateful` only when session-scoped transport behavior is required. |
 
 ## MCP Session Lifecycle
 
 LocalSpace keeps one in-memory MCP transport per active client session. To avoid
 stale browser or tunnel reconnections accumulating until Node.js runs out of
 heap, sessions are now bounded and cleaned up automatically.
+
+`LOCALSPACE_MCP_TRANSPORT_MODE=stateless` is the default. It creates
+a fresh MCP server and transport for every POST request, returns direct JSON
+responses, and does not issue an `Mcp-Session-Id`. GET and DELETE requests to
+`/mcp` return HTTP 405 in this mode because there is no session-scoped SSE stream
+or session to delete.
+
+Workspace registrations, review checkpoints, process sessions, audit state, and
+command approval tokens remain shared at the LocalSpace process level, so
+multi-request workflows such as `exec_command` followed by `write_stdin` still
+work without a transport session. A LocalSpace process restart still clears
+non-persisted runtime state such as active child-process handles and outstanding
+approval tokens.
+
+This mode has been validated with a real ChatGPT conversation across repeated
+LocalSpace restarts without refreshing the page, reconnecting the app, or
+opening a new workspace. The same workspace ID and multi-request process tools
+continued to work after restart.
+
+Set `LOCALSPACE_MCP_TRANSPORT_MODE=stateful` only when a client needs a
+session-scoped SSE transport. In stateful mode, a server restart clears the
+in-memory transport registry, so requests that still carry an old
+`Mcp-Session-Id` receive HTTP 404 and a `mcp_session_not_found` log entry.
 
 | Variable | Default |
 | --- | --- |
@@ -204,8 +228,8 @@ tool response and structured output so MCP clients and models can surface it.
 
 | Value | Behavior |
 | --- | --- |
-| `full` | Default. Widget UI is attached to exposed workspace, file, edit, and shell tools. |
-| `changes` | Enables the aggregate `show_changes` tool and attaches widget UI to `open_workspace` and `show_changes`. |
+| `changes` | Default. Enables the aggregate `show_changes` tool and attaches widget UI only to `open_workspace` and `show_changes`. |
+| `full` | Attaches widget UI to exposed workspace, file, edit, and shell tools. |
 | `off` | Disables widget UI. |
 
 ## Skills
@@ -276,7 +300,7 @@ LOCALSPACE_PUBLIC_BASE_URL="https://localspace.example.com" \
 LOCALSPACE_WORKTREE_ROOT="$HOME/.localspace/worktrees" \
 LOCALSPACE_SHELL="pwsh" \
 LOCALSPACE_TOOL_MODE="hybrid" \
-LOCALSPACE_WIDGETS="full" \
+LOCALSPACE_WIDGETS="changes" \
 localspace serve
 ```
 

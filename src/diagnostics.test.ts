@@ -55,6 +55,7 @@ try {
   const doctor = await generateDoctorReport(config, { workspace });
   assert.match(doctor, /LocalSpace doctor/);
   assert.match(doctor, /tool mode: hybrid/);
+  assert.match(doctor, /MCP transport mode: stateful/);
   assert.match(doctor, /Workspace:/);
   assert.match(doctor, /MCP session idle TTL: 14400000 ms/);
   assert.match(doctor, /MCP max sessions: 128/);
@@ -64,6 +65,7 @@ try {
 
   const doctorData = await generateDoctorReportData(config, { workspace });
   assert.equal(doctorData.configuration.toolMode, "hybrid");
+  assert.equal(doctorData.configuration.mcpTransportMode, "stateful");
   assert.equal(doctorData.workspace?.id, "ws_test");
   assert.ok(doctorData.checks.some((check) => check.name === "npm" && check.status === "ok"));
   assert.ok(doctorData.checks.some((check) => check.name === "git" && check.status === "ok"));
@@ -99,6 +101,7 @@ function testConfig(root: string): ServerConfig {
     publicBaseUrl: "http://127.0.0.1:7676",
     toolMode: "hybrid",
     widgets: "full",
+    mcpTransportMode: "stateful",
     stateDir: join(root, "state"),
     worktreeRoot: join(root, "worktrees"),
     skillsEnabled: true,

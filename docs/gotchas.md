@@ -154,6 +154,45 @@ maximum active MCP session cap. See `LOCALSPACE_MCP_SESSION_IDLE_TTL_MS`,
 If a client tries to use a session that has expired, reconnect the MCP server in
 the client and call `open_workspace` again.
 
+## Tool Becomes Disabled After a Server Restart
+
+Stateful MCP transports live in memory. After LocalSpace restarts, a request
+that still carries a session ID from the previous process is rejected with HTTP
+404. LocalSpace logs this as `mcp_session_not_found`, including only a shortened
+session ID prefix.
+
+That 404 is the protocol signal a client can use to establish a new MCP session,
+but whether a particular ChatGPT conversation automatically retries
+initialization must be verified from request logs rather than assumed.
+
+LocalSpace now defaults to stateless MCP transport, which avoids binding a
+conversation to an in-memory transport session:
+
+```bash
+node dist/cli.js serve
+```
+
+Stateless mode creates a fresh MCP server and transport for every request and
+does not issue session IDs. It accepts POST requests with direct JSON responses;
+GET and DELETE return HTTP 405 because stateless requests do not have a shared
+SSE stream or deletable transport session.
+
+Local regression coverage verifies initialization, initialized notifications,
+tool and resource discovery, resource reads, concurrent requests, cross-request
+command approvals, and `exec_command`/`write_stdin` process polling. Real
+ChatGPT validation also confirmed that the same conversation and workspace ID
+continued working across two LocalSpace restarts without a page refresh or app
+reconnection.
+
+Stateful mode remains available for clients that require a session-scoped SSE
+transport:
+
+```bash
+LOCALSPACE_MCP_TRANSPORT_MODE=stateful node dist/cli.js serve
+```
+
+Stateful mode retains the restart limitation described above.
+
 ## Workspace Path Rejected
 
 The path must be inside one of the allowed roots configured during setup.
@@ -235,7 +274,7 @@ and static asset 404 or 5xx responses. If no matching request reached LocalSpace
 that suggests the failure occurred in the host-side template loading path rather
 than the tool handler itself.
 
-To reduce iframe usage, run with:
+The default mode limits iframe usage:
 
 ```bash
 LOCALSPACE_WIDGETS=changes node dist/cli.js serve
@@ -244,6 +283,9 @@ LOCALSPACE_WIDGETS=changes node dist/cli.js serve
 In `changes` mode, LocalSpace attaches widget UI only to `open_workspace` and
 `show_changes`. Other tools still return text and structured output without
 loading the workspace iframe.
+
+Use `LOCALSPACE_WIDGETS=full` only when you intentionally want widget UI on
+workspace, file, edit, and shell tools.
 
 To disable widget UI completely:
 
@@ -277,16 +319,16 @@ If a skill appears in `open_workspace`, the model must read that skill's
 
 ## Review Card Does Not Appear
 
-Per-tool workspace widgets are enabled by default with:
-
-```bash
-LOCALSPACE_WIDGETS=full
-```
-
-The aggregate `show_changes` tool is exposed only with:
+The aggregate `show_changes` review card is enabled by default with:
 
 ```bash
 LOCALSPACE_WIDGETS=changes
+```
+
+Per-tool workspace widgets require:
+
+```bash
+LOCALSPACE_WIDGETS=full
 ```
 
 Plain MCP clients may ignore ChatGPT Apps widget metadata and only show text
