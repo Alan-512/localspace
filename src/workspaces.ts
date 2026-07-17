@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import type { WorkspaceMode, WorkspaceStore } from "./workspace-store.js";
 import { mkdir, opendir, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 import { loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import type { ServerConfig } from "./config.js";
 import { createManagedWorktree } from "./git-worktrees.js";
@@ -13,6 +15,8 @@ import {
   type LoadedSkills,
   type SkillReadResolution,
 } from "./skills.js";
+
+const execFileAsync = promisify(execFile);
 
 export interface LoadedAgentsFile {
   path: string;
@@ -259,6 +263,16 @@ export class WorkspaceRegistry {
     loadedFiles: LoadedAgentsFile[],
   ): Promise<AvailableAgentsFile[]> {
     const loadedPaths = new Set(loadedFiles.map((file) => resolve(file.path)));
+    const gitPaths = await findGitContextFiles(root);
+
+    if (gitPaths) {
+      return gitPaths
+        .map((path) => resolve(path))
+        .filter((path) => !loadedPaths.has(path))
+        .map((path) => ({ path }))
+        .sort((a, b) => a.path.localeCompare(b.path));
+    }
+
     const discovered: AvailableAgentsFile[] = [];
 
     await walkWorkspace(root, async (path, entry) => {
@@ -279,13 +293,20 @@ const SKIPPED_CONTEXT_DIRS = new Set([
   ".hg",
   ".svn",
   ".devspace",
+  ".localspace",
+  ".worktrees",
   "node_modules",
   "dist",
   "build",
   ".next",
   ".turbo",
   ".cache",
+  ".venv",
+  "coverage",
+  "target",
 ]);
+const MAX_FALLBACK_CONTEXT_SCAN_ENTRIES = 50_000;
+const GIT_CONTEXT_DISCOVERY_TIMEOUT_MS = 5_000;
 
 export function formatAgentsPath(path: string, workspaceRoot: string | undefined): string {
   if (!workspaceRoot) return path.split(sep).join("/");
@@ -306,7 +327,10 @@ export function formatAgentsPath(path: string, workspaceRoot: string | undefined
 async function walkWorkspace(
   directory: string,
   visit: (path: string, entry: { name: string; isFile(): boolean; isDirectory(): boolean }) => Promise<void> | void,
+  state: { entries: number; truncated: boolean } = { entries: 0, truncated: false },
 ): Promise<void> {
+  if (state.truncated) return;
+
   let entries;
   try {
     entries = await opendir(directory);
@@ -315,14 +339,84 @@ async function walkWorkspace(
   }
 
   for await (const entry of entries) {
+    state.entries += 1;
+    if (state.entries > MAX_FALLBACK_CONTEXT_SCAN_ENTRIES) {
+      state.truncated = true;
+      return;
+    }
+
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
       if (!SKIPPED_CONTEXT_DIRS.has(entry.name)) {
-        await walkWorkspace(path, visit);
+        await walkWorkspace(path, visit, state);
       }
       continue;
     }
 
     await visit(path, entry);
+  }
+}
+
+async function findGitContextFiles(root: string): Promise<string[] | undefined> {
+  try {
+    const { stdout: topLevelOutput } = await execFileAsync(
+      "git",
+      ["-C", root, "rev-parse", "--show-toplevel"],
+      {
+        encoding: "utf8",
+        windowsHide: true,
+        maxBuffer: 1024 * 1024,
+        timeout: GIT_CONTEXT_DISCOVERY_TIMEOUT_MS,
+      },
+    );
+    const gitRoot = resolve(String(topLevelOutput).trim());
+    const workspacePrefix = relative(gitRoot, root).split(sep).join("/");
+
+    if (
+      workspacePrefix === ".." ||
+      workspacePrefix.startsWith("../") ||
+      workspacePrefix.includes("/../")
+    ) {
+      return undefined;
+    }
+
+    const prefix = workspacePrefix ? `${workspacePrefix}/` : "";
+    const pathspecs = [...CONTEXT_FILE_NAMES].flatMap((name) => [
+      `${prefix}${name}`,
+      `:(glob)${prefix}**/${name}`,
+    ]);
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "-C",
+        gitRoot,
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--full-name",
+        "--",
+        ...pathspecs,
+      ],
+      {
+        encoding: "utf8",
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+        timeout: GIT_CONTEXT_DISCOVERY_TIMEOUT_MS,
+      },
+    );
+
+    const paths = new Set<string>();
+    for (const line of String(stdout).split(/\r?\n/)) {
+      if (!line) continue;
+      const absolutePath = resolve(gitRoot, line);
+      if (!isPathInsideRoot(absolutePath, root)) continue;
+      if (!CONTEXT_FILE_NAMES.has(basename(absolutePath))) continue;
+      paths.add(absolutePath);
+    }
+
+    return [...paths];
+  } catch {
+    return undefined;
   }
 }
