@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
+import type { Stats } from "node:fs";
 import type { WorkspaceMode, WorkspaceStore } from "./workspace-store.js";
-import { mkdir, opendir, stat } from "node:fs/promises";
+import { mkdir, opendir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
@@ -64,6 +65,11 @@ export interface OpenWorkspaceInput {
   mode?: WorkspaceMode;
   baseRef?: string;
 }
+
+type DirectoryOps = {
+  stat: (path: string) => Promise<Stats>;
+  mkdir: (path: string, options: { recursive: true }) => Promise<unknown>;
+};
 
 export class WorkspaceRegistry {
   private readonly workspaces = new Map<string, Workspace>();
@@ -166,9 +172,7 @@ export class WorkspaceRegistry {
 
   private async openCheckoutWorkspace(path: string): Promise<WorkspaceContext> {
     const root = assertAllowedPath(path, this.config.allowedRoots);
-    await mkdir(root, { recursive: true });
-
-    const rootStats = await stat(root);
+    const rootStats = await ensureCheckoutWorkspaceRoot(root);
     if (!rootStats.isDirectory()) {
       throw new Error(`Workspace root must be a directory: ${path}`);
     }
@@ -217,7 +221,7 @@ export class WorkspaceRegistry {
       managed: workspace.worktree?.managed,
     });
     this.workspaces.set(workspace.id, workspace);
-    const agentsFiles = this.loadInitialAgentsFiles(workspace.root);
+    const agentsFiles = await this.loadInitialAgentsFiles(workspace.root);
     const availableAgentsFiles = await this.findAvailableAgentsFiles(workspace.root, agentsFiles);
 
     return { workspace, agentsFiles, availableAgentsFiles };
@@ -243,19 +247,28 @@ export class WorkspaceRegistry {
     return assertAllowedPath(root, this.config.allowedRoots);
   }
 
-  private loadInitialAgentsFiles(root: string): LoadedAgentsFile[] {
+  private async loadInitialAgentsFiles(root: string): Promise<LoadedAgentsFile[]> {
     const agentDir = resolve(this.config.agentDir);
+    const resolvedRoot = (await tryRealpath(root)) ?? root;
+    const resolvedAgentDir = (await tryRealpath(agentDir)) ?? agentDir;
+    const loadedFiles: LoadedAgentsFile[] = [];
 
-    return loadProjectContextFiles({ cwd: root, agentDir })
-      .filter((file) => {
-        const path = resolve(file.path);
-        if (isPathInsideRoot(path, agentDir)) return true;
-        return isPathInsideRoot(path, root) && dirname(path) === root;
-      })
-      .map((file) => ({
-        path: resolve(file.path),
-        content: file.content,
-      }));
+    for (const file of loadProjectContextFiles({ cwd: root, agentDir })) {
+      const path = resolve(file.path);
+      if (!isInitialAgentsFilePath(path, root, agentDir)) continue;
+
+      const content = await readResolvedContextFile(
+        path,
+        file.content,
+        resolvedRoot,
+        resolvedAgentDir,
+      );
+      if (content === undefined) continue;
+
+      loadedFiles.push({ path, content });
+    }
+
+    return loadedFiles;
   }
 
   private async findAvailableAgentsFiles(
@@ -285,6 +298,22 @@ export class WorkspaceRegistry {
 
     return discovered.sort((a, b) => a.path.localeCompare(b.path));
   }
+}
+
+export async function ensureCheckoutWorkspaceRoot(
+  path: string,
+  ops: DirectoryOps = { stat, mkdir },
+): Promise<Stats> {
+  try {
+    return await ops.stat(path);
+  } catch (error) {
+    if (!isErrnoException(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  await ops.mkdir(path, { recursive: true });
+  return await ops.stat(path);
 }
 
 const CONTEXT_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
@@ -322,6 +351,34 @@ export function formatAgentsPath(path: string, workspaceRoot: string | undefined
   }
 
   return relationship.split(sep).join("/");
+}
+
+function isInitialAgentsFilePath(path: string, root: string, agentDir: string): boolean {
+  if (isPathInsideRoot(path, agentDir)) return true;
+  return isPathInsideRoot(path, root) && dirname(path) === root;
+}
+
+async function readResolvedContextFile(
+  path: string,
+  fallbackContent: string,
+  root: string,
+  agentDir: string,
+): Promise<string | undefined> {
+  try {
+    const resolvedPath = await realpath(path);
+    if (!isInitialAgentsFilePath(resolvedPath, root, agentDir)) return undefined;
+    return await readFile(resolvedPath, "utf8");
+  } catch {
+    return fallbackContent;
+  }
+}
+
+async function tryRealpath(path: string): Promise<string | undefined> {
+  try {
+    return await realpath(path);
+  } catch {
+    return undefined;
+  }
 }
 
 async function walkWorkspace(
@@ -419,4 +476,8 @@ async function findGitContextFiles(root: string): Promise<string[] | undefined> 
   } catch {
     return undefined;
   }
+}
+
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
