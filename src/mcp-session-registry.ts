@@ -105,12 +105,16 @@ export class McpSessionRegistry<TTransport extends McpTransportLike> {
     return closed;
   }
 
-  closeAll(reason: McpSessionCloseReason = "server_shutdown"): void {
+  async closeAll(reason: McpSessionCloseReason = "server_shutdown"): Promise<void> {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     const now = this.now();
+    const closePromises: Promise<void>[] = [];
     for (const [sessionId, record] of Array.from(this.sessions.entries())) {
-      this.closeSession(sessionId, record, reason, now, { closeTransport: true });
+      closePromises.push(
+        this.closeSession(sessionId, record, reason, now, { closeTransport: true }),
+      );
     }
+    await Promise.all(closePromises);
   }
 
   size(): number {
@@ -135,15 +139,14 @@ export class McpSessionRegistry<TTransport extends McpTransportLike> {
     return oldest;
   }
 
-  private closeSession(
+  private async closeSession(
     sessionId: string,
     record: McpSessionRecord<TTransport>,
     reason: McpSessionCloseReason,
     now: number,
     options: Required<DeleteSessionOptions>,
-  ): void {
+  ): Promise<void> {
     this.sessions.delete(sessionId);
-    if (options.closeTransport) safeClose(record.transport);
     this.emit({
       action: "closed",
       sessionId,
@@ -152,6 +155,7 @@ export class McpSessionRegistry<TTransport extends McpTransportLike> {
       ageMs: Math.max(0, now - record.createdAt),
       idleMs: Math.max(0, now - record.lastSeenAt),
     });
+    if (options.closeTransport) await safeClose(record.transport);
   }
 
   private emit(event: McpSessionRegistryEvent): void {
@@ -173,12 +177,9 @@ function assertPositiveInteger(value: number, name: string): void {
   }
 }
 
-function safeClose(transport: McpTransportLike): void {
+async function safeClose(transport: McpTransportLike): Promise<void> {
   try {
-    const result = transport.close?.();
-    if (result && typeof result === "object" && "catch" in result) {
-      void result.catch(() => undefined);
-    }
+    await transport.close?.();
   } catch {
     // Cleanup should be fail-closed for registry state even if a transport close throws.
   }

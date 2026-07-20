@@ -309,7 +309,7 @@ async function startServer(config: ServerConfig): Promise<{
   return {
     baseUrl: `http://${config.host}:${address.port}`,
     close: async () => {
-      running.close();
+      await running.close();
       await closeHttpServer(httpServer);
     },
   };

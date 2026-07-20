@@ -88,9 +88,32 @@ class FakeTransport {
   const b = new FakeTransport();
   registry.add("a", a);
   registry.add("b", b);
-  registry.closeAll("server_shutdown");
+  await registry.closeAll("server_shutdown");
 
   assert.equal(a.closed, 1);
   assert.equal(b.closed, 1);
   assert.equal(registry.size(), 0);
+}
+
+{
+  let releaseClose: (() => void) | undefined;
+  let closeFinished = false;
+  const registry = new McpSessionRegistry<{ close(): Promise<void> }>(
+    { idleTtlMs: 1000, cleanupIntervalMs: 0, maxSessions: 4 },
+  );
+  registry.add("async", {
+    close: async () => {
+      await new Promise<void>((resolve) => {
+        releaseClose = resolve;
+      });
+      closeFinished = true;
+    },
+  });
+
+  const closing = registry.closeAll("server_shutdown");
+  assert.equal(registry.size(), 0);
+  assert.equal(closeFinished, false);
+  releaseClose?.();
+  await closing;
+  assert.equal(closeFinished, true);
 }

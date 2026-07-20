@@ -54,6 +54,7 @@ import { findEntrypointsData } from "./entrypoints.js";
 import { generateProjectMap } from "./project-map.js";
 import { findSymbolsData } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
+import { shutdownHttpServer } from "./server-shutdown.js";
 import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
@@ -88,7 +89,7 @@ const SHELL_TOOL_ANNOTATIONS = {
 interface RunningServer {
   app: ReturnType<typeof createMcpExpressApp>;
   config: ServerConfig;
-  close(): void;
+  close(): Promise<void>;
 }
 
 type ToolContent =
@@ -3559,17 +3560,18 @@ export function createServer(config = loadConfig()): RunningServer {
     }
   });
 
-  let closed = false;
+  let closePromise: Promise<void> | undefined;
   return {
     app,
     config,
     close: () => {
-      if (closed) return;
-      closed = true;
-      processSessions.shutdown();
-      transports?.closeAll("server_shutdown");
-      oauthProvider.close();
-      workspaceStore.close?.();
+      closePromise ??= (async () => {
+        await transports?.closeAll("server_shutdown");
+        processSessions.shutdown();
+        oauthProvider.close();
+        workspaceStore.close?.();
+      })();
+      return closePromise;
     },
   };
 }
@@ -3607,12 +3609,19 @@ if (await isMainModule()) {
     console.log(`trust proxy: ${config.logging.trustProxy ? "enabled" : "disabled"}`);
   });
 
-  const shutdown = () => {
-    httpServer.close(() => {
-      close();
-      process.exit(0);
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    await shutdownHttpServer(httpServer, close);
+    process.exit(0);
+  };
+  const handleShutdown = () => {
+    void shutdown().catch((error) => {
+      console.error("localspace shutdown failed", error);
+      process.exit(1);
     });
   };
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", handleShutdown);
+  process.once("SIGTERM", handleShutdown);
 }
