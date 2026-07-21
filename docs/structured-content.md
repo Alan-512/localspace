@@ -32,7 +32,7 @@ experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
 | --- | --- |
 | `doctor` | `configuration`, `runtime`, `workspace`, `checks[]`, `overall` |
 | `workspace_info` | `workspace`, `git`, `package` |
-| `session_summary` | `totalEvents`, `successfulEvents`, `failedEvents`, `runningEvents`, `truncatedEvents`, `processPolls`, `averageDurationMs`, `maxDurationMs`, `averageQueuedMs`, `maxQueuedMs`, `blockedEvents`, `approvedEvents`, `durableAuditEvents`, `tools`, `categories`, `concurrencyClasses`, `toolStats`, `paths`, `commands`, `risks`, `recentEvents`, `recentAuditEvents` |
+| `session_summary` | `totalEvents`, `successfulEvents`, `failedEvents`, `runningEvents`, `truncatedEvents`, `processPolls`, `averageDurationMs`, `maxDurationMs`, `averageQueuedMs`, `maxQueuedMs`, `blockedEvents`, `approvedEvents`, `durableAuditEvents`, `tools`, `categories`, `concurrencyClasses`, `toolStats`, `paths`, `commands`, `risks`, `recentEvents`, `recentAuditEvents`, `requestMetrics` |
 | `next_steps` | `steps[]` |
 | `validate_plan` | `packageName`, `commands[]`, `missingScripts[]`, `notes[]` |
 | `review_checklist` | `dirty`, `staged`, `unstaged`, `untracked`, `changedPaths[]`, `checks[]`, `recommendedActions[]` |

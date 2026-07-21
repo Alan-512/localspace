@@ -175,10 +175,19 @@ and hooks, `.env` files, secret/token/private-key-like filenames, LocalSpace
 state/agent/worktree directories, home-directory roots, and platform system
 directories.
 
-LocalSpace keeps a bounded in-memory activity ring for `session_summary`. It
-records recent read, search, navigation, process, mutation, Git, workflow, and
-diagnostic tool calls without persisting normal read activity. The ring capacity
-uses `LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` and is lost when the service restarts.
+LocalSpace keeps bounded in-memory activity and MCP request metric rings for
+`session_summary`. They record recent read, search, navigation, process,
+mutation, Git, workflow, and diagnostic tool calls plus request phase timings
+without persisting normal read activity. The ring capacity uses
+`LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` and is lost when the service restarts.
+
+Request metrics split client-observed MCP handling into authentication, MCP
+server construction, transport connection, transport handling, cleanup, and
+total server time. `transportHandle` includes SDK dispatch, tool execution, and
+response serialization because those phases are not independently exposed by
+the current MCP SDK boundary. Request and response byte counts use available
+HTTP `Content-Length` headers and may be zero when a transport streams without
+that header.
 
 Durable audit logging is enabled by default for security-relevant events such as
 file mutations, shell commands, Git writes, approvals, and blocked actions. It

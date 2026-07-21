@@ -224,6 +224,10 @@ try {
     assert.equal(recordValue(sessionSummaryStructured, "totalEvents"), 2);
     assert.equal(recordValue(recordValue(sessionSummaryStructured, "tools"), "read"), 1);
     assert.equal(recordValue(sessionSummaryStructured, "durableAuditEvents"), 1);
+    const requestMetrics = recordValue(sessionSummaryStructured, "requestMetrics");
+    assert.equal(recordValue(requestMetrics, "totalRequests"), 1);
+    assert.equal(recordValue(recordValue(requestMetrics, "tools"), "read"), 1);
+    assert.equal(recordValue(requestMetrics, "statelessRequests"), 1);
     const durableAudit = await readFile(config.audit.path, "utf8");
     assert.doesNotMatch(durableAudit, /"tool":"read"/);
 

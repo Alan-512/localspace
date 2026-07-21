@@ -68,6 +68,7 @@ import {
   ToolActivityLogManager,
   type ToolActivityInput,
 } from "./activity-log.js";
+import { McpRequestMetricsManager } from "./request-metrics.js";
 import {
   toolAvailable,
   toolNames,
@@ -483,6 +484,27 @@ const sessionSummaryOutputSchema = structuredTextOutputSchema({
   risks: z.record(z.string(), z.number()),
   recentEvents: z.array(z.unknown()),
   recentAuditEvents: z.array(z.unknown()),
+  requestMetrics: z.object({
+    totalRequests: z.number(),
+    successfulRequests: z.number(),
+    failedRequests: z.number(),
+    statelessRequests: z.number(),
+    statefulRequests: z.number(),
+    averageTotalMs: z.number(),
+    maxTotalMs: z.number(),
+    averageRequestBytes: z.number(),
+    averageResponseBytes: z.number(),
+    phases: z.object({
+      auth: z.object({ averageMs: z.number(), maxMs: z.number() }),
+      serverCreate: z.object({ averageMs: z.number(), maxMs: z.number() }),
+      transportConnect: z.object({ averageMs: z.number(), maxMs: z.number() }),
+      transportHandle: z.object({ averageMs: z.number(), maxMs: z.number() }),
+      cleanup: z.object({ averageMs: z.number(), maxMs: z.number() }),
+    }),
+    rpcMethods: z.record(z.string(), z.number()),
+    tools: z.record(z.string(), z.number()),
+    recentRequests: z.array(z.unknown()),
+  }),
 });
 
 const workflowCommandOutputSchema = z.object({
@@ -724,6 +746,40 @@ function requestLogFields(req: Request, config: ServerConfig): Record<string, un
     referer: req.header("referer"),
     contentLength: req.header("content-length"),
   };
+}
+
+interface McpRpcRequestInfo {
+  rpcMethod?: string;
+  tool?: string;
+  workspaceId?: string;
+}
+
+function mcpRpcRequestInfo(body: unknown): McpRpcRequestInfo {
+  if (Array.isArray(body)) return { rpcMethod: "batch" };
+  if (!body || typeof body !== "object") return {};
+
+  const request = body as Record<string, unknown>;
+  const rpcMethod = typeof request.method === "string" ? request.method : undefined;
+  const params = request.params;
+  if (!params || typeof params !== "object" || Array.isArray(params)) return { rpcMethod };
+
+  const paramsRecord = params as Record<string, unknown>;
+  const tool = rpcMethod === "tools/call" && typeof paramsRecord.name === "string"
+    ? paramsRecord.name
+    : undefined;
+  const args = paramsRecord.arguments;
+  const workspaceId = args && typeof args === "object" && !Array.isArray(args)
+    && typeof (args as Record<string, unknown>).workspaceId === "string"
+    ? String((args as Record<string, unknown>).workspaceId)
+    : undefined;
+  return { rpcMethod, tool, workspaceId };
+}
+
+function optionalByteLength(value: string | number | string[] | undefined): number | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === undefined) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 function emitToolCallLog(config: ServerConfig, fields: ToolLogFields): void {
@@ -1299,6 +1355,7 @@ function createMcpServer(
   processSessions: ProcessSessionManager,
   auditLog: AuditLogManager,
   activityLog: ToolActivityLogManager,
+  requestMetrics: McpRequestMetricsManager,
   commandApprovals: CommandApprovalManager,
 ): McpServer {
   const logToolCall = (currentConfig: ServerConfig, fields: ToolLogFields): void => {
@@ -1690,6 +1747,7 @@ function createMcpServer(
       if (workspaceId) workspaces.getWorkspace(workspaceId);
       const activity = activityLog.summarize({ workspaceId, limit });
       const audit = auditLog.summarize({ workspaceId, limit });
+      const requests = requestMetrics.summarize({ workspaceId, limit });
       const data = {
         ...activity,
         blockedEvents: audit.blockedEvents,
@@ -1699,6 +1757,7 @@ function createMcpServer(
         commands: audit.commands,
         risks: audit.risks,
         recentAuditEvents: audit.recentEvents,
+        requestMetrics: requests,
         text: [
           activity.text,
           "",
@@ -3465,6 +3524,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const processSessions = new ProcessSessionManager({ shell: config.shell });
   const auditLog = new AuditLogManager(config.audit);
   const activityLog = new ToolActivityLogManager(config.audit.maxMemoryEvents);
+  const requestMetrics = new McpRequestMetricsManager(config.audit.maxMemoryEvents);
   const commandApprovals = new CommandApprovalManager();
 
   if (config.logging.trustProxy) {
@@ -3528,36 +3588,48 @@ export function createServer(config = loadConfig()): RunningServer {
     const requestId = res.locals.requestId as string | undefined;
     const sessionId = req.header("mcp-session-id");
     const initializeRequest = req.method === "POST" && isInitializeRequest(req.body);
-
-    await new Promise<void>((resolve, reject) => {
-      bearerAuth(req, res, (error?: unknown) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-    if (res.headersSent) return;
-
-    if (!req.auth?.resource || !checkResourceAllowed({ requestedResource: req.auth.resource, configuredResource: resourceServerUrl })) {
-      logEvent(config.logging, "warn", "auth_denied", {
-        requestId,
-        method: req.method,
-        path: requestPath(req),
-        reason: "invalid_oauth_resource",
-        ...requestLogFields(req, config),
-      });
-      sendJsonRpcError(res, 401, -32001, "Unauthorized");
-      return;
-    }
-
-    logEvent(config.logging, "debug", "mcp_request", {
-      requestId,
-      method: req.method,
-      sessionIdPresent: Boolean(sessionId),
-      sessionIdPrefix: sessionIdPrefix(sessionId),
-      isInitialize: initializeRequest,
-    });
+    const rpcInfo = mcpRpcRequestInfo(req.body);
+    const requestStartedAt = performance.now();
+    let authMs = 0;
+    let serverCreateMs = 0;
+    let transportConnectMs = 0;
+    let transportHandleMs = 0;
+    let cleanupMs = 0;
 
     try {
+      const authStartedAt = performance.now();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          bearerAuth(req, res, (error?: unknown) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+      } finally {
+        authMs = Math.round((performance.now() - authStartedAt) * 100) / 100;
+      }
+      if (res.headersSent) return;
+
+      if (!req.auth?.resource || !checkResourceAllowed({ requestedResource: req.auth.resource, configuredResource: resourceServerUrl })) {
+        logEvent(config.logging, "warn", "auth_denied", {
+          requestId,
+          method: req.method,
+          path: requestPath(req),
+          reason: "invalid_oauth_resource",
+          ...requestLogFields(req, config),
+        });
+        sendJsonRpcError(res, 401, -32001, "Unauthorized");
+        return;
+      }
+
+      logEvent(config.logging, "debug", "mcp_request", {
+        requestId,
+        method: req.method,
+        sessionIdPresent: Boolean(sessionId),
+        sessionIdPrefix: sessionIdPrefix(sessionId),
+        isInitialize: initializeRequest,
+      });
+
       if (config.mcpTransportMode === "stateless") {
         if (req.method !== "POST") {
           res.setHeader("Allow", "POST");
@@ -3565,6 +3637,7 @@ export function createServer(config = loadConfig()): RunningServer {
           return;
         }
 
+        const serverCreateStartedAt = performance.now();
         const statelessTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,
@@ -3576,13 +3649,23 @@ export function createServer(config = loadConfig()): RunningServer {
           processSessions,
           auditLog,
           activityLog,
+          requestMetrics,
           commandApprovals,
         );
+        serverCreateMs = Math.round((performance.now() - serverCreateStartedAt) * 100) / 100;
 
+        const connectStartedAt = performance.now();
         await statelessServer.connect(statelessTransport);
+        transportConnectMs = Math.round((performance.now() - connectStartedAt) * 100) / 100;
         try {
-          await statelessTransport.handleRequest(req, res, req.body);
+          const handleStartedAt = performance.now();
+          try {
+            await statelessTransport.handleRequest(req, res, req.body);
+          } finally {
+            transportHandleMs = Math.round((performance.now() - handleStartedAt) * 100) / 100;
+          }
         } finally {
+          const cleanupStartedAt = performance.now();
           try {
             await statelessServer.close();
           } catch (error) {
@@ -3590,6 +3673,8 @@ export function createServer(config = loadConfig()): RunningServer {
               requestId,
               error: error instanceof Error ? error.message : String(error),
             });
+          } finally {
+            cleanupMs = Math.round((performance.now() - cleanupStartedAt) * 100) / 100;
           }
         }
         return;
@@ -3614,6 +3699,7 @@ export function createServer(config = loadConfig()): RunningServer {
           return;
         }
       } else if (initializeRequest) {
+        const serverCreateStartedAt = performance.now();
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (newSessionId) => {
@@ -3635,15 +3721,24 @@ export function createServer(config = loadConfig()): RunningServer {
           processSessions,
           auditLog,
           activityLog,
+          requestMetrics,
           commandApprovals,
         );
+        serverCreateMs = Math.round((performance.now() - serverCreateStartedAt) * 100) / 100;
+        const connectStartedAt = performance.now();
         await server.connect(transport);
+        transportConnectMs = Math.round((performance.now() - connectStartedAt) * 100) / 100;
       } else {
         sendJsonRpcError(res, 400, -32000, "No valid MCP session");
         return;
       }
 
-      await transport.handleRequest(req, res, req.body);
+      const handleStartedAt = performance.now();
+      try {
+        await transport.handleRequest(req, res, req.body);
+      } finally {
+        transportHandleMs = Math.round((performance.now() - handleStartedAt) * 100) / 100;
+      }
     } catch (error) {
       logEvent(config.logging, "error", "mcp_request_error", {
         requestId,
@@ -3651,6 +3746,30 @@ export function createServer(config = loadConfig()): RunningServer {
       });
       if (!res.headersSent) {
         sendJsonRpcError(res, 500, -32603, "Internal server error");
+      }
+    } finally {
+      const totalMs = Math.round((performance.now() - requestStartedAt) * 100) / 100;
+      const metric = {
+        requestId,
+        transportMode: config.mcpTransportMode,
+        httpMethod: req.method,
+        rpcMethod: rpcInfo.rpcMethod,
+        tool: rpcInfo.tool,
+        workspaceId: rpcInfo.workspaceId,
+        status: res.statusCode,
+        success: res.statusCode < 400,
+        requestBytes: optionalByteLength(req.header("content-length")),
+        responseBytes: optionalByteLength(res.getHeader("content-length") as string | number | string[] | undefined),
+        authMs,
+        serverCreateMs,
+        transportConnectMs,
+        transportHandleMs,
+        cleanupMs,
+        totalMs,
+      };
+      requestMetrics.record(metric);
+      if (config.logging.requests) {
+        logEvent(config.logging, metric.success ? "info" : "warn", "mcp_request_metrics", metric);
       }
     }
   });

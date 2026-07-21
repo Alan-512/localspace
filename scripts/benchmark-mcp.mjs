@@ -118,8 +118,17 @@ try {
     assert.equal(recordValue(pollB.structuredContent, "exitCode"), 0);
     measurements.processConcurrentPollMs = processPoll.ms;
 
+    const sessionSummary = await timed(() => mcpRequest(
+      server.baseUrl,
+      callToolRequest(209, "session_summary", { workspaceId, limit: 100 }),
+    ));
+    const sessionSummaryResult = await jsonRpcResult(sessionSummary.value);
+    const sessionSummaryStructured = recordValue(sessionSummaryResult.structuredContent, "requestMetrics");
+    assert.ok(sessionSummaryStructured && typeof sessionSummaryStructured === "object");
+    measurements.sessionSummaryMs = sessionSummary.ms;
+
     const output = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       productBaselineVersion: "v1.0.6",
       productBaselineCommit: "1a4b0c2",
       captureCommit: gitCommit(),
@@ -139,6 +148,7 @@ try {
         excludes: ["ChatGPT model latency", "public tunnel latency", "browser UI rendering"],
       },
       measurements,
+      serverObservedRequestMetrics: sessionSummaryStructured,
       outcomes: {
         toolsListConcurrentRequests: 8,
         independentProcessesCompleted: 2,
