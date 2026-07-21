@@ -138,8 +138,9 @@ Set `LOCALSPACE_SKILLS=0` to hide skills from workspace output.
 ## Tool Surface
 
 LocalSpace is hybrid-first. By default, `LOCALSPACE_TOOL_MODE=hybrid` combines
-the Codex-style editing and process tools with dedicated `project_map`, `grep`,
-`glob`, and `ls` inspection tools plus the plain-text `changes` review tool.
+the Codex-style editing and process tools with bounded `read_many`, dedicated
+`project_map`, `grep`, `glob`, and `ls` inspection tools plus the plain-text
+`changes` review tool.
 
 Compatibility modes remain available, but they are not the primary product
 surface.
@@ -168,6 +169,7 @@ The experimental Codex-style surface is enabled with
 
 - `open_workspace`
 - `read`
+- `read_many`
 - `apply_patch`
 - `exec_command`
 - `write_stdin`
@@ -182,6 +184,11 @@ In this mode, `write`, `edit`, `bash`, `grep`, `glob`, and `ls` are not
 registered. `exec_command` returns a process session ID when a command is still
 running after its yield window. Use `write_stdin` to poll it, send input, resize
 a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
+
+Use `read_many` only after navigation has identified several concrete text
+files. It preserves input order, isolates per-file failures, and caps total
+returned text. Continue to use `read` for one file, image content, or the first
+read of an advertised Skill's `SKILL.md`.
 
 ## Symbol Search
 

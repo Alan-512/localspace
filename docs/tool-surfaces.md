@@ -4,10 +4,11 @@
 
 Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are listed separately.
 
-## `hybrid` (23)
+## `hybrid` (24)
 
 - `open_workspace`
 - `read`
+- `read_many`
 - `doctor`
 - `workspace_info`
 - `session_summary`
@@ -30,10 +31,11 @@ Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are li
 - `git_commit`
 - `git_log`
 
-## `codex` (15)
+## `codex` (16)
 
 - `open_workspace`
 - `read`
+- `read_many`
 - `doctor`
 - `workspace_info`
 - `session_summary`

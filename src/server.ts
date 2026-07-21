@@ -71,6 +71,11 @@ import {
 } from "./activity-log.js";
 import { McpRequestMetricsManager } from "./request-metrics.js";
 import {
+  MAX_READ_MANY_FILES,
+  MAX_READ_MANY_TOTAL_CHARACTERS,
+  readManyFiles,
+} from "./read-many.js";
+import {
   toolAvailable,
   toolNames,
   toolSummary,
@@ -222,6 +227,7 @@ export function buildServerInstructions(
     toolNames.imports,
     toolNames.references,
     toolNames.read,
+    toolNames.readMany,
     toolNames.grep,
     toolNames.glob,
     toolNames.ls,
@@ -466,6 +472,31 @@ const workspaceInfoStructuredOutputSchema = structuredTextOutputSchema({
   workspace: workspaceDataOutputSchema,
   git: gitWorkspaceOutputSchema,
   package: packageDataOutputSchema.optional(),
+});
+
+const readManyFileOutputSchema = z.object({
+  path: z.string(),
+  success: z.boolean(),
+  text: z.string().optional(),
+  error: z.string().optional(),
+  truncated: z.boolean(),
+  lineCount: z.number(),
+  characters: z.number(),
+  offset: z.number(),
+  limited: z.boolean(),
+});
+
+const readManyOutputSchema = resultOutputSchema({
+  results: z.array(readManyFileOutputSchema),
+  summary: z.object({
+    requested: z.number(),
+    succeeded: z.number(),
+    failed: z.number(),
+    truncated: z.number(),
+    characters: z.number(),
+    maxTotalCharacters: z.number(),
+    concurrency: z.number(),
+  }),
 });
 
 const sessionSummaryOutputSchema = structuredTextOutputSchema({
@@ -1827,6 +1858,95 @@ function createMcpServer(
       };
     },
   );
+
+  if (toolAvailable(toolNames.readMany, config.toolMode, config.widgets)) {
+    registerAppTool(
+      server,
+      toolNames.readMany,
+      {
+        title: "Read multiple files",
+        description: toolSummary(toolNames.readMany),
+        inputSchema: {
+          workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+          files: z
+            .array(
+              z.object({
+                path: z.string().min(1).describe("File path relative to the workspace root, or an authorized Skill path."),
+                offset: z.number().int().positive().optional().describe("1-indexed line number to start reading from."),
+                limit: z.number().int().positive().optional().describe("Maximum number of lines to read."),
+              }),
+            )
+            .min(1)
+            .max(MAX_READ_MANY_FILES)
+            .describe(`Known text files to read in input order. Maximum ${MAX_READ_MANY_FILES}.`),
+          maxTotalCharacters: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_READ_MANY_TOTAL_CHARACTERS)
+            .optional()
+            .describe("Maximum combined returned text characters. Defaults to 50000, max 200000."),
+        },
+        outputSchema: readManyOutputSchema,
+        ...toolWidgetDescriptorMeta(config, "read"),
+        annotations: { readOnlyHint: true },
+      },
+      async ({ workspaceId, files, maxTotalCharacters }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const prepared = files.map((file) => {
+          try {
+            return { readPath: workspaces.resolveReadPath(workspace, file.path) };
+          } catch (error) {
+            return { error: error instanceof Error ? error : new Error(String(error)) };
+          }
+        });
+        const data = await readManyFiles(
+          files,
+          async (file, index) => {
+            const item = prepared[index];
+            if (!item || "error" in item) throw item?.error ?? new Error("Missing prepared read path.");
+            const response = await readFileTool(
+              { ...file, path: item.readPath.absolutePath },
+              {
+                cwd: workspace.root,
+                root: workspace.root,
+                readRoots: item.readPath.readRoots,
+              },
+            );
+            if (!response.isError) workspaces.markReadPathLoaded(workspace, item.readPath);
+            return response;
+          },
+          { maxTotalCharacters },
+        );
+        const content = [textBlock(data.text)];
+        logToolCall(config, {
+          tool: toolNames.readMany,
+          workspaceId,
+          path: `${files.length} files`,
+          success: true,
+          durationMs: Math.round(performance.now() - startedAt),
+          truncated: data.summary.truncated > 0,
+        });
+        return {
+          content,
+          _meta: {
+            tool: toolNames.readMany,
+            card: {
+              workspaceId,
+              summary: data.summary,
+              payload: { content },
+            },
+          },
+          structuredContent: {
+            result: data.text,
+            results: data.results,
+            summary: data.summary,
+          },
+        };
+      },
+    );
+  }
 
   registerAppTool(
     server,

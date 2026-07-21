@@ -16,22 +16,30 @@ const baseline = JSON.parse(
   widgetsChangesAdds: string[];
   widgetsFullAdds: string[];
 };
+const additions = JSON.parse(
+  await readFile(new URL("../docs/baselines/v1.1-tool-surface-additions.json", import.meta.url), "utf8"),
+) as {
+  baseVersion: string;
+  widgetsOffAdds: Record<ToolMode, string[]>;
+};
+assert.equal(additions.baseVersion, "v1.0.6");
 
 for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
+  const expected = [...baseline.widgetsOff[mode], ...additions.widgetsOffAdds[mode]];
   assert.deepEqual(
     sorted(toolNamesForMode(mode, "off")),
-    sorted(baseline.widgetsOff[mode]),
-    `${mode} catalog differs from the frozen v1.0.6 runtime baseline`,
+    sorted(expected),
+    `${mode} catalog differs from the frozen v1.0.6 baseline plus approved v1.1 additions`,
   );
   assert.deepEqual(
     sorted(toolNamesForMode(mode, "changes")),
-    sorted([...baseline.widgetsOff[mode], ...baseline.widgetsChangesAdds]),
-    `${mode} changes overlay differs from the frozen v1.0.6 runtime baseline`,
+    sorted([...expected, ...baseline.widgetsChangesAdds]),
+    `${mode} changes overlay differs from the approved current surface`,
   );
   assert.deepEqual(
     sorted(toolNamesForMode(mode, "full")),
-    sorted([...baseline.widgetsOff[mode], ...baseline.widgetsFullAdds]),
-    `${mode} full widget mode differs from the frozen v1.0.6 runtime baseline`,
+    sorted([...expected, ...baseline.widgetsFullAdds]),
+    `${mode} full widget mode differs from the approved current surface`,
   );
 }
 

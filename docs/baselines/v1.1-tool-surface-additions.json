@@ -1,0 +1,15 @@
+{
+  "baseVersion": "v1.0.6",
+  "currentPhase": "E3",
+  "description": "Approved v1.1 development additions layered over the frozen v1.0.6 tool surface baseline.",
+  "widgetsOffAdds": {
+    "minimal": [],
+    "full": [],
+    "codex": [
+      "read_many"
+    ],
+    "hybrid": [
+      "read_many"
+    ]
+  }
+}

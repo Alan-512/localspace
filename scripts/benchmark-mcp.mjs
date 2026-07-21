@@ -60,6 +60,36 @@ try {
       server.baseUrl,
       callToolRequest(202, "read", { workspaceId, path: "package.json" }),
     );
+    const sequentialReads = await timed(async () => {
+      for (const [id, path] of [
+        [220, "package.json"],
+        [221, "src/sample.ts"],
+        [222, "src/other.ts"],
+      ]) {
+        const response = await mcpRequest(
+          server.baseUrl,
+          callToolRequest(id, "read", { workspaceId, path }),
+        );
+        await jsonRpcResult(response);
+      }
+    });
+    measurements.readThreeSequentialMs = sequentialReads.ms;
+
+    const batchRead = await timed(() => mcpRequest(
+      server.baseUrl,
+      callToolRequest(223, "read_many", {
+        workspaceId,
+        files: [
+          { path: "package.json" },
+          { path: "src/sample.ts" },
+          { path: "src/other.ts" },
+        ],
+      }),
+    ));
+    const batchReadResult = await jsonRpcResult(batchRead.value);
+    const batchReadSummary = recordValue(batchReadResult.structuredContent, "summary");
+    assert.equal(recordValue(batchReadSummary, "succeeded"), 3);
+    measurements.readManyThreeMs = batchRead.ms;
     measurements.grepExportMs = await callDuration(
       server.baseUrl,
       callToolRequest(203, "grep", { workspaceId, pattern: "export", path: "src" }),

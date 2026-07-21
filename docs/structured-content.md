@@ -19,6 +19,7 @@ Every structured tool keeps this compatibility field:
 | `references` | `summary`, `references[]` |
 | `entrypoints` | `packageInfo`, `scripts[]`, `suggestedVerification[]`, `sourceEntrypoints[]`, `configFiles[]` |
 | `code_map` | `scope`, `options`, `entrypoints`, `projectMap`, `symbols`, `imports` |
+| `read_many` | `results[]`, `summary` |
 
 ## Workspace, diagnostics, and Git review
 

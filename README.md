@@ -47,7 +47,7 @@ and inspectable.
   repository, scripts, and terminal.
 - **Workspace-based access**: open one approved folder or managed worktree, then
   reuse the returned `workspaceId` for all later operations.
-- **Codex-style editing**: use `read`, `apply_patch`, `exec_command`,
+- **Codex-style editing**: use `read`, `read_many`, `apply_patch`, `exec_command`,
   `write_stdin`, `changes`, and dedicated `git_*` tools.
 - **Fast code orientation**: use `project_map`, `entrypoints`, `symbols`,
   `imports`, `references`, and `code_map` before changing unfamiliar code.
@@ -200,8 +200,8 @@ but normal users should keep the default `hybrid` mode.
 
 | Mode | Status | Best for |
 | --- | --- | --- |
-| `hybrid` | Default and recommended | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and `session_summary`. |
-| `codex` | Experimental compatibility | A smaller Codex-like surface: workspace, read, patch, command, process, changes, and Git tools. |
+| `hybrid` | Default and recommended | ChatGPT coding sessions with bounded batch reads, Codex-style edits, process tools, code navigation, Git helpers, and `session_summary`. |
+| `codex` | Experimental compatibility | A smaller Codex-like surface: workspace, single/batch read, patch, command, process, changes, and Git tools. |
 | `full` | Legacy compatibility | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
 | `minimal` | Legacy compatibility | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |
 
@@ -229,7 +229,7 @@ In the default `hybrid` mode, ChatGPT can:
 
 - open an approved checkout or managed worktree with `open_workspace`
 - inspect project state with `doctor`, `workspace_info`, and `entrypoints`
-- read files directly with `read`
+- read one file with `read`, or multiple known text files with bounded `read_many`
 - map unfamiliar projects with `project_map` and `code_map`
 - search code with `grep`, `glob`, `ls`, `symbols`, `imports`, and `references`
 - edit files with `apply_patch`

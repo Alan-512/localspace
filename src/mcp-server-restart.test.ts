@@ -16,6 +16,8 @@ const refreshToken = "restart-test-refresh-token";
 
 try {
   await writeFile(join(root, "activity.txt"), "activity baseline\n", "utf8");
+  await writeFile(join(root, "batch-a.txt"), "batch alpha\n", "utf8");
+  await writeFile(join(root, "batch-b.txt"), "batch bravo\n", "utf8");
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
 
@@ -233,6 +235,35 @@ try {
     assert.equal(recordValue(requestMetrics, "statelessRequests"), 1);
     const durableAudit = await readFile(config.audit.path, "utf8");
     assert.doesNotMatch(durableAudit, /"tool":"read"/);
+
+    const readMany = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(25, "read_many", {
+        workspaceId,
+        files: [
+          { path: "batch-a.txt" },
+          { path: "missing-batch.txt" },
+          { path: "batch-b.txt", limit: 1 },
+        ],
+      }),
+      sessionId,
+    );
+    assert.equal(readMany.status, 200);
+    const readManyResult = await jsonRpcResult(readMany);
+    const readManyStructured = recordValue(readManyResult, "structuredContent");
+    const readManyResults = arrayValue(recordValue(readManyStructured, "results"));
+    assert.deepEqual(
+      readManyResults.map((result) => recordValue(result, "path")),
+      ["batch-a.txt", "missing-batch.txt", "batch-b.txt"],
+    );
+    assert.equal(recordValue(readManyResults[0], "success"), true);
+    assert.equal(recordValue(readManyResults[1], "success"), false);
+    assert.equal(recordValue(readManyResults[2], "success"), true);
+    const readManySummary = recordValue(readManyStructured, "summary");
+    assert.equal(recordValue(readManySummary, "requested"), 3);
+    assert.equal(recordValue(readManySummary, "succeeded"), 2);
+    assert.equal(recordValue(readManySummary, "failed"), 1);
 
     const dangerousCommand = "git reset --hard HEAD";
     const blockedCommand = await mcpRequest(
@@ -641,14 +672,29 @@ interface ToolSurfaceBaseline {
   widgetsFullAdds: string[];
 }
 
+interface ToolSurfaceAdditions {
+  baseVersion: string;
+  widgetsOffAdds: Record<"minimal" | "full" | "codex" | "hybrid", string[]>;
+}
+
 async function loadToolSurfaceBaseline(): Promise<ToolSurfaceBaseline> {
-  const content = await readFile(
-    new URL("../docs/baselines/v1.0.6-tool-surfaces.json", import.meta.url),
-    "utf8",
-  );
-  const parsed = JSON.parse(content) as ToolSurfaceBaseline;
-  assert.equal(parsed.version, "v1.0.6");
-  return parsed;
+  const [baselineContent, additionsContent] = await Promise.all([
+    readFile(new URL("../docs/baselines/v1.0.6-tool-surfaces.json", import.meta.url), "utf8"),
+    readFile(new URL("../docs/baselines/v1.1-tool-surface-additions.json", import.meta.url), "utf8"),
+  ]);
+  const baseline = JSON.parse(baselineContent) as ToolSurfaceBaseline;
+  const additions = JSON.parse(additionsContent) as ToolSurfaceAdditions;
+  assert.equal(baseline.version, "v1.0.6");
+  assert.equal(additions.baseVersion, baseline.version);
+  return {
+    ...baseline,
+    widgetsOff: Object.fromEntries(
+      Object.entries(baseline.widgetsOff).map(([mode, tools]) => [
+        mode,
+        [...tools, ...additions.widgetsOffAdds[mode as keyof ToolSurfaceAdditions["widgetsOffAdds"]]],
+      ]),
+    ) as ToolSurfaceBaseline["widgetsOff"],
+  };
 }
 
 async function listToolNames(config: ServerConfig, token: string): Promise<string[]> {

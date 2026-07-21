@@ -145,8 +145,8 @@ experiments, but most users should leave it unset.
 
 | Value | Behavior |
 | --- | --- |
-| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
-| `codex` | Experimental compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
+| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
+| `codex` | Experimental compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
 | `full` | Legacy compatibility. Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `entrypoints`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
 | `minimal` | Legacy compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
 
@@ -187,6 +187,14 @@ files, suggested verification commands, and important config/orientation files.
 
 `code_map` aggregates entrypoints, a compact project tree, exported symbols, and
 import/export relationships for a bounded project overview.
+
+`read_many` reads 1–20 already-known text files in input order using bounded
+internal concurrency. It returns partial results when individual files fail,
+limits combined returned text to 50,000 characters by default (200,000 max),
+and preserves per-file truncation metadata. Images are intentionally rejected by
+`read_many`; use `read` for image content. Skill supporting files cannot be
+unlocked by placing a Skill's `SKILL.md` and its supporting file in the same
+batch—read the advertised `SKILL.md` first, then issue a later read.
 
 The code navigation tools return plain text for human-readable MCP hosts and
 structured content for model or UI consumers. `symbols`, `imports`,
