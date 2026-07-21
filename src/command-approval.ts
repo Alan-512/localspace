@@ -23,6 +23,16 @@ export interface CommandApprovalResult {
   reason?: "missing" | "not_found" | "expired" | "mismatch";
 }
 
+export interface CommandApprovalBatchEntry {
+  token: string | undefined;
+  context: CommandApprovalContext;
+}
+
+export interface CommandApprovalBatchResult {
+  approved: boolean;
+  results: CommandApprovalResult[];
+}
+
 export class CommandApprovalManager {
   private readonly ttlMs: number;
   private readonly requests = new Map<string, CommandApprovalRequest>();
@@ -68,6 +78,38 @@ export class CommandApprovalManager {
     }
 
     this.requests.delete(token);
+    return { approved: true };
+  }
+
+  consumeBatch(entries: readonly CommandApprovalBatchEntry[]): CommandApprovalBatchResult {
+    this.pruneExpired();
+    const results = entries.map((entry) => this.validate(entry.token, entry.context));
+    if (results.some((result) => !result.approved)) return { approved: false, results };
+
+    for (const entry of entries) {
+      if (entry.token) this.requests.delete(entry.token);
+    }
+    return { approved: true, results };
+  }
+
+  private validate(
+    token: string | undefined,
+    context: CommandApprovalContext,
+  ): CommandApprovalResult {
+    if (!token) return { approved: false, reason: "missing" };
+    const request = this.requests.get(token);
+    if (!request) return { approved: false, reason: "not_found" };
+    if (Date.parse(request.expiresAt) <= Date.now()) {
+      return { approved: false, reason: "expired" };
+    }
+    if (
+      request.workspaceId !== context.workspaceId ||
+      request.cwd !== context.cwd ||
+      request.command !== context.command ||
+      request.risk !== context.safety.level
+    ) {
+      return { approved: false, reason: "mismatch" };
+    }
     return { approved: true };
   }
 

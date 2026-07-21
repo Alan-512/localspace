@@ -20,6 +20,7 @@ Every structured tool keeps this compatibility field:
 | `entrypoints` | `packageInfo`, `scripts[]`, `suggestedVerification[]`, `sourceEntrypoints[]`, `configFiles[]` |
 | `code_map` | `scope`, `options`, `entrypoints`, `projectMap`, `symbols`, `imports` |
 | `read_many` | `results[]`, `summary` |
+| `run_checks` | `running`, `sessionId`, `wallTimeMs`, `queuedMs`, `checks[]`, `checkSummary`, `workspaceRevisionAtStart`, `workspaceRevisionAtEnd`, `workspaceChangedDuringRun`, `failFast`, `concurrency`, optional approval fields |
 
 ## Workspace, diagnostics, and Git review
 
@@ -48,7 +49,7 @@ experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
 | `git_commit` | `isRepository`, `message`, `committed`, `truncated` |
 | `git_log` | `isRepository`, `limit`, `commits[]`, `truncated` |
 | `exec_command` | `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated`, `commandRisk`, `commandSafetyFindings[]`, `blocked`, `approvalRequired`, `approvalToken`, `approvalTokenExpiresAt`, `commandApproved` |
-| `write_stdin` | `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated` |
+| `write_stdin` | Process sessions: `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated`; check groups additionally return `checks[]`, `checkSummary`, revision fields, `failFast`, and `concurrency` |
 
 ## Convention
 

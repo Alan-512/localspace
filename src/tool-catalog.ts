@@ -51,6 +51,7 @@ export const toolNames = {
   gitLog: "git_log",
   applyPatch: "apply_patch",
   execCommand: "exec_command",
+  runChecks: "run_checks",
   writeStdin: "write_stdin",
   showChanges: "show_changes",
   shell: "bash",
@@ -104,7 +105,8 @@ export const toolCatalog: readonly ToolCatalogEntry[] = [
 
   entry(toolNames.applyPatch, codexModes, "mutation", "workspace-write", "Apply one bounded Codex-style patch that can add, update, delete, or move workspace files."),
   entry(toolNames.execCommand, codexModes, "process", "process-start", "Run one workspace command and return output or a process session for later interaction."),
-  entry(toolNames.writeStdin, codexModes, "process", "process-session", "Poll or interact with one running process session."),
+  entry(toolNames.runChecks, codexModes, "process", "process-start", "Run bounded package.json scripts as a check group with per-check results, approval, and fail-fast support."),
+  entry(toolNames.writeStdin, codexModes, "process", "process-session", "Poll or interact with one running process or check-group session."),
 
   entry(toolNames.changes, gitModes, "git", "shared-read", "Show current Git changes as a summary, stat, or bounded patch."),
   entry(toolNames.gitStatus, gitModes, "git", "shared-read", "Show the current Git branch and short workspace status."),

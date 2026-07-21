@@ -67,7 +67,7 @@ function auditFixture(): AuditSummary {
     failedEvents: 1,
     blockedEvents: 1,
     approvedEvents: 0,
-    tools: { exec_command: 3, apply_patch: 1 },
+    tools: { exec_command: 2, run_checks: 1, apply_patch: 1 },
     paths: ["src/index.ts"],
     commands: ["npm run typecheck", "npm test", "node -e smoke"],
     risks: { none: 3 },
@@ -93,10 +93,10 @@ function auditFixture(): AuditSummary {
       {
         id: "audit_3",
         time: "2026-01-01T00:00:02.000Z",
-        tool: "exec_command",
+        tool: "run_checks",
         success: true,
         risk: "none",
-        commandPreview: "node -e smoke",
+        commandPreview: "npm run smoke => node -e smoke",
         exitCode: 0,
       },
       {

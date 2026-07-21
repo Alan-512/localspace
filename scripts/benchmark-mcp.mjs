@@ -99,6 +99,43 @@ try {
       callToolRequest(204, "project_map", { workspaceId, depth: 3, maxEntries: 100 }),
     );
 
+    const sequentialChecks = await timed(async () => {
+      for (const [id, check] of [
+        [230, "check:a"],
+        [231, "check:b"],
+      ]) {
+        const response = await mcpRequest(
+          server.baseUrl,
+          callToolRequest(id, "exec_command", {
+            workspaceId,
+            cmd: `npm run ${check}`,
+            yieldTimeMs: 5_000,
+          }),
+        );
+        const result = await jsonRpcResult(response);
+        assert.equal(recordValue(result.structuredContent, "running"), false);
+        assert.equal(recordValue(result.structuredContent, "exitCode"), 0);
+      }
+    });
+    measurements.checksTwoSequentialExecMs = sequentialChecks.ms;
+
+    const groupedChecks = await timed(() => mcpRequest(
+      server.baseUrl,
+      callToolRequest(232, "run_checks", {
+        workspaceId,
+        checks: ["check:a", "check:b"],
+        concurrency: 2,
+        yieldTimeMs: 5_000,
+      }),
+    ));
+    const groupedChecksResult = await jsonRpcResult(groupedChecks.value);
+    const groupedChecksStructured = groupedChecksResult.structuredContent;
+    const groupedChecksSummary = recordValue(groupedChecksStructured, "checkSummary");
+    assert.equal(recordValue(groupedChecksStructured, "running"), false);
+    assert.equal(recordValue(groupedChecksSummary, "passed"), 2);
+    assert.equal(recordValue(groupedChecksSummary, "failed"), 0);
+    measurements.checksTwoRunChecksMs = groupedChecks.ms;
+
     const startA = await timed(() => mcpRequest(
       server.baseUrl,
       callToolRequest(205, "exec_command", {
@@ -193,6 +230,8 @@ try {
       outcomes: {
         toolsListConcurrentRequests: 8,
         independentProcessesCompleted: 2,
+        sequentialPackageChecksCompleted: 2,
+        groupedPackageChecksCompleted: 2,
       },
     };
 
@@ -214,7 +253,15 @@ async function createFixture(root) {
   await mkdir(join(root, "src"), { recursive: true });
   await writeFile(
     join(root, "package.json"),
-    `${JSON.stringify({ name: "localspace-benchmark-fixture", version: "1.0.0", type: "module" }, null, 2)}\n`,
+    `${JSON.stringify({
+      name: "localspace-benchmark-fixture",
+      version: "1.0.0",
+      type: "module",
+      scripts: {
+        "check:a": "node -e \"setTimeout(() => console.log('check-a'), 1000)\"",
+        "check:b": "node -e \"setTimeout(() => console.log('check-b'), 1000)\"",
+      },
+    }, null, 2)}\n`,
     "utf8",
   );
   await writeFile(join(root, "src", "sample.ts"), "export const sample = 1;\n", "utf8");

@@ -233,8 +233,9 @@ In the default `hybrid` mode, ChatGPT can:
 - map unfamiliar projects with `project_map` and `code_map`
 - search code with `grep`, `glob`, `ls`, `symbols`, `imports`, and `references`
 - edit files with `apply_patch`
-- run commands with `exec_command` and interact with running processes through
-  `write_stdin`
+- run multiple declared package scripts with bounded `run_checks`, use
+  `exec_command` for one command or custom checks, and interact with running
+  process/check-group sessions through `write_stdin`
 - review changes with `changes`, `git_status`, `git_diff`, and `git_log`
 - stage and commit explicit files with `git_add` and `git_commit` when the user
   asks for it

@@ -145,8 +145,8 @@ experiments, but most users should leave it unset.
 
 | Value | Behavior |
 | --- | --- |
-| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
-| `codex` | Experimental compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
+| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `run_checks`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
+| `codex` | Experimental compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `apply_patch`, `exec_command`, `run_checks`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
 | `full` | Legacy compatibility. Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `entrypoints`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
 | `minimal` | Legacy compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
 
@@ -210,6 +210,27 @@ See [`structured-content.md`](structured-content.md) for the field summary.
 one-time `approvalToken`. Retry the exact same command with `approvalToken` only
 after the user explicitly confirms. Tokens are scoped to the same workspace,
 working directory, command, and risk level.
+
+`run_checks` accepts 1–8 exact script names declared in the workspace
+`package.json`. It resolves the package manager from `packageManager` or lock
+files, validates every script before starting any process, and runs checks with
+default concurrency 2 (maximum 4). `failFast: true` stops starting queued checks
+after the first failure; already-running checks finish. It is not an arbitrary
+command batcher—custom commands continue to use `exec_command`.
+
+Dangerous package scripts are blocked as a group. LocalSpace returns one
+approval token per dangerous script; retry the same check list with matching
+`approvals[]` only after explicit user confirmation. Approval consumption is
+atomic, so a missing or mismatched token does not consume otherwise valid
+tokens.
+
+Long-running check groups return a negative session ID. Use `write_stdin` to
+poll or send Ctrl-C. Check-group sessions reject arbitrary stdin and terminal
+resize. Results include per-check status/output, aggregate counts, queue time,
+and workspace revision markers so a completed check can be identified as stale
+when the Git-visible workspace changed during execution. The revision includes
+HEAD, staged and unstaged changes, and untracked file contents; Git-ignored
+cache or build output is intentionally outside that stale-result check.
 
 Write-like tools also protect sensitive paths using generic rules rather than
 hard-coded personal paths. Protected paths include workspace Git configuration

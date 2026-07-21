@@ -18,6 +18,17 @@ try {
   await writeFile(join(root, "activity.txt"), "activity baseline\n", "utf8");
   await writeFile(join(root, "batch-a.txt"), "batch alpha\n", "utf8");
   await writeFile(join(root, "batch-b.txt"), "batch bravo\n", "utf8");
+  await writeFile(join(root, "package.json"), JSON.stringify({
+    name: "mcp-restart-fixture",
+    packageManager: "npm@10.0.0",
+    scripts: {
+      "check:one": "node -e \"setTimeout(() => console.log('check-one'), 120)\"",
+      "check:two": "node -e \"setTimeout(() => console.log('check-two'), 120)\"",
+      "check:long": "node -e \"setTimeout(() => console.log('check-long'), 250)\"",
+      "check:fail": "node -e \"process.exit(2)\"",
+      "check:danger": "node -e \"console.log('git reset --hard HEAD')\""
+    }
+  }, null, 2), "utf8");
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
 
@@ -264,6 +275,88 @@ try {
     assert.equal(recordValue(readManySummary, "requested"), 3);
     assert.equal(recordValue(readManySummary, "succeeded"), 2);
     assert.equal(recordValue(readManySummary, "failed"), 1);
+
+    const runChecks = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(26, "run_checks", {
+        workspaceId,
+        checks: ["check:one", "check:two"],
+        concurrency: 2,
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    assert.equal(runChecks.status, 200);
+    const runChecksResult = await jsonRpcResult(runChecks);
+    const runChecksStructured = recordValue(runChecksResult, "structuredContent");
+    assert.equal(recordValue(runChecksStructured, "running"), false);
+    assert.equal(recordValue(recordValue(runChecksStructured, "checkSummary"), "passed"), 2);
+
+    const longChecks = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(27, "run_checks", {
+        workspaceId,
+        checks: ["check:long"],
+        yieldTimeMs: 0,
+      }),
+      sessionId,
+    );
+    const longChecksResult = await jsonRpcResult(longChecks);
+    const longChecksStructured = recordValue(longChecksResult, "structuredContent");
+    assert.equal(recordValue(longChecksStructured, "running"), true);
+    const checkSessionId = recordValue(longChecksStructured, "sessionId");
+    assert.equal(typeof checkSessionId, "number");
+    assert.ok(Number(checkSessionId) < 0);
+
+    const polledChecks = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(28, "write_stdin", {
+        workspaceId,
+        sessionId: checkSessionId,
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    const polledChecksResult = await jsonRpcResult(polledChecks);
+    const polledChecksStructured = recordValue(polledChecksResult, "structuredContent");
+    assert.equal(recordValue(polledChecksStructured, "running"), false);
+    assert.equal(recordValue(recordValue(polledChecksStructured, "checkSummary"), "passed"), 1);
+    assert.match(String(recordValue(polledChecksStructured, "result")), /check-long/);
+
+    const blockedChecks = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(29, "run_checks", {
+        workspaceId,
+        checks: ["check:danger"],
+      }),
+      sessionId,
+    );
+    const blockedChecksResult = await jsonRpcResult(blockedChecks);
+    const blockedChecksStructured = recordValue(blockedChecksResult, "structuredContent");
+    assert.equal(recordValue(blockedChecksStructured, "blocked"), true);
+    const approvalRequests = arrayValue(recordValue(blockedChecksStructured, "approvalRequests"));
+    const checkApprovalToken = recordValue(approvalRequests[0], "approvalToken");
+    assert.equal(typeof checkApprovalToken, "string");
+
+    const approvedChecks = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(30, "run_checks", {
+        workspaceId,
+        checks: ["check:danger"],
+        approvals: [{ check: "check:danger", approvalToken: checkApprovalToken }],
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    const approvedChecksResult = await jsonRpcResult(approvedChecks);
+    const approvedChecksStructured = recordValue(approvedChecksResult, "structuredContent");
+    assert.equal(recordValue(approvedChecksStructured, "commandApproved"), true);
+    assert.equal(recordValue(recordValue(approvedChecksStructured, "checkSummary"), "passed"), 1);
 
     const dangerousCommand = "git reset --hard HEAD";
     const blockedCommand = await mcpRequest(

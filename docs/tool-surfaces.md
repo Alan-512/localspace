@@ -4,7 +4,7 @@
 
 Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are listed separately.
 
-## `hybrid` (24)
+## `hybrid` (25)
 
 - `open_workspace`
 - `read`
@@ -23,6 +23,7 @@ Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are li
 - `ls`
 - `apply_patch`
 - `exec_command`
+- `run_checks`
 - `write_stdin`
 - `changes`
 - `git_status`
@@ -31,7 +32,7 @@ Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are li
 - `git_commit`
 - `git_log`
 
-## `codex` (16)
+## `codex` (17)
 
 - `open_workspace`
 - `read`
@@ -42,6 +43,7 @@ Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are li
 - `entrypoints`
 - `apply_patch`
 - `exec_command`
+- `run_checks`
 - `write_stdin`
 - `changes`
 - `git_status`

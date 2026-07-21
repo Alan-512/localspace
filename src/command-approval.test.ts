@@ -29,6 +29,28 @@ assert.deepEqual(
 assert.deepEqual(approvals.consume(request.token, context), { approved: true });
 assert.deepEqual(approvals.consume(request.token, context), { approved: false, reason: "not_found" });
 
+const batchContextA = { ...context, command: "danger-a" };
+const batchContextB = { ...context, command: "danger-b" };
+const batchA = approvals.create(batchContextA);
+const batchB = approvals.create(batchContextB);
+const failedBatch = approvals.consumeBatch([
+  { token: batchA.token, context: batchContextA },
+  { token: undefined, context: batchContextB },
+]);
+assert.equal(failedBatch.approved, false);
+assert.deepEqual(approvals.consume(batchA.token, batchContextA), { approved: true });
+
+const replacementA = approvals.create(batchContextA);
+const approvedBatch = approvals.consumeBatch([
+  { token: replacementA.token, context: batchContextA },
+  { token: batchB.token, context: batchContextB },
+]);
+assert.equal(approvedBatch.approved, true);
+assert.deepEqual(approvals.consume(replacementA.token, batchContextA), {
+  approved: false,
+  reason: "not_found",
+});
+
 const expiring = new CommandApprovalManager({ ttlMs: -1 });
 const expired = expiring.create(context);
 assert.deepEqual(expiring.consume(expired.token, context), { approved: false, reason: "expired" });

@@ -172,6 +172,7 @@ The experimental Codex-style surface is enabled with
 - `read_many`
 - `apply_patch`
 - `exec_command`
+- `run_checks`
 - `write_stdin`
 - `changes`
 - `git_status`
@@ -189,6 +190,12 @@ Use `read_many` only after navigation has identified several concrete text
 files. It preserves input order, isolates per-file failures, and caps total
 returned text. Continue to use `read` for one file, image content, or the first
 read of an advertised Skill's `SKILL.md`.
+
+Use `run_checks` when two or more exact `package.json` scripts should be
+validated together. Keep concurrency conservative (default 2), use `failFast`
+only when later checks would be meaningless after an earlier failure, and poll a
+returned check-group session with `write_stdin`. Use `exec_command` for a single
+script, non-package validation, or any custom command.
 
 ## Symbol Search
 

@@ -73,17 +73,19 @@ export async function createTaskSummary(workspaceRoot: string, audit?: AuditSumm
 export async function createValidationSummary(workspaceRoot: string, audit?: AuditSummary): Promise<ValidationSummaryData> {
   const validation = await createValidatePlan(workspaceRoot);
   const recommendedCommands = validation.commands.map((command) => command.command);
-  const execEvents = (audit?.recentEvents ?? []).filter((event) => event.tool === "exec_command");
-  const commandEvents = execEvents.filter((event) => event.commandPreview);
+  const validationEvents = (audit?.recentEvents ?? []).filter(
+    (event) => event.tool === "exec_command" || event.tool === "run_checks",
+  );
+  const commandEvents = validationEvents.filter((event) => event.commandPreview);
   const detectedResults = commandEvents.map((event) => detectedValidationResult(event));
   const data: ValidationSummaryData = {
     commandPreviewEnabled: commandEvents.length > 0,
     recommendedCommands,
-    recentExecCommands: execEvents.length,
-    recentFailures: execEvents.filter((event) => !event.success).length,
-    recentSuccesses: execEvents.filter((event) => event.success).length,
+    recentExecCommands: validationEvents.length,
+    recentFailures: validationEvents.filter((event) => !event.success).length,
+    recentSuccesses: validationEvents.filter((event) => event.success).length,
     detectedResults,
-    notes: validationSummaryNotes(execEvents, commandEvents, validation.notes),
+    notes: validationSummaryNotes(validationEvents, commandEvents, validation.notes),
     text: "",
   };
   data.text = formatValidationSummary(data);
@@ -146,14 +148,16 @@ function classifyValidationCommand(command: string): ValidationResultKind {
   return "other";
 }
 
-function validationSummaryNotes(execEvents: AuditEvent[], commandEvents: AuditEvent[], validationNotes: string[]): string[] {
+function validationSummaryNotes(validationEvents: AuditEvent[], commandEvents: AuditEvent[], validationNotes: string[]): string[] {
   const notes = [...validationNotes];
-  if (execEvents.length === 0) notes.push("No recent exec_command events were found in the audit summary.");
-  if (execEvents.length > 0 && commandEvents.length === 0) {
+  if (validationEvents.length === 0) {
+    notes.push("No recent exec_command or run_checks events were found in the audit summary.");
+  }
+  if (validationEvents.length > 0 && commandEvents.length === 0) {
     notes.push("Command preview logging is disabled; exact validation commands cannot be classified from audit events.");
   }
-  if (commandEvents.length > 0 && commandEvents.length < execEvents.length) {
-    notes.push("Some recent exec_command events did not include command previews and could not be classified.");
+  if (commandEvents.length > 0 && commandEvents.length < validationEvents.length) {
+    notes.push("Some recent validation events did not include command previews and could not be classified.");
   }
   return [...new Set(notes)];
 }

@@ -6,6 +6,7 @@ const source = readFileSync(new URL("./server.ts", import.meta.url), "utf8");
 const expectedSchemas = new Map([
   ["toolNames.read", "resultOutputSchema"],
   ["toolNames.readMany", "readManyOutputSchema"],
+  ["toolNames.runChecks", "processOutputSchema"],
   ["toolNames.doctor", "doctorStructuredOutputSchema"],
   ["toolNames.workspaceInfo", "workspaceInfoStructuredOutputSchema"],
   ["toolNames.projectMap", "resultOutputSchema"],

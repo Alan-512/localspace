@@ -71,6 +71,16 @@ import {
 } from "./activity-log.js";
 import { McpRequestMetricsManager } from "./request-metrics.js";
 import {
+  CheckSessionManager,
+  type CheckSessionSnapshot,
+  type CheckResult,
+} from "./check-sessions.js";
+import {
+  MAX_PACKAGE_CHECKS,
+  preparePackageChecks,
+  type PreparedPackageCheck,
+} from "./package-checks.js";
+import {
   MAX_READ_MANY_FILES,
   MAX_READ_MANY_TOTAL_CHARACTERS,
   readManyFiles,
@@ -241,7 +251,7 @@ export function buildServerInstructions(
   }
 
   if (has(toolNames.execCommand)) {
-    sections.push(`Use ${toolLabel(toolNames.execCommand)} for tests, builds, package scripts, and commands; use ${toolLabel(toolNames.writeStdin)} to poll or interact with running processes.`);
+    sections.push(`Use ${toolLabel(toolNames.runChecks)} for multiple declared package scripts, ${toolLabel(toolNames.execCommand)} for one command or non-package checks, and ${toolLabel(toolNames.writeStdin)} to poll or interact with running process or check-group sessions.`);
   } else if (has(toolNames.shell)) {
     sections.push(`Use ${toolLabel(toolNames.shell)} for tests, builds, Git inspection, package scripts, and read-only shell inspection. Do not use shell redirection or generated scripts to modify project files.`);
     if (config.toolMode === "minimal") {
@@ -1224,6 +1234,37 @@ function processResult(snapshot: ProcessSnapshot): string {
   return snapshot.output ? `${snapshot.output.replace(/\n$/, "")}\n${status}` : status;
 }
 
+const commandSafetyFindingOutputSchema = z.object({
+  level: z.enum(["notice", "warning", "danger"]),
+  category: z.string(),
+  message: z.string(),
+});
+
+const checkResultOutputSchema = z.object({
+  name: z.string(),
+  command: z.string(),
+  status: z.enum(["queued", "running", "passed", "failed", "blocked", "skipped", "cancelled"]),
+  exitCode: z.number().int().optional(),
+  signal: z.string().optional(),
+  wallTimeMs: z.number().nonnegative().optional(),
+  queuedMs: z.number().nonnegative(),
+  output: z.string(),
+  outputTruncated: z.boolean(),
+  commandRisk: z.enum(["none", "notice", "warning", "danger"]),
+  commandSafetyFindings: z.array(commandSafetyFindingOutputSchema),
+});
+
+const checkSummaryOutputSchema = z.object({
+  requested: z.number(),
+  queued: z.number(),
+  running: z.number(),
+  passed: z.number(),
+  failed: z.number(),
+  blocked: z.number(),
+  skipped: z.number(),
+  cancelled: z.number(),
+});
+
 function processOutputSchema(): z.ZodRawShape {
   return resultOutputSchema({
     sessionId: z.number().optional(),
@@ -1240,11 +1281,21 @@ function processOutputSchema(): z.ZodRawShape {
     approvalFailureReason: z.enum(["missing", "not_found", "expired", "mismatch"]).optional(),
     commandApproved: z.boolean().optional(),
     commandRisk: z.enum(["none", "notice", "warning", "danger"]).optional(),
-    commandSafetyFindings: z
+    commandSafetyFindings: z.array(commandSafetyFindingOutputSchema).optional(),
+    checks: z.array(checkResultOutputSchema).optional(),
+    checkSummary: checkSummaryOutputSchema.optional(),
+    workspaceRevisionAtStart: z.string().optional(),
+    workspaceRevisionAtEnd: z.string().optional(),
+    workspaceChangedDuringRun: z.boolean().optional(),
+    failFast: z.boolean().optional(),
+    concurrency: z.number().optional(),
+    approvalRequests: z
       .array(z.object({
-        level: z.enum(["notice", "warning", "danger"]),
-        category: z.string(),
-        message: z.string(),
+        check: z.string(),
+        approvalToken: z.string(),
+        approvalTokenExpiresAt: z.string(),
+        commandRisk: z.literal("danger"),
+        commandSafetyFindings: z.array(commandSafetyFindingOutputSchema),
       }))
       .optional(),
   });
@@ -1350,11 +1401,134 @@ function processToolResponse(
   };
 }
 
+function checkSessionToolResponse(
+  tool: "run_checks" | "write_stdin",
+  workspaceId: string,
+  snapshot: CheckSessionSnapshot,
+  summary: Record<string, unknown> = {},
+) {
+  const fallback = snapshot.running
+    ? `Check group running with session ID ${snapshot.sessionId}.`
+    : `Check group completed: ${snapshot.summary.passed} passed, ${snapshot.summary.failed} failed.`;
+  const result = snapshot.result || fallback;
+  const content = [textBlock(result)];
+  return {
+    content,
+    _meta: {
+      tool,
+      card: {
+        workspaceId,
+        summary: {
+          ...summary,
+          ...snapshot.summary,
+          running: snapshot.running,
+          queuedMs: snapshot.queuedMs,
+          ...textSummary(content),
+        },
+        payload: { content },
+      },
+    },
+    structuredContent: {
+      result,
+      sessionId: snapshot.sessionId,
+      running: snapshot.running,
+      wallTimeMs: snapshot.wallTimeMs,
+      queuedMs: snapshot.queuedMs,
+      outputTruncated: snapshot.outputTruncated,
+      checks: snapshot.checks,
+      checkSummary: snapshot.summary,
+      workspaceRevisionAtStart: snapshot.workspaceRevisionAtStart,
+      workspaceRevisionAtEnd: snapshot.workspaceRevisionAtEnd,
+      workspaceChangedDuringRun: snapshot.workspaceChangedDuringRun,
+      failFast: snapshot.failFast,
+      concurrency: snapshot.concurrency,
+      commandApproved: typeof summary.commandApproved === "boolean"
+        ? summary.commandApproved
+        : undefined,
+    },
+  };
+}
+
+function blockedChecksResult(
+  workspaceId: string,
+  checks: PreparedPackageCheck[],
+  approvalRequests: Array<{
+    check: string;
+    approvalToken: string;
+    approvalTokenExpiresAt: string;
+    commandRisk: "danger";
+    commandSafetyFindings: CommandSafetyAnalysis["findings"];
+  }>,
+) {
+  const blockedChecks: CheckResult[] = checks.map((check) => ({
+    name: check.name,
+    command: check.command,
+    status: check.safety.level === "danger" ? "blocked" : "queued",
+    queuedMs: 0,
+    output: check.safety.level === "danger" ? (formatCommandSafetyWarning(check.safety) ?? "") : "",
+    outputTruncated: false,
+    commandRisk: check.safety.level,
+    commandSafetyFindings: check.safety.findings,
+  }));
+  const result = [
+    "Check group blocked: one or more package scripts require approval.",
+    "",
+    ...approvalRequests.flatMap((request) => [
+      `Check: ${request.check}`,
+      `Approval token: ${request.approvalToken}`,
+      `Expires at: ${request.approvalTokenExpiresAt}`,
+      "",
+    ]),
+    "Retry the same checks with the matching approval tokens only after explicit user confirmation.",
+  ].join("\n");
+  const content = [textBlock(result)];
+  return {
+    content,
+    _meta: {
+      tool: toolNames.runChecks,
+      card: {
+        workspaceId,
+        summary: {
+          requested: checks.length,
+          blocked: approvalRequests.length,
+          approvalRequired: true,
+          ...textSummary(content),
+        },
+        payload: { content },
+      },
+    },
+    structuredContent: {
+      result,
+      running: false,
+      wallTimeMs: 0,
+      queuedMs: 0,
+      outputTruncated: false,
+      blocked: true,
+      approvalRequired: true,
+      commandApproved: false,
+      commandRisk: "danger" as const,
+      checks: blockedChecks,
+      checkSummary: {
+        requested: checks.length,
+        queued: blockedChecks.filter((check) => check.status === "queued").length,
+        running: 0,
+        passed: 0,
+        failed: 0,
+        blocked: approvalRequests.length,
+        skipped: 0,
+        cancelled: 0,
+      },
+      approvalRequests,
+    },
+  };
+}
+
 function registerCodexProcessTools(
   server: McpServer,
   config: ServerConfig,
   workspaces: WorkspaceRegistry,
   processSessions: ProcessSessionManager,
+  checkSessions: CheckSessionManager,
   auditLog: AuditLogManager,
   activityLog: ToolActivityLogManager,
   approvals: CommandApprovalManager,
@@ -1497,14 +1671,144 @@ function registerCodexProcessTools(
 
   registerAppTool(
     server,
+    toolNames.runChecks,
+    {
+      title: "Run package checks",
+      description: toolSummary(toolNames.runChecks),
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+        checks: z
+          .array(z.string().min(1))
+          .min(1)
+          .max(MAX_PACKAGE_CHECKS)
+          .describe(`package.json script names to run. Maximum ${MAX_PACKAGE_CHECKS}.`),
+        concurrency: z.number().int().min(1).max(4).optional().describe("Maximum checks to run concurrently. Defaults to 2, max 4."),
+        failFast: z.boolean().optional().describe("Stop starting queued checks after the first failure. Running checks are allowed to finish."),
+        yieldTimeMs: z.number().int().min(0).max(30_000).optional().describe("Milliseconds to wait before returning a running group session. Defaults to 10000."),
+        maxOutputTokens: z.number().int().positive().max(100_000).optional().describe("Approximate combined output token budget. Defaults to 20000."),
+        approvals: z
+          .array(z.object({
+            check: z.string().min(1),
+            approvalToken: z.string().min(1),
+          }))
+          .max(MAX_PACKAGE_CHECKS)
+          .optional()
+          .describe("Approval tokens previously returned for matching dangerous package scripts."),
+      },
+      outputSchema: processOutputSchema(),
+      ...toolWidgetDescriptorMeta(config, "shell"),
+      annotations: SHELL_TOOL_ANNOTATIONS,
+    },
+    async ({ workspaceId, checks, concurrency, failFast, yieldTimeMs, maxOutputTokens, approvals: suppliedApprovals }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const prepared = await preparePackageChecks(workspace.root, checks);
+      const dangerous = prepared.checks.filter((check) => check.safety.level === "danger");
+      const supplied = new Map(
+        (suppliedApprovals ?? []).map((approval) => [approval.check, approval.approvalToken]),
+      );
+      const approvalEntries = dangerous.map((check) => ({
+        token: supplied.get(check.name),
+        context: {
+          workspaceId,
+          cwd: workspace.root,
+          command: check.approvalCommand,
+          safety: check.safety,
+        },
+      }));
+      const approval = dangerous.length > 0
+        ? approvals.consumeBatch(approvalEntries)
+        : { approved: true, results: [] };
+
+      if (!approval.approved) {
+        const requests = dangerous.map((check) => {
+          const request = approvals.create({
+            workspaceId,
+            cwd: workspace.root,
+            command: check.approvalCommand,
+            safety: check.safety,
+          });
+          return {
+            check: check.name,
+            approvalToken: request.token,
+            approvalTokenExpiresAt: request.expiresAt,
+            commandRisk: "danger" as const,
+            commandSafetyFindings: check.safety.findings,
+          };
+        });
+        auditLog.record({
+          tool: toolNames.runChecks,
+          workspaceId,
+          success: false,
+          blocked: true,
+          risk: "danger",
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        logToolCall(config, {
+          tool: toolNames.runChecks,
+          workspaceId,
+          success: false,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        return blockedChecksResult(workspaceId, prepared.checks, requests);
+      }
+
+      const snapshot = await checkSessions.start({
+        workspaceId,
+        root: workspace.root,
+        checks: prepared.checks,
+        concurrency,
+        failFast,
+        yieldTimeMs,
+        maxOutputTokens,
+      });
+      const hasDanger = dangerous.length > 0;
+      const checkResults = new Map(snapshot.checks.map((check) => [check.name, check]));
+      for (const check of prepared.checks) {
+        const result = checkResults.get(check.name);
+        auditLog.record({
+          tool: toolNames.runChecks,
+          workspaceId,
+          success: snapshot.running || result?.status === "passed",
+          approved: check.safety.level === "danger" ? true : undefined,
+          risk: check.safety.level,
+          commandPreview: config.logging.shellCommands
+            ? commandPreview(`${check.command} => ${check.script}`)
+            : undefined,
+          exitCode: result?.exitCode,
+          running: result?.status === "running" || result?.status === "queued",
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+      }
+      logToolCall(config, {
+        tool: toolNames.runChecks,
+        workspaceId,
+        success: snapshot.running || snapshot.summary.failed === 0,
+        durationMs: Math.round(performance.now() - startedAt),
+        running: snapshot.running,
+        outputBytes: snapshot.result.length,
+        truncated: snapshot.outputTruncated,
+        queuedMs: snapshot.queuedMs,
+      });
+      return checkSessionToolResponse(toolNames.runChecks, workspaceId, snapshot, {
+        packageName: prepared.packageName,
+        packageManager: prepared.packageManager,
+        requestedChecks: checks,
+        commandApproved: hasDanger ? true : undefined,
+      });
+    },
+  );
+
+  registerAppTool(
+    server,
     toolNames.writeStdin,
     {
       title: "Write to process",
       description: toolSummary(toolNames.writeStdin),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier used to start the process."),
-        sessionId: z.number().describe("Process session identifier returned by exec_command."),
-        chars: z.string().optional().describe("Characters to write. Omit or pass an empty string to poll."),
+        sessionId: z.number().describe("Session identifier returned by exec_command or run_checks."),
+        chars: z.string().optional().describe("Characters to write. Omit or pass an empty string to poll. Check groups accept Ctrl-C only."),
         columns: z.number().int().min(1).max(1_000).optional().describe("Resize a PTY to this width."),
         rows: z.number().int().min(1).max(1_000).optional().describe("Resize a PTY to this height."),
         yieldTimeMs: z
@@ -1529,6 +1833,45 @@ function registerCodexProcessTools(
     async ({ workspaceId, sessionId, chars, columns, rows, yieldTimeMs, maxOutputTokens }) => {
       const startedAt = performance.now();
       workspaces.getWorkspace(workspaceId);
+      if (checkSessions.has(workspaceId, sessionId)) {
+        const snapshot = await checkSessions.write({
+          workspaceId,
+          sessionId,
+          chars,
+          columns,
+          rows,
+          yieldTimeMs,
+          maxOutputTokens,
+        });
+        for (const check of snapshot.checks) {
+          auditLog.record({
+            tool: toolNames.runChecks,
+            workspaceId,
+            success: snapshot.running || check.status === "passed",
+            risk: check.commandRisk,
+            commandPreview: config.logging.shellCommands
+              ? commandPreview(check.command)
+              : undefined,
+            exitCode: check.exitCode,
+            running: check.status === "running" || check.status === "queued",
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+        }
+        logToolCall(config, {
+          tool: toolNames.writeStdin,
+          workspaceId,
+          success: snapshot.running || snapshot.summary.failed === 0,
+          durationMs: Math.round(performance.now() - startedAt),
+          running: snapshot.running,
+          outputBytes: snapshot.result.length,
+          truncated: snapshot.outputTruncated,
+          queuedMs: snapshot.queuedMs,
+        });
+        return checkSessionToolResponse(toolNames.writeStdin, workspaceId, snapshot, {
+          sessionId,
+          checkGroup: true,
+        });
+      }
       const snapshot = await processSessions.write({
         workspaceId,
         sessionId,
@@ -1567,6 +1910,7 @@ function createMcpServer(
   workspaces: WorkspaceRegistry,
   reviewCheckpoints: ReturnType<typeof createReviewCheckpointManager>,
   processSessions: ProcessSessionManager,
+  checkSessions: CheckSessionManager,
   auditLog: AuditLogManager,
   activityLog: ToolActivityLogManager,
   requestMetrics: McpRequestMetricsManager,
@@ -3793,6 +4137,7 @@ function createMcpServer(
       config,
       workspaces,
       processSessions,
+      checkSessions,
       auditLog,
       activityLog,
       commandApprovals,
@@ -3832,6 +4177,7 @@ export function createServer(config = loadConfig()): RunningServer {
     maxWorkspaceProcesses: config.concurrency.maxWorkspaceProcesses,
     queueTimeoutMs: config.concurrency.queueTimeoutMs,
   });
+  const checkSessions = new CheckSessionManager(processSessions);
   const auditLog = new AuditLogManager(config.audit);
   const activityLog = new ToolActivityLogManager(config.audit.maxMemoryEvents);
   const requestMetrics = new McpRequestMetricsManager(config.audit.maxMemoryEvents);
@@ -3960,6 +4306,7 @@ export function createServer(config = loadConfig()): RunningServer {
           workspaces,
           reviewCheckpoints,
           processSessions,
+          checkSessions,
           auditLog,
           activityLog,
           requestMetrics,
@@ -4033,6 +4380,7 @@ export function createServer(config = loadConfig()): RunningServer {
           workspaces,
           reviewCheckpoints,
           processSessions,
+          checkSessions,
           auditLog,
           activityLog,
           requestMetrics,
@@ -4096,6 +4444,7 @@ export function createServer(config = loadConfig()): RunningServer {
     close: () => {
       closePromise ??= (async () => {
         await transports?.closeAll("server_shutdown");
+        checkSessions.shutdown();
         processSessions.shutdown();
         oauthProvider.close();
         workspaceStore.close?.();
