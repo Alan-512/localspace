@@ -61,7 +61,9 @@ and inspectable.
   checks, sensitive-path protection, command risk warnings, danger-command
   approval tokens, bounded tool/process concurrency, audit logs, and optional
   fail-closed `.localspace/policy.json` restrictions that can only reduce a
-  workspace's permissions.
+  workspace's permissions. Deterministic review rules surface source, package,
+  sensitive-file, and validation freshness findings before Git commits without
+  running project-provided hooks automatically.
 
 LocalSpace does **not** replace your judgment. Shell access is intentionally
 powerful, so treat a connected MCP client like a trusted coding partner with

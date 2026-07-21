@@ -46,6 +46,7 @@ import { gitAddData, gitCommitData, gitDiffData, gitLogData, gitStagedPaths, git
 import { generateDoctorReportData, generateWorkspaceInfoData } from "./diagnostics.js";
 import {
   analyzeCommandSafety,
+  commandInvokesGitCommit,
   formatCommandSafetyWarning,
   type CommandSafetyAnalysis,
 } from "./command-safety.js";
@@ -59,10 +60,16 @@ import { shutdownHttpServer } from "./server-shutdown.js";
 import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
+import { workspaceContentRevision, workspaceRevision } from "./workspace-revision.js";
 import { formatAgentsPath, WorkspaceRegistry, type Workspace } from "./workspaces.js";
 import { createFinalReport, createHandoffSummary } from "./final-report.js";
 import { createTaskSummary, createValidationSummary } from "./task-summary.js";
 import { createNextSteps, createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
+import {
+  createDeterministicAutomation,
+  validationEvidenceAction,
+  type DeterministicAutomationData,
+} from "./deterministic-automation.js";
 import { McpSessionRegistry, type McpSessionRegistryEvent } from "./mcp-session-registry.js";
 import { createWorkspaceAppResourceUri } from "./workspace-app-resource.js";
 import {
@@ -708,12 +715,38 @@ const workflowCheckOutputSchema = z.object({
   detail: z.string(),
 });
 
+const automationRecommendationOutputSchema = z.object({
+  id: z.string(),
+  severity: z.enum(["info", "warning", "required"]),
+  title: z.string(),
+  detail: z.string(),
+  matchedPaths: z.array(z.string()),
+  suggestedTool: z.string().optional(),
+  suggestedCommand: z.string().optional(),
+});
+
+const deterministicAutomationOutputSchema = z.object({
+  changedPaths: z.array(z.string()),
+  sourcePaths: z.array(z.string()),
+  packagePaths: z.array(z.string()),
+  sensitivePaths: z.array(z.string()),
+  validationFreshness: z.enum(["not-required", "current", "stale", "unknown"]),
+  packageValidationFreshness: z.enum(["not-required", "current", "stale", "unknown"]),
+  validationEvidence: z.array(z.enum(["typecheck", "test", "build", "lint", "smoke", "package"])),
+  latestChangeAt: z.string().optional(),
+  latestValidationAt: z.string().optional(),
+  commitReviewRequired: z.boolean(),
+  recommendations: z.array(automationRecommendationOutputSchema),
+  text: z.string(),
+});
+
 const reviewChecklistOutputSchema = structuredTextOutputSchema({
   dirty: z.boolean(),
   staged: z.boolean(),
   unstaged: z.boolean(),
   untracked: z.boolean(),
   changedPaths: z.array(z.string()),
+  automation: deterministicAutomationOutputSchema,
   checks: z.array(workflowCheckOutputSchema),
   recommendedActions: z.array(z.string()),
 });
@@ -746,6 +779,7 @@ const taskSummaryOutputSchema = structuredTextOutputSchema({
   validation: z.object({
     recommendedCommands: z.array(z.string()),
   }),
+  automation: deterministicAutomationOutputSchema,
   recommendedFinalResponse: z.array(z.string()),
   warnings: z.array(z.string()),
 });
@@ -764,6 +798,7 @@ const validationSummaryOutputSchema = structuredTextOutputSchema({
   recentFailures: z.number(),
   recentSuccesses: z.number(),
   detectedResults: z.array(validationDetectedResultOutputSchema),
+  automation: deterministicAutomationOutputSchema,
   notes: z.array(z.string()),
 });
 
@@ -868,6 +903,20 @@ const gitCommitStructuredOutputSchema = structuredTextOutputSchema({
   message: z.string(),
   committed: z.boolean(),
   truncated: z.boolean(),
+  blocked: z.boolean().optional(),
+  approvalRequired: z.boolean().optional(),
+  approvalToken: z.string().optional(),
+  approvalTokenExpiresAt: z.string().optional(),
+  approvalFailureReason: z.enum(["missing", "not_found", "expired", "mismatch"]).optional(),
+  commandApproved: z.boolean().optional(),
+  workspaceRevision: z.string().optional(),
+  commandRisk: z.enum(["none", "notice", "warning", "danger"]).optional(),
+  commandSafetyFindings: z.array(z.object({
+    level: z.enum(["notice", "warning", "danger"]),
+    category: z.string(),
+    message: z.string(),
+  })).optional(),
+  automation: deterministicAutomationOutputSchema,
 });
 
 const gitLogStructuredOutputSchema = structuredTextOutputSchema({
@@ -1357,6 +1406,7 @@ const commandSafetyFindingOutputSchema = z.object({
 const checkResultOutputSchema = z.object({
   name: z.string(),
   command: z.string(),
+  validationAction: z.string().optional(),
   status: z.enum(["queued", "running", "passed", "failed", "blocked", "skipped", "cancelled"]),
   exitCode: z.number().int().optional(),
   signal: z.string().optional(),
@@ -1468,6 +1518,102 @@ function blockedCommandResult(
       commandApproved: false,
       commandRisk: safety.level,
       commandSafetyFindings: safety.findings,
+    },
+  };
+}
+
+function deterministicAutomationSafety(
+  automation: DeterministicAutomationData,
+): CommandSafetyAnalysis {
+  const required = automation.recommendations.filter(
+    (recommendation) => recommendation.severity === "required",
+  );
+  return {
+    level: required.length > 0 ? "danger" : "none",
+    findings: required.map((recommendation) => ({
+      level: "danger" as const,
+      category: "deterministic-automation",
+      message: `${recommendation.title}: ${recommendation.detail}`,
+    })),
+  };
+}
+
+function gitCommitApprovalCommand(input: {
+  message: string;
+  workspaceRevision: string | undefined;
+  stagedPaths: string[];
+  automation: DeterministicAutomationData;
+}): string {
+  return `git_commit:${JSON.stringify({
+    message: input.message.trim(),
+    workspaceRevision: input.workspaceRevision,
+    stagedPaths: [...input.stagedPaths].sort(),
+    requiredRecommendations: input.automation.recommendations
+      .filter((recommendation) => recommendation.severity === "required")
+      .map((recommendation) => ({
+        id: recommendation.id,
+        matchedPaths: [...recommendation.matchedPaths].sort(),
+      })),
+    validationFreshness: input.automation.validationFreshness,
+    packageValidationFreshness: input.automation.packageValidationFreshness,
+  })}`;
+}
+
+function blockedGitCommitResult(input: {
+  workspaceId: string;
+  message: string;
+  workspaceRevision: string | undefined;
+  automation: DeterministicAutomationData;
+  safety: CommandSafetyAnalysis;
+  approval: ReturnType<CommandApprovalManager["create"]>;
+  approvalResult: ReturnType<CommandApprovalManager["consume"]>;
+}) {
+  const required = input.automation.recommendations.filter(
+    (recommendation) => recommendation.severity === "required",
+  );
+  const result = [
+    "Git commit blocked: deterministic preflight requires explicit approval.",
+    "",
+    ...required.map((recommendation) => `- ${recommendation.title}: ${recommendation.detail}`),
+    "",
+    `Approval token: ${input.approval.token}`,
+    `Expires at: ${input.approval.expiresAt}`,
+    "",
+    "Retry the exact same commit message against the unchanged staged workspace with this approvalToken only after the user explicitly confirms.",
+  ].join("\n");
+  const content = [textBlock(result)];
+  return {
+    content,
+    _meta: {
+      tool: toolNames.gitCommit,
+      card: {
+        workspaceId: input.workspaceId,
+        summary: {
+          blocked: true,
+          approvalRequired: true,
+          recommendations: required.length,
+          ...textSummary(content),
+        },
+        payload: { content },
+      },
+    },
+    structuredContent: {
+      result,
+      text: result,
+      isRepository: true,
+      message: input.message.trim(),
+      committed: false,
+      truncated: false,
+      blocked: true,
+      approvalRequired: true,
+      approvalToken: input.approval.token,
+      approvalTokenExpiresAt: input.approval.expiresAt,
+      approvalFailureReason: input.approvalResult.reason,
+      commandApproved: false,
+      workspaceRevision: input.workspaceRevision,
+      commandRisk: input.safety.level,
+      commandSafetyFindings: input.safety.findings,
+      automation: input.automation,
     },
   };
 }
@@ -1706,6 +1852,15 @@ function registerCodexProcessTools(
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const cwd = workspaces.resolveWorkingDirectory(workspace, workingDirectory);
+      assertDedicatedGitCommitTool(cmd, {
+        config,
+        auditLog,
+        activityLog,
+        tool: toolNames.execCommand,
+        workspaceId,
+        startedAt,
+        workingDirectory: workingDirectory ?? ".",
+      });
       const policy = await policyForTool(
         config,
         workspacePolicies,
@@ -1726,6 +1881,7 @@ function registerCodexProcessTools(
         policy,
         "exec_command",
       );
+      const validationAction = validationEvidenceAction(cmd);
       const approvalContext = { workspaceId, cwd, command: cmd, safety };
       const approval = safety.level === "danger"
         ? approvals.consume(approvalToken, approvalContext)
@@ -1736,6 +1892,7 @@ function registerCodexProcessTools(
         auditLog.record({
           tool: "exec_command",
           workspaceId,
+          action: validationAction,
           success: false,
           blocked: true,
           risk: safety.level,
@@ -1764,6 +1921,9 @@ function registerCodexProcessTools(
         yieldTimeMs,
         maxOutputTokens,
       });
+      const validationRevision = validationAction && !snapshot.running && snapshot.exitCode === 0
+        ? await workspaceContentRevision(workspace.root)
+        : undefined;
 
       logToolCall(config, {
         tool: "exec_command",
@@ -1783,6 +1943,8 @@ function registerCodexProcessTools(
       auditLog.record({
         tool: "exec_command",
         workspaceId,
+        action: validationAction,
+        workspaceRevision: validationRevision,
         success: snapshot.exitCode === undefined ? true : snapshot.exitCode === 0,
         approved: safety.level === "danger" ? approval.approved : undefined,
         risk: safety.level,
@@ -1837,6 +1999,18 @@ function registerCodexProcessTools(
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const preparedBase = await preparePackageChecks(workspace.root, checks);
+      for (const check of preparedBase.checks) {
+        for (const script of check.scripts) {
+          assertDedicatedGitCommitTool(script.script, {
+            config,
+            auditLog,
+            activityLog,
+            tool: toolNames.runChecks,
+            workspaceId,
+            startedAt,
+          });
+        }
+      }
       const policy = await policyForTool(
         config,
         workspacePolicies,
@@ -1854,6 +2028,9 @@ function registerCodexProcessTools(
         ...preparedBase,
         checks: preparedBase.checks.map((check) => ({
           ...check,
+          validationAction: validationEvidenceAction(
+            check.scripts.map((entry) => `${entry.name}\n${entry.script}`).join("\n"),
+          ),
           safety: commandSafetyWithPolicyApproval(check.safety, policy, "run_checks"),
         })),
       };
@@ -1916,6 +2093,9 @@ function registerCodexProcessTools(
         yieldTimeMs,
         maxOutputTokens,
       });
+      const validationRevision = !snapshot.running
+        ? await workspaceContentRevision(workspace.root)
+        : undefined;
       const hasDanger = dangerous.length > 0;
       const checkResults = new Map(snapshot.checks.map((check) => [check.name, check]));
       for (const check of prepared.checks) {
@@ -1923,6 +2103,8 @@ function registerCodexProcessTools(
         auditLog.record({
           tool: toolNames.runChecks,
           workspaceId,
+          action: check.validationAction,
+          workspaceRevision: result?.status === "passed" ? validationRevision : undefined,
           success: snapshot.running || result?.status === "passed",
           approved: check.safety.level === "danger" ? true : undefined,
           risk: check.safety.level,
@@ -1986,7 +2168,7 @@ function registerCodexProcessTools(
     },
     async ({ workspaceId, sessionId, chars, columns, rows, yieldTimeMs, maxOutputTokens }) => {
       const startedAt = performance.now();
-      workspaces.getWorkspace(workspaceId);
+      const workspace = workspaces.getWorkspace(workspaceId);
       if (checkSessions.has(workspaceId, sessionId)) {
         const snapshot = await checkSessions.write({
           workspaceId,
@@ -1997,10 +2179,15 @@ function registerCodexProcessTools(
           yieldTimeMs,
           maxOutputTokens,
         });
+        const validationRevision = !snapshot.running
+          ? await workspaceContentRevision(workspace.root)
+          : undefined;
         for (const check of snapshot.checks) {
           auditLog.record({
             tool: toolNames.runChecks,
             workspaceId,
+            action: check.validationAction,
+            workspaceRevision: check.status === "passed" ? validationRevision : undefined,
             success: snapshot.running || check.status === "passed",
             risk: check.commandRisk,
             commandPreview: config.logging.shellCommands
@@ -2035,6 +2222,25 @@ function registerCodexProcessTools(
         yieldTimeMs,
         maxOutputTokens,
       });
+
+      if (!snapshot.running) {
+        const validationAction = validationEvidenceAction(snapshot.command ?? "");
+        auditLog.record({
+          tool: toolNames.execCommand,
+          workspaceId,
+          action: validationAction,
+          workspaceRevision: validationAction && snapshot.exitCode === 0
+            ? await workspaceContentRevision(workspace.root)
+            : undefined,
+          success: snapshot.exitCode === 0,
+          commandPreview: config.logging.shellCommands && snapshot.command
+            ? commandPreview(snapshot.command)
+            : undefined,
+          exitCode: snapshot.exitCode,
+          running: false,
+          durationMs: snapshot.wallTimeMs,
+        });
+      }
 
       logToolCall(config, {
         tool: "write_stdin",
@@ -2384,6 +2590,46 @@ function failedRenamePreviewResult(error: unknown): RenamePreviewResult {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function assertDedicatedGitCommitTool(
+  command: string,
+  context?: {
+    config: ServerConfig;
+    auditLog: AuditLogManager;
+    activityLog: ToolActivityLogManager;
+    tool: string;
+    workspaceId: string;
+    startedAt: number;
+    workingDirectory?: string;
+  },
+): void {
+  if (!commandInvokesGitCommit(command)) return;
+  const message = "Direct Git commit commands are disabled in shell tools and package checks. Use the dedicated git_commit tool so policy, staged-path validation, deterministic preflight, and one-time approval remain authoritative.";
+  if (context) {
+    const durationMs = Math.round(performance.now() - context.startedAt);
+    recordToolCall(context.config, context.activityLog, {
+      tool: context.tool,
+      workspaceId: context.workspaceId,
+      workingDirectory: context.workingDirectory,
+      command,
+      commandLength: command.length,
+      success: false,
+      durationMs,
+      error: message,
+    });
+    context.auditLog.record({
+      tool: context.tool,
+      workspaceId: context.workspaceId,
+      action: "direct_git_commit_block",
+      success: false,
+      blocked: true,
+      commandPreview: context.config.logging.shellCommands ? commandPreview(command) : undefined,
+      durationMs,
+      error: message,
+    });
+  }
+  throw new Error(message);
 }
 
 async function assertGitAddTargetsAreExplicitFiles(paths: readonly string[]): Promise<void> {
@@ -4403,6 +4649,10 @@ function createMcpServer(
             .max(100_000)
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
+          approvalToken: z
+            .string()
+            .optional()
+            .describe("One-time approval token returned by a blocked deterministic commit preflight."),
         },
         outputSchema: gitCommitStructuredOutputSchema,
         _meta: {},
@@ -4413,11 +4663,14 @@ function createMcpServer(
           openWorldHint: false,
         },
       },
-      async ({ workspaceId, message, maxOutputChars }) => {
+      async ({ workspaceId, message, maxOutputChars, approvalToken }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
         const stagedPaths = await gitStagedPaths(workspace.root);
         const workspaceStagedPaths = stagedPaths.map((path) => workspaces.resolvePath(workspace, path));
+        const relativeStagedPaths = workspaceStagedPaths
+          .map((path) => workspaceRelativePath(workspace.root, path))
+          .sort();
         await policyForTool(
           config,
           workspacePolicies,
@@ -4428,8 +4681,8 @@ function createMcpServer(
             tool: toolNames.gitCommit,
             workspaceId,
             startedAt,
-            path: workspaceStagedPaths.length > 0
-              ? workspaceStagedPaths.map((path) => workspaceRelativePath(workspace.root, path)).join(", ")
+            path: relativeStagedPaths.length > 0
+              ? relativeStagedPaths.join(", ")
               : undefined,
             enforce: (policy) => {
               assertPolicyMutationAllowed(policy);
@@ -4442,6 +4695,63 @@ function createMcpServer(
           },
         );
         assertWritablePaths(workspaceStagedPaths, { workspaceRoot: workspace.root, config });
+        const revision = await workspaceRevision(workspace.root);
+        const automation = await createDeterministicAutomation(
+          workspace.root,
+          relativeStagedPaths,
+          auditLog.summarize({ workspaceId, limit: 500 }),
+          { staged: relativeStagedPaths.length > 0 },
+        );
+        const safety = message.trim()
+          ? deterministicAutomationSafety(automation)
+          : { level: "none" as const, findings: [] };
+        const approvalCommand = gitCommitApprovalCommand({
+          message,
+          workspaceRevision: revision,
+          stagedPaths: relativeStagedPaths,
+          automation,
+        });
+        const approvalContext = {
+          workspaceId,
+          cwd: workspace.root,
+          command: approvalCommand,
+          safety,
+        };
+        const approval = safety.level === "danger"
+          ? commandApprovals.consume(approvalToken, approvalContext)
+          : { approved: true };
+
+        if (safety.level === "danger" && !approval.approved) {
+          const request = commandApprovals.create(approvalContext);
+          auditLog.record({
+            tool: toolNames.gitCommit,
+            workspaceId,
+            action: "deterministic_preflight",
+            success: false,
+            blocked: true,
+            risk: safety.level,
+            paths: relativeStagedPaths,
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+          recordToolCall(config, activityLog, {
+            tool: toolNames.gitCommit,
+            workspaceId,
+            path: relativeStagedPaths.join(", ") || undefined,
+            success: false,
+            durationMs: Math.round(performance.now() - startedAt),
+            error: "Deterministic commit preflight requires approval.",
+          });
+          return blockedGitCommitResult({
+            workspaceId,
+            message,
+            workspaceRevision: revision,
+            automation,
+            safety,
+            approval: request,
+            approvalResult: approval,
+          });
+        }
+
         const data = await gitCommitData(workspace.root, { message, maxOutputChars });
         const content = [textBlock(data.text)];
         logToolCall(config, {
@@ -4453,7 +4763,11 @@ function createMcpServer(
         auditLog.record({
           tool: toolNames.gitCommit,
           workspaceId,
+          action: "deterministic_preflight",
           success: data.committed,
+          approved: safety.level === "danger" ? approval.approved : undefined,
+          risk: safety.level,
+          paths: relativeStagedPaths,
           durationMs: Math.round(performance.now() - startedAt),
         });
 
@@ -4467,7 +4781,15 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result: data.text, ...data },
+          structuredContent: {
+            result: data.text,
+            ...data,
+            commandApproved: safety.level === "danger" ? approval.approved : undefined,
+            workspaceRevision: revision,
+            commandRisk: safety.level,
+            commandSafetyFindings: safety.findings,
+            automation,
+          },
         };
       },
     );
@@ -4772,6 +5094,15 @@ function createMcpServer(
         workspace,
         workingDirectory,
       );
+      assertDedicatedGitCommitTool(input.command, {
+        config,
+        auditLog,
+        activityLog,
+        tool: toolNames.shell,
+        workspaceId,
+        startedAt,
+        workingDirectory: workingDirectory ?? ".",
+      });
       await policyForTool(
         config,
         workspacePolicies,

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { analyzeCommandSafety, formatCommandSafetyWarning } from "./command-safety.js";
+import { analyzeCommandSafety, commandInvokesGitCommit, formatCommandSafetyWarning } from "./command-safety.js";
 
 assert.deepEqual(analyzeCommandSafety("npm run test"), { level: "none", findings: [] });
 
@@ -27,3 +27,11 @@ assert.equal(shellWrite.findings[0]?.category, "shell-write");
 const combined = analyzeCommandSafety("echo hello > README.md && git push --force origin main");
 assert.equal(combined.level, "danger");
 assert.equal(combined.findings.length, 2);
+
+assert.equal(commandInvokesGitCommit("git commit -m test"), true);
+assert.equal(commandInvokesGitCommit("git -C ./repo commit -m test"), true);
+assert.equal(commandInvokesGitCommit("sh -c \"git --no-pager commit -m test\""), true);
+assert.equal(commandInvokesGitCommit("sudo git commit -m test"), true);
+assert.equal(commandInvokesGitCommit("echo ok && git commit -m test"), true);
+assert.equal(commandInvokesGitCommit("git commit-tree HEAD^{tree}"), false);
+assert.equal(commandInvokesGitCommit("echo git commit"), false);

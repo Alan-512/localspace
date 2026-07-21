@@ -37,10 +37,15 @@ try {
   assert.equal(checklist.unstaged, true);
   assert.ok(checklist.changedPaths.includes("src/index.ts"));
   assert.ok(checklist.checks.some((check) => check.title === "Inspect changes" && check.status === "action"));
+  assert.equal(checklist.automation.validationFreshness, "unknown");
+  assert.equal(checklist.automation.commitReviewRequired, true);
+  assert.ok(checklist.automation.recommendations.some((item) => item.id === "format-after-source-change"));
+  assert.ok(checklist.automation.recommendations.some((item) => item.id === "validation-after-change"));
 
   const next = await createNextSteps(root, { blockedEvents: 1 } as never);
   assert.ok(next.steps.some((step) => step.title === "Review current changes"));
   assert.ok(next.steps.some((step) => step.title === "Review blocked events"));
+  assert.ok(next.steps.some((step) => step.title === "Run validation after changes"));
   assert.match(next.text, /Next steps/);
 } finally {
   await rm(root, { recursive: true, force: true });

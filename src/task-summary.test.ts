@@ -36,7 +36,10 @@ try {
   assert.deepEqual(task.validation.recommendedCommands, ["npm run typecheck", "npm test", "npm run build"]);
   assert.ok(task.changedPaths.includes("src/index.ts"));
   assert.equal(task.audit.blockedEvents, 1);
+  assert.equal(task.automation.commitReviewRequired, true);
+  assert.equal(task.automation.validationFreshness, "stale");
   assert.ok(task.warnings.some((warning) => warning.includes("blocked tool event")));
+  assert.ok(task.warnings.some((warning) => warning.includes("Deterministic commit review")));
   assert.match(task.text, /Task summary/);
 
   const validation = await createValidationSummary(root, audit);
@@ -46,6 +49,7 @@ try {
   assert.ok(validation.detectedResults.some((result) => result.kind === "typecheck" && result.passed === true));
   assert.ok(validation.detectedResults.some((result) => result.kind === "test" && result.passed === false));
   assert.ok(validation.detectedResults.some((result) => result.kind === "smoke"));
+  assert.equal(validation.automation.validationFreshness, "stale");
   assert.match(validation.text, /Validation summary/);
 
   const hidden = await createValidationSummary(root, auditWithoutCommandPreview());

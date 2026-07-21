@@ -44,6 +44,8 @@ export interface WriteStdinInput {
 
 export interface ProcessSnapshot {
   sessionId?: number;
+  command?: string;
+  cwd?: string;
   output: string;
   outputTruncated: boolean;
   running: boolean;
@@ -62,6 +64,8 @@ interface ManagedProcess {
 interface ProcessSession {
   id: number;
   workspaceId: string;
+  command: string;
+  cwd: string;
   process?: ManagedProcess;
   startedAt: number;
   columns: number;
@@ -358,6 +362,8 @@ export class ProcessSessionManager {
     return {
       id: this.nextSessionId++,
       workspaceId: input.workspaceId,
+      command: input.command,
+      cwd: input.cwd,
       startedAt: Date.now(),
       columns: terminalSize(input.columns, DEFAULT_COLUMNS),
       rows: terminalSize(input.rows, DEFAULT_ROWS),
@@ -461,6 +467,8 @@ export class ProcessSessionManager {
 
     return {
       sessionId: session.running ? session.id : undefined,
+      command: session.command,
+      cwd: session.cwd,
       output: buffered.output,
       outputTruncated: buffered.truncated,
       running: session.running,

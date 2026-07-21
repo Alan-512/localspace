@@ -14,6 +14,7 @@ export interface AuditEvent {
   tool: string;
   workspaceId?: string;
   action?: string;
+  workspaceRevision?: string;
   success: boolean;
   blocked?: boolean;
   approved?: boolean;

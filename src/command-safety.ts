@@ -82,6 +82,33 @@ const LEVEL_SCORE: Record<CommandRiskLevel, number> = {
   danger: 3,
 };
 
+const GIT_COMMIT_EXECUTABLE = new RegExp(
+  String.raw`^git(?:\s+(?:-C\s+(?:"[^"]+"|'[^']+'|\S+)|-c\s+\S+|--(?:git-dir|work-tree|namespace)(?:=\S+|\s+\S+)|--(?:no-pager|paginate|literal-pathspecs|glob-pathspecs|noglob-pathspecs|icase-pathspecs)))*\s+commit(?=\s|$)`,
+  "i",
+);
+
+export function commandInvokesGitCommit(command: string): boolean {
+  return command
+    .split(/&&|\|\||[;|\n]/)
+    .some((segment) => segmentInvokesGitCommit(segment));
+}
+
+function segmentInvokesGitCommit(segment: string): boolean {
+  let normalized = segment
+    .trim()
+    .replace(/^[('"`]+/, "")
+    .replace(/[)'"`]+$/, "")
+    .trim();
+  if (!normalized) return false;
+
+  const shellWrapper = /^(?:sh|bash|zsh|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh)\b[\s\S]*?(?:-c|\/c|-command)\s+["']?([\s\S]+)$/i.exec(normalized);
+  if (shellWrapper?.[1]) return commandInvokesGitCommit(shellWrapper[1]);
+
+  normalized = normalized.replace(/^(?:command|sudo|npx)\s+/i, "");
+  normalized = normalized.replace(/^env(?:\s+[A-Za-z_][A-Za-z0-9_]*=\S+)*\s+/i, "");
+  return GIT_COMMIT_EXECUTABLE.test(normalized);
+}
+
 export function analyzeCommandSafety(command: string): CommandSafetyAnalysis {
   const normalized = command.trim();
   if (!normalized) return { level: "none", findings: [] };

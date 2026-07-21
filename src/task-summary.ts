@@ -1,5 +1,6 @@
 import type { AuditEvent, AuditSummary } from "./audit-log.js";
 import { createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
+import type { DeterministicAutomationData } from "./deterministic-automation.js";
 
 export interface TaskSummaryData {
   changedPaths: string[];
@@ -18,6 +19,7 @@ export interface TaskSummaryData {
   validation: {
     recommendedCommands: string[];
   };
+  automation: DeterministicAutomationData;
   recommendedFinalResponse: string[];
   warnings: string[];
   text: string;
@@ -39,13 +41,14 @@ export interface ValidationSummaryData {
   recentFailures: number;
   recentSuccesses: number;
   detectedResults: ValidationDetectedResult[];
+  automation: DeterministicAutomationData;
   notes: string[];
   text: string;
 }
 
 export async function createTaskSummary(workspaceRoot: string, audit?: AuditSummary): Promise<TaskSummaryData> {
   const [checklist, validation] = await Promise.all([
-    createReviewChecklist(workspaceRoot),
+    createReviewChecklist(workspaceRoot, audit),
     createValidatePlan(workspaceRoot),
   ]);
   const recommendedCommands = validation.commands.map((command) => command.command);
@@ -62,6 +65,7 @@ export async function createTaskSummary(workspaceRoot: string, audit?: AuditSumm
     validation: {
       recommendedCommands,
     },
+    automation: checklist.automation,
     recommendedFinalResponse: recommendedFinalResponse(checklist.dirty, recommendedCommands, warnings),
     warnings,
     text: "",
@@ -71,7 +75,10 @@ export async function createTaskSummary(workspaceRoot: string, audit?: AuditSumm
 }
 
 export async function createValidationSummary(workspaceRoot: string, audit?: AuditSummary): Promise<ValidationSummaryData> {
-  const validation = await createValidatePlan(workspaceRoot);
+  const [validation, checklist] = await Promise.all([
+    createValidatePlan(workspaceRoot),
+    createReviewChecklist(workspaceRoot, audit),
+  ]);
   const recommendedCommands = validation.commands.map((command) => command.command);
   const validationEvents = (audit?.recentEvents ?? []).filter(
     (event) => event.tool === "exec_command" || event.tool === "run_checks",
@@ -85,6 +92,7 @@ export async function createValidationSummary(workspaceRoot: string, audit?: Aud
     recentFailures: validationEvents.filter((event) => !event.success).length,
     recentSuccesses: validationEvents.filter((event) => event.success).length,
     detectedResults,
+    automation: checklist.automation,
     notes: validationSummaryNotes(validationEvents, commandEvents, validation.notes),
     text: "",
   };
@@ -111,6 +119,14 @@ function taskWarnings(
     if (check.status === "warn") warnings.push(check.detail);
   }
   if (validation.commands.length === 0) warnings.push("No standard validation commands were detected.");
+  if (checklist.automation.commitReviewRequired) {
+    const required = checklist.automation.recommendations.filter(
+      (recommendation) => recommendation.severity === "required",
+    );
+    warnings.push(
+      `Deterministic commit review has ${required.length} required recommendation(s): ${required.map((item) => item.title).join(", ")}.`,
+    );
+  }
   if ((audit?.blockedEvents ?? 0) > 0) warnings.push(`${audit?.blockedEvents} blocked tool event(s) were recorded recently.`);
   const failedEvents = audit?.recentEvents.filter((event) => !event.success).length ?? 0;
   if (failedEvents > 0) warnings.push(`${failedEvents} recent audit event(s) failed; review session_summary for details.`);
@@ -168,6 +184,9 @@ function formatTaskSummary(data: TaskSummaryData): string {
   lines.push(`Staged: ${data.git.staged ? "yes" : "no"}`);
   lines.push(`Unstaged: ${data.git.unstaged ? "yes" : "no"}`);
   lines.push(`Untracked: ${data.git.untracked ? "yes" : "no"}`);
+  lines.push(`Validation freshness: ${data.automation.validationFreshness}`);
+  lines.push(`Package validation freshness: ${data.automation.packageValidationFreshness}`);
+  lines.push(`Commit review required: ${data.automation.commitReviewRequired ? "yes" : "no"}`);
   lines.push("");
 
   lines.push("Changed paths:");
@@ -207,6 +226,9 @@ function formatValidationSummary(data: ValidationSummaryData): string {
   lines.push(`Recent exec_command events: ${data.recentExecCommands}`);
   lines.push(`Recent successes: ${data.recentSuccesses}`);
   lines.push(`Recent failures: ${data.recentFailures}`);
+  lines.push(`Validation freshness: ${data.automation.validationFreshness}`);
+  lines.push(`Package validation freshness: ${data.automation.packageValidationFreshness}`);
+  lines.push(`Commit review required: ${data.automation.commitReviewRequired ? "yes" : "no"}`);
   lines.push("");
 
   lines.push("Detected results:");

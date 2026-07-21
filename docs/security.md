@@ -122,6 +122,29 @@ directories or pathspec magic. Commit-time validation rechecks all staged paths,
 including rename sources and destinations, against workspace containment,
 sensitive-path protection, and the active read-only policy.
 
+## Deterministic Commit Preflight
+
+LocalSpace computes bounded review recommendations from changed paths and recent
+successful validation evidence. It does not load repository-defined executable
+hooks. Source/package changes with stale or unknown validation, package metadata
+without a current dry-run, and sensitive-looking paths can require explicit
+approval before `git_commit`.
+
+The one-time commit token is bound to the commit message, complete Workspace
+revision, staged paths, and outstanding recommendation set. Any Workspace
+content change causes a mismatch. This prevents a token approved for one staged
+state from authorizing another.
+
+The approval gate deliberately permits a human to override a recommendation;
+the audit log records that override. It does not fabricate validation evidence.
+When command previews are disabled, only a coarse validation category such as
+`test`, `typecheck`, `build`, or `package` is recorded in audit metadata.
+
+Validation history is intentionally not treated as durable proof across service
+restarts. If the current process cannot establish that validation happened after
+the latest change, freshness becomes `unknown` and the commit requires a new
+validation run or explicit approval.
+
 ## Sensitive Path Protection
 
 LocalSpace protects sensitive paths with generic cross-platform rules. It does

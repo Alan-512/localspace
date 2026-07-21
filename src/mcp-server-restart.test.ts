@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -87,6 +88,23 @@ try {
     allowPty: false,
     requireApprovalTools: ["exec_command", "run_checks"]
   }, null, 2), "utf8");
+  const automationRoot = join(root, "automation-workspace");
+  await mkdir(join(automationRoot, "src"), { recursive: true });
+  await writeFile(join(automationRoot, "src", "index.ts"), "export const answer = 42;\n", "utf8");
+  await writeFile(join(automationRoot, "README.md"), "automation fixture\n", "utf8");
+  await writeFile(join(automationRoot, "package.json"), JSON.stringify({
+    name: "automation-workspace",
+    scripts: {
+      test: "node -e \"setTimeout(() => console.log('automation-test-pass'), 120)\"",
+      ci: "node -e \"setTimeout(() => console.log('automation-ci-pass'), 120)\" -- typecheck",
+      "commit:bypass": "git commit -m bypass"
+    }
+  }, null, 2), "utf8");
+  execFileSync("git", ["init"], { cwd: automationRoot, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "automation@localspace.invalid"], { cwd: automationRoot });
+  execFileSync("git", ["config", "user.name", "LocalSpace Automation Test"], { cwd: automationRoot });
+  execFileSync("git", ["add", "--", "."], { cwd: automationRoot });
+  execFileSync("git", ["commit", "-m", "initial automation fixture"], { cwd: automationRoot, stdio: "ignore" });
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
 
@@ -785,6 +803,334 @@ try {
         String(recordValue(event, "action")).startsWith("policy_block:")
       ),
     );
+
+    const automationOpen = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(620, "open_workspace", { path: automationRoot }),
+      sessionId,
+    );
+    const automationOpenResult = await jsonRpcResult(automationOpen);
+    const automationWorkspaceId = recordValue(automationOpenResult.structuredContent, "workspaceId");
+    assert.equal(typeof automationWorkspaceId, "string");
+
+    const directCommitBypass = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(6201, "exec_command", {
+        workspaceId: automationWorkspaceId,
+        cmd: "git commit -m bypass",
+      }),
+      sessionId,
+    );
+    const directCommitBypassResult = await jsonRpcResult(directCommitBypass);
+    assert.equal(recordValue(directCommitBypassResult, "isError"), true);
+    assert.match(toolResultText(directCommitBypassResult), /use the dedicated git_commit tool/i);
+
+    const packageCommitBypass = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(6202, "run_checks", {
+        workspaceId: automationWorkspaceId,
+        checks: ["commit:bypass"],
+      }),
+      sessionId,
+    );
+    const packageCommitBypassResult = await jsonRpcResult(packageCommitBypass);
+    assert.equal(recordValue(packageCommitBypassResult, "isError"), true);
+    assert.match(toolResultText(packageCommitBypassResult), /use the dedicated git_commit tool/i);
+
+    const bypassSummary = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(6203, "session_summary", {
+        workspaceId: automationWorkspaceId,
+        limit: 10,
+      }),
+      sessionId,
+    );
+    const bypassSummaryResult = await jsonRpcResult(bypassSummary);
+    const bypassAuditEvents = arrayValue(
+      recordValue(recordValue(bypassSummaryResult, "structuredContent"), "recentAuditEvents"),
+    );
+    assert.ok(
+      bypassAuditEvents.some((event) =>
+        recordValue(event, "action") === "direct_git_commit_block"
+      ),
+    );
+
+    const firstSourcePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(621, "apply_patch", {
+        workspaceId: automationWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: src/index.ts\n@@\n-export const answer = 42;\n+export const answer = 43;\n*** End Patch",
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(firstSourcePatch), "isError"), undefined);
+
+    const firstStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(622, "git_add", {
+        workspaceId: automationWorkspaceId,
+        paths: ["src/index.ts"],
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(firstStage), "isError"), undefined);
+
+    const blockedCommit = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(623, "git_commit", {
+        workspaceId: automationWorkspaceId,
+        message: "test: require deterministic preflight",
+      }),
+      sessionId,
+    );
+    const blockedCommitResult = await jsonRpcResult(blockedCommit);
+    const blockedCommitStructured = recordValue(blockedCommitResult, "structuredContent");
+    assert.equal(recordValue(blockedCommitStructured, "blocked"), true);
+    assert.equal(recordValue(blockedCommitStructured, "approvalRequired"), true);
+    assert.equal(recordValue(blockedCommitStructured, "committed"), false);
+    const blockedAutomation = recordValue(blockedCommitStructured, "automation");
+    assert.equal(recordValue(blockedAutomation, "validationFreshness"), "unknown");
+    assert.equal(recordValue(blockedAutomation, "commitReviewRequired"), true);
+    const firstCommitToken = recordValue(blockedCommitStructured, "approvalToken");
+    assert.equal(typeof firstCommitToken, "string");
+
+    const changedSourcePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(624, "apply_patch", {
+        workspaceId: automationWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: src/index.ts\n@@\n-export const answer = 43;\n+export const answer = 44;\n*** End Patch",
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(changedSourcePatch), "isError"), undefined);
+    const changedStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(625, "git_add", {
+        workspaceId: automationWorkspaceId,
+        paths: ["src/index.ts"],
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(changedStage), "isError"), undefined);
+
+    const mismatchedCommit = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(626, "git_commit", {
+        workspaceId: automationWorkspaceId,
+        message: "test: require deterministic preflight",
+        approvalToken: firstCommitToken,
+      }),
+      sessionId,
+    );
+    const mismatchedCommitResult = await jsonRpcResult(mismatchedCommit);
+    const mismatchedCommitStructured = recordValue(mismatchedCommitResult, "structuredContent");
+    assert.equal(recordValue(mismatchedCommitStructured, "blocked"), true);
+    assert.equal(recordValue(mismatchedCommitStructured, "approvalFailureReason"), "mismatch");
+    const secondCommitToken = recordValue(mismatchedCommitStructured, "approvalToken");
+    assert.equal(typeof secondCommitToken, "string");
+
+    const approvedCommit = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(627, "git_commit", {
+        workspaceId: automationWorkspaceId,
+        message: "test: require deterministic preflight",
+        approvalToken: secondCommitToken,
+      }),
+      sessionId,
+    );
+    const approvedCommitResult = await jsonRpcResult(approvedCommit);
+    const approvedCommitStructured = recordValue(approvedCommitResult, "structuredContent");
+    assert.equal(recordValue(approvedCommitStructured, "committed"), true);
+    assert.equal(recordValue(approvedCommitStructured, "commandApproved"), true);
+
+    const docsPatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(628, "apply_patch", {
+        workspaceId: automationWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: README.md\n@@\n-automation fixture\n+automation fixture updated\n*** End Patch",
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(docsPatch), "isError"), undefined);
+    const docsStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(629, "git_add", {
+        workspaceId: automationWorkspaceId,
+        paths: ["README.md"],
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(docsStage), "isError"), undefined);
+    const docsCommit = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(630, "git_commit", {
+        workspaceId: automationWorkspaceId,
+        message: "docs: update automation fixture",
+      }),
+      sessionId,
+    );
+    const docsCommitResult = await jsonRpcResult(docsCommit);
+    const docsCommitStructured = recordValue(docsCommitResult, "structuredContent");
+    assert.equal(recordValue(docsCommitStructured, "committed"), true);
+    assert.equal(recordValue(docsCommitStructured, "approvalRequired"), undefined);
+    assert.equal(
+      recordValue(recordValue(docsCommitStructured, "automation"), "validationFreshness"),
+      "not-required",
+    );
+
+    const validatedSourcePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(631, "apply_patch", {
+        workspaceId: automationWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: src/index.ts\n@@\n-export const answer = 44;\n+export const answer = 45;\n*** End Patch",
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(validatedSourcePatch), "isError"), undefined);
+    const validationCommand = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(632, "exec_command", {
+        workspaceId: automationWorkspaceId,
+        cmd: "npm test",
+        yieldTimeMs: 0,
+      }),
+      sessionId,
+    );
+    const validationCommandResult = await jsonRpcResult(validationCommand);
+    assert.equal(recordValue(validationCommandResult.structuredContent, "running"), true);
+    const validationSessionId = recordValue(validationCommandResult.structuredContent, "sessionId");
+    assert.equal(typeof validationSessionId, "number");
+    const validationPoll = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(6321, "write_stdin", {
+        workspaceId: automationWorkspaceId,
+        sessionId: validationSessionId,
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    const validationPollResult = await jsonRpcResult(validationPoll);
+    assert.match(
+      String(recordValue(validationPollResult.structuredContent, "result")),
+      /automation-test-pass/,
+    );
+    const validatedStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(633, "git_add", {
+        workspaceId: automationWorkspaceId,
+        paths: ["src/index.ts"],
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(validatedStage), "isError"), undefined);
+    const validatedCommit = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(634, "git_commit", {
+        workspaceId: automationWorkspaceId,
+        message: "test: accept current validation evidence",
+      }),
+      sessionId,
+    );
+    const validatedCommitResult = await jsonRpcResult(validatedCommit);
+    const validatedCommitStructured = recordValue(validatedCommitResult, "structuredContent");
+    assert.equal(recordValue(validatedCommitStructured, "committed"), true);
+    assert.equal(recordValue(validatedCommitStructured, "approvalRequired"), undefined);
+    assert.equal(
+      recordValue(recordValue(validatedCommitStructured, "automation"), "validationFreshness"),
+      "current",
+    );
+
+    const checkValidatedPatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(635, "apply_patch", {
+        workspaceId: automationWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: src/index.ts\n@@\n-export const answer = 45;\n+export const answer = 46;\n*** End Patch",
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(checkValidatedPatch), "isError"), undefined);
+    const validationCheck = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(636, "run_checks", {
+        workspaceId: automationWorkspaceId,
+        checks: ["ci"],
+        yieldTimeMs: 0,
+      }),
+      sessionId,
+    );
+    const validationCheckResult = await jsonRpcResult(validationCheck);
+    assert.equal(recordValue(validationCheckResult.structuredContent, "running"), true);
+    const validationCheckSessionId = recordValue(validationCheckResult.structuredContent, "sessionId");
+    assert.equal(typeof validationCheckSessionId, "number");
+    const validationCheckPoll = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(637, "write_stdin", {
+        workspaceId: automationWorkspaceId,
+        sessionId: validationCheckSessionId,
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    const validationCheckPollResult = await jsonRpcResult(validationCheckPoll);
+    assert.match(
+      String(recordValue(validationCheckPollResult.structuredContent, "result")),
+      /automation-ci-pass/,
+    );
+    const validationCheckResults = arrayValue(
+      recordValue(validationCheckPollResult.structuredContent, "checks"),
+    );
+    assert.equal(recordValue(validationCheckResults[0], "validationAction"), "validation:typecheck");
+    const checkValidatedStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(638, "git_add", {
+        workspaceId: automationWorkspaceId,
+        paths: ["src/index.ts"],
+      }),
+      sessionId,
+    );
+    assert.equal(recordValue(await jsonRpcResult(checkValidatedStage), "isError"), undefined);
+    const checkValidatedCommit = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(639, "git_commit", {
+        workspaceId: automationWorkspaceId,
+        message: "test: accept check-session validation evidence",
+      }),
+      sessionId,
+    );
+    const checkValidatedCommitResult = await jsonRpcResult(checkValidatedCommit);
+    const checkValidatedCommitStructured = recordValue(checkValidatedCommitResult, "structuredContent");
+    assert.equal(recordValue(checkValidatedCommitStructured, "committed"), true);
+    assert.equal(recordValue(checkValidatedCommitStructured, "approvalRequired"), undefined);
+    const checkValidatedAutomation = recordValue(checkValidatedCommitStructured, "automation");
+    assert.equal(recordValue(checkValidatedAutomation, "validationFreshness"), "current");
+    const checkValidationEvidence = recordValue(checkValidatedAutomation, "validationEvidence");
+    assert.ok(Array.isArray(checkValidationEvidence));
+    assert.ok(checkValidationEvidence.includes("typecheck"));
+
   } finally {
     await stateless.close();
   }

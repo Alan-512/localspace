@@ -42,16 +42,16 @@ experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
 | `session_summary` | `totalEvents`, `successfulEvents`, `failedEvents`, `runningEvents`, `truncatedEvents`, `processPolls`, `averageDurationMs`, `maxDurationMs`, `averageQueuedMs`, `maxQueuedMs`, `blockedEvents`, `approvedEvents`, `durableAuditEvents`, `tools`, `categories`, `concurrencyClasses`, `toolStats`, `paths`, `commands`, `risks`, `recentEvents`, `recentAuditEvents`, `requestMetrics` |
 | `next_steps` | `steps[]` |
 | `validate_plan` | `packageName`, `commands[]`, `missingScripts[]`, `notes[]` |
-| `review_checklist` | `dirty`, `staged`, `unstaged`, `untracked`, `changedPaths[]`, `checks[]`, `recommendedActions[]` |
-| `task_summary` | `changedPaths[]`, `git`, `audit`, `validation`, `recommendedFinalResponse[]`, `warnings[]` |
-| `validation_summary` | `commandPreviewEnabled`, `recommendedCommands[]`, `recentExecCommands`, `recentFailures`, `recentSuccesses`, `detectedResults[]`, `notes[]` |
+| `review_checklist` | `dirty`, `staged`, `unstaged`, `untracked`, `changedPaths[]`, `automation`, `checks[]`, `recommendedActions[]` |
+| `task_summary` | `changedPaths[]`, `git`, `audit`, `validation`, `automation`, `recommendedFinalResponse[]`, `warnings[]` |
+| `validation_summary` | `commandPreviewEnabled`, `recommendedCommands[]`, `recentExecCommands`, `recentFailures`, `recentSuccesses`, `detectedResults[]`, `automation`, `notes[]` |
 | `final_report` | `taskTitle`, `summary[]`, `changedFiles[]`, `git`, `validation`, `commit`, `warnings[]`, `nextRecommendedStep` |
 | `handoff_summary` | `project`, `currentPhase`, `completedPhases[]`, `changedFiles[]`, `validation`, `remainingTasks[]`, `knownWarnings[]`, `nextRecommendedStep`, `suggestedFirstPrompt` |
 | `changes` | `isRepository`, `clean`, `mode`, `staged`, `branch`, `statusEntries[]`, `groups[]`, `stat`, `truncated` |
 | `git_status` | `isRepository`, `branch`, `clean`, `statusLines[]`, `truncated` |
 | `git_diff` | `isRepository`, `staged`, `stat`, `empty`, `truncated` |
 | `git_add` | `isRepository`, `paths[]`, `stagedCount`, `truncated` |
-| `git_commit` | `isRepository`, `message`, `committed`, `truncated` |
+| `git_commit` | `isRepository`, `message`, `committed`, `truncated`, optional approval/block fields, `workspaceRevision`, `commandRisk`, `commandSafetyFindings[]`, `automation` |
 | `git_log` | `isRepository`, `limit`, `commits[]`, `truncated` |
 | `exec_command` | `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated`, `commandRisk`, `commandSafetyFindings[]`, `blocked`, `approvalRequired`, `approvalToken`, `approvalTokenExpiresAt`, `commandApproved` |
 | `write_stdin` | Process sessions: `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated`; check groups additionally return `checks[]`, `checkSummary`, revision fields, `failFast`, and `concurrency` |
@@ -64,3 +64,9 @@ experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
 - Include truncation flags whenever output can be clipped.
 - Keep structured data bounded; large patches and long command output should
   stay in text or widget payloads unless a consumer needs typed fields.
+
+The deterministic `automation` object contains changed/source/package/sensitive
+paths, validation and package-validation freshness, validation evidence kinds,
+latest detected timestamps, `commitReviewRequired`, and bounded
+`recommendations[]`. Recommendations are evidence and workflow guidance; they
+are not a claim that LocalSpace executed the suggested command.

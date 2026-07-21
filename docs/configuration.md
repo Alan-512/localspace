@@ -193,6 +193,56 @@ Package-check safety analysis includes the selected script plus existing
 `pre<name>` and `post<name>` lifecycle scripts. A dangerous lifecycle hook
 therefore requires the same one-time approval as a dangerous main script.
 
+## Deterministic Automation and Commit Preflight
+
+LocalSpace includes internal deterministic review rules. These are not arbitrary
+project hooks and do not execute repository-provided shell commands
+automatically.
+
+The current rules inspect changed paths and recent LocalSpace audit evidence:
+
+- source and common build-config changes suggest running the project's formatter
+  when one exists;
+- source or package changes require successful validation after the latest
+  detected change, otherwise validation freshness is `stale` or `unknown`;
+- `package.json` and supported lockfile changes require a successful package
+  dry-run recorded after the change;
+- environment, credential, token, private-key, authentication, and workspace
+  policy-like paths require explicit review;
+- staged changes always recommend inspecting the exact staged diff.
+
+`review_checklist`, `task_summary`, and `validation_summary` return the same
+structured `automation` assessment. Successful `exec_command` and `run_checks`
+events record a non-sensitive validation category in audit metadata, so
+freshness can still be evaluated when command preview logging is disabled.
+
+When `git_commit` finds an unmet `required` recommendation, it does not commit.
+It returns a one-time approval token bound to:
+
+- the exact commit message;
+- the current Workspace revision;
+- all staged source and destination paths;
+- the current required recommendation set and validation state.
+
+Changing staged or unstaged Workspace content invalidates that token. Retrying
+the unchanged commit with the returned token records explicit approval and
+allows the commit. Approval is an intentional override, not evidence that the
+recommended validation actually passed.
+
+Documentation-only changes normally do not require validation approval. Source
+changes with current successful validation can commit without an extra token.
+Package dry-run evidence only satisfies the package rule when it was recorded
+after the package metadata change.
+
+Validation freshness is conservative. Deleted paths, unavailable timestamps,
+service restarts, or missing in-memory audit evidence can produce `unknown` and
+therefore require validation or explicit approval. LocalSpace never infers that
+an external command passed merely because files appear unchanged.
+
+There is no support for arbitrary `.localspace` shell hooks. Formatting,
+testing, packaging, deployment, and release commands remain explicit
+`exec_command` or `run_checks` operations subject to policy and approval.
+
 ## OAuth
 
 LocalSpace uses a single-user OAuth approval flow.

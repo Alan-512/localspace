@@ -16,6 +16,7 @@ export interface PreparedPackageCheck {
     name: string;
     script: string;
   }>;
+  validationAction?: string;
   command: string;
   approvalCommand: string;
   safety: CommandSafetyAnalysis;

@@ -22,6 +22,7 @@ export type CheckStatus =
 export interface CheckResult {
   name: string;
   command: string;
+  validationAction?: string;
   status: CheckStatus;
   exitCode?: number;
   signal?: string;
@@ -159,6 +160,7 @@ export class CheckSessionManager {
       checks: input.checks.map((definition) => ({
         name: definition.name,
         command: definition.command,
+        validationAction: definition.validationAction,
         status: "queued",
         queuedMs: 0,
         output: "",

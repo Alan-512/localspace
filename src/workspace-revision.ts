@@ -24,6 +24,33 @@ export async function workspaceRevision(root: string): Promise<string | undefine
   return hash.digest("base64url");
 }
 
+export async function workspaceContentRevision(root: string): Promise<string | undefined> {
+  const repository = await collectGitOutput(root, ["rev-parse", "--is-inside-work-tree"], true);
+  if (repository.code !== 0 || repository.stdout.toString("utf8").trim() !== "true") {
+    return undefined;
+  }
+
+  const hash = createHash("sha256");
+  const head = await collectGitOutput(root, ["rev-parse", "--verify", "HEAD"], true);
+  hash.update("head\0").update(head.stdout).update("\0");
+  if (head.code === 0) {
+    hash.update("content\0");
+    await hashGitOutput(
+      root,
+      ["diff", "HEAD", "--binary", "--no-ext-diff", "--no-textconv", "--"],
+      hash,
+    );
+  } else {
+    hash.update("worktree\0");
+    await hashGitOutput(root, ["diff", "--binary", "--no-ext-diff", "--no-textconv", "--"], hash);
+    hash.update("index\0");
+    await hashGitOutput(root, ["diff", "--cached", "--binary", "--no-ext-diff", "--no-textconv", "--"], hash);
+  }
+  hash.update("untracked\0");
+  await hashUntrackedFiles(root, hash);
+  return hash.digest("base64url");
+}
+
 async function hashUntrackedFiles(root: string, hash: Hash): Promise<void> {
   const result = await collectGitOutput(
     root,

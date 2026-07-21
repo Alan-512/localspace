@@ -102,6 +102,8 @@ const inputResult = await manager.write({
   yieldTimeMs: 2_000,
 });
 assert.equal(inputResult.running, false);
+assert.match(inputResult.command ?? "", /process\.stdin/);
+assert.equal(inputResult.cwd, process.cwd());
 assert.match(inputResult.output, /input:hello/);
 
 const defaultInteractive = await manager.start({

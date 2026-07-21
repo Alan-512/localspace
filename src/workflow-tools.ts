@@ -2,6 +2,10 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { findEntrypointsData, type EntrypointSearchResult } from "./entrypoints.js";
 import type { AuditSummary } from "./audit-log.js";
+import {
+  createDeterministicAutomation,
+  type DeterministicAutomationData,
+} from "./deterministic-automation.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +35,7 @@ export interface ReviewChecklistData {
   unstaged: boolean;
   untracked: boolean;
   changedPaths: string[];
+  automation: DeterministicAutomationData;
   checks: WorkflowCheck[];
   recommendedActions: string[];
   text: string;
@@ -85,8 +90,17 @@ export async function createValidatePlan(workspaceRoot: string): Promise<Validat
   return data;
 }
 
-export async function createReviewChecklist(workspaceRoot: string): Promise<ReviewChecklistData> {
+export async function createReviewChecklist(
+  workspaceRoot: string,
+  audit?: AuditSummary,
+): Promise<ReviewChecklistData> {
   const [validation, git] = await Promise.all([createValidatePlan(workspaceRoot), gitStatusSummary(workspaceRoot)]);
+  const automation = await createDeterministicAutomation(
+    workspaceRoot,
+    git.changedPaths,
+    audit,
+    { staged: git.staged },
+  );
   const checks: WorkflowCheck[] = [];
 
   checks.push({
@@ -113,14 +127,26 @@ export async function createReviewChecklist(workspaceRoot: string): Promise<Revi
       ? "Changed paths include secret/token/env-like filenames; inspect carefully before staging or committing."
       : "No secret/token/env-like changed paths detected by filename.",
   });
+  for (const recommendation of automation.recommendations) {
+    checks.push({
+      title: recommendation.title,
+      status: recommendation.severity === "required"
+        ? "action"
+        : recommendation.severity === "warning"
+          ? "warn"
+          : "info",
+      detail: recommendation.detail,
+    });
+  }
 
-  const recommendedActions = recommendedReviewActions(git, validation);
+  const recommendedActions = recommendedReviewActions(git, validation, automation);
   const data: ReviewChecklistData = {
     dirty: git.dirty,
     staged: git.staged,
     unstaged: git.unstaged,
     untracked: git.untracked,
     changedPaths: git.changedPaths,
+    automation,
     checks,
     recommendedActions,
     text: "",
@@ -132,7 +158,7 @@ export async function createReviewChecklist(workspaceRoot: string): Promise<Revi
 export async function createNextSteps(workspaceRoot: string, audit?: AuditSummary): Promise<NextStepsData> {
   const [validation, checklist] = await Promise.all([
     createValidatePlan(workspaceRoot),
-    createReviewChecklist(workspaceRoot),
+    createReviewChecklist(workspaceRoot, audit),
   ]);
   const steps: NextStep[] = [];
 
@@ -167,6 +193,17 @@ export async function createNextSteps(workspaceRoot: string, audit?: AuditSummar
       title: "Verify staged diff",
       detail: "Staged changes exist. Inspect staged changes before any commit.",
       suggestedTool: "git_diff",
+    });
+  }
+
+  for (const recommendation of checklist.automation.recommendations.filter(
+    (item) => item.severity === "required",
+  )) {
+    steps.push({
+      priority: "high",
+      title: recommendation.title,
+      detail: recommendation.detail,
+      suggestedTool: recommendation.suggestedTool,
     });
   }
 
@@ -234,12 +271,20 @@ function validationNotes(
   return notes;
 }
 
-function recommendedReviewActions(git: GitStatusSummary, validation: ValidatePlanData): string[] {
+function recommendedReviewActions(
+  git: GitStatusSummary,
+  validation: ValidatePlanData,
+  automation: DeterministicAutomationData,
+): string[] {
   const actions: string[] = [];
   if (git.dirty) actions.push("Inspect current changes with changes or git_diff.");
   if (validation.commands.length > 0) actions.push(`Run validation: ${validation.commands.map((command) => command.command).join("; ")}.`);
   if (git.staged) actions.push("Inspect staged diff before committing.");
   if (git.untracked) actions.push("Review untracked files before staging.");
+  for (const recommendation of automation.recommendations) {
+    if (recommendation.severity === "info") continue;
+    actions.push(recommendation.detail);
+  }
   if (actions.length === 0) actions.push("No immediate review action required.");
   return actions;
 }
@@ -270,6 +315,9 @@ function formatReviewChecklist(data: ReviewChecklistData): string {
   lines.push(`Staged: ${data.staged ? "yes" : "no"}`);
   lines.push(`Unstaged: ${data.unstaged ? "yes" : "no"}`);
   lines.push(`Untracked: ${data.untracked ? "yes" : "no"}`);
+  lines.push(`Validation freshness: ${data.automation.validationFreshness}`);
+  lines.push(`Package validation freshness: ${data.automation.packageValidationFreshness}`);
+  lines.push(`Commit review required: ${data.automation.commitReviewRequired ? "yes" : "no"}`);
   lines.push("");
   lines.push("Checks:");
   for (const check of data.checks) lines.push(`- ${check.status.toUpperCase()} ${check.title}: ${check.detail}`);
