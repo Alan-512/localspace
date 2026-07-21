@@ -4,6 +4,7 @@ import { ToolActivityLogManager } from "./activity-log.js";
 const activity = new ToolActivityLogManager(4);
 
 activity.record({
+  activityId: "activity_read",
   tool: "read",
   workspaceId: "ws_test",
   path: "src/a.ts",
@@ -11,6 +12,11 @@ activity.record({
   durationMs: 10,
   outputBytes: 120,
 });
+assert.equal(activity.updateResult("activity_read", {
+  outputBytes: 140,
+  structuredOutputBytes: 80,
+  truncated: true,
+}), true);
 activity.record({
   tool: "grep",
   workspaceId: "ws_test",
@@ -60,3 +66,14 @@ assert.match(summary.text, /write_stdin/);
 const all = activity.summarize({ limit: 10 });
 assert.equal(all.totalEvents, 4);
 assert.equal(all.failedEvents, 1);
+
+const retained = new ToolActivityLogManager(2);
+retained.record({ activityId: "kept", tool: "read", success: true, durationMs: 5 });
+assert.equal(retained.updateResult("kept", {
+  outputBytes: 200,
+  structuredOutputBytes: 100,
+}), true);
+const retainedSummary = retained.summarize();
+assert.equal(retainedSummary.toolStats.read.averageOutputBytes, 200);
+assert.equal(retainedSummary.toolStats.read.averageStructuredOutputBytes, 100);
+assert.equal(retained.updateResult("missing", { outputBytes: 1 }), false);

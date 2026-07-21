@@ -189,6 +189,12 @@ the current MCP SDK boundary. Request and response byte counts use available
 HTTP `Content-Length` headers and may be zero when a transport streams without
 that header.
 
+Tool activity metrics separately measure each registered tool callback. They
+record execution time and the serialized UTF-8 byte lengths of returned
+`content` and `structuredContent`, but never retain those payloads solely for
+metrics. This makes it possible to identify high-volume tools without adding
+file contents, command output, or structured payloads to the activity ring.
+
 Durable audit logging is enabled by default for security-relevant events such as
 file mutations, shell commands, Git writes, approvals, and blocked actions. It
 appends JSONL records to `LOCALSPACE_AUDIT_LOG_PATH`, defaulting to `audit.jsonl`

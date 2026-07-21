@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { relative } from "node:path";
 import { readFileSync } from "node:fs";
 import { access, realpath } from "node:fs/promises";
@@ -184,6 +185,12 @@ interface ToolLogFields extends ToolActivityInput {
   command?: string;
   commandLength?: number;
 }
+
+interface ToolInvocationContext {
+  activityId: string;
+}
+
+const toolInvocationContext = new AsyncLocalStorage<ToolInvocationContext>();
 
 export function buildServerInstructions(
   config: Pick<ServerConfig, "toolMode" | "widgets" | "skillsEnabled">,
@@ -477,6 +484,12 @@ const sessionSummaryOutputSchema = structuredTextOutputSchema({
       maxDurationMs: z.number(),
       totalQueuedMs: z.number(),
       maxQueuedMs: z.number(),
+      totalOutputBytes: z.number(),
+      averageOutputBytes: z.number(),
+      maxOutputBytes: z.number(),
+      totalStructuredOutputBytes: z.number(),
+      averageStructuredOutputBytes: z.number(),
+      maxStructuredOutputBytes: z.number(),
     }),
   ),
   paths: z.array(z.string()),
@@ -812,8 +825,102 @@ function recordToolCall(
   activityLog: ToolActivityLogManager,
   fields: ToolLogFields,
 ): void {
-  activityLog.record(fields);
+  activityLog.record({
+    ...fields,
+    activityId: toolInvocationContext.getStore()?.activityId,
+  });
   emitToolCallLog(config, fields);
+}
+
+function installMeasuredToolRegistration(
+  server: McpServer,
+  activityLog: ToolActivityLogManager,
+): void {
+  const mutableServer = server as unknown as {
+    registerTool: (...args: unknown[]) => unknown;
+  };
+  const originalRegisterTool = mutableServer.registerTool.bind(server);
+
+  mutableServer.registerTool = (
+    name: unknown,
+    config: unknown,
+    callback: unknown,
+  ): unknown => {
+    if (typeof name !== "string" || typeof callback !== "function") {
+      return originalRegisterTool(name, config, callback);
+    }
+
+    const measuredCallback = async (...args: unknown[]): Promise<unknown> => {
+      const activityId = `activity_${randomUUID()}`;
+      const startedAt = performance.now();
+      const workspaceId = toolWorkspaceId(args[0]);
+      return toolInvocationContext.run({ activityId }, async () => {
+        try {
+          const result = await (callback as (...callbackArgs: unknown[]) => unknown)(...args);
+          activityLog.updateResult(activityId, toolResultMetrics(result));
+          return result;
+        } catch (error) {
+          const updated = activityLog.updateResult(activityId, {});
+          if (!updated) {
+            activityLog.record({
+              activityId,
+              tool: name,
+              workspaceId,
+              success: false,
+              durationMs: Math.round(performance.now() - startedAt),
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+          throw error;
+        }
+      });
+    };
+
+    return originalRegisterTool(name, config, measuredCallback);
+  };
+}
+
+function toolWorkspaceId(input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const value = (input as Record<string, unknown>).workspaceId;
+  return typeof value === "string" ? value : undefined;
+}
+
+function toolResultMetrics(result: unknown): {
+  outputBytes?: number;
+  structuredOutputBytes?: number;
+  truncated?: boolean;
+} {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return {};
+  const record = result as Record<string, unknown>;
+  return {
+    outputBytes: serializedByteLength(record.content),
+    structuredOutputBytes: serializedByteLength(record.structuredContent),
+    truncated: containsTruncation(record.structuredContent),
+  };
+}
+
+function serializedByteLength(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+function containsTruncation(value: unknown, depth = 0): boolean {
+  if (depth > 5 || value === null || value === undefined) return false;
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsTruncation(entry, depth + 1));
+  }
+  if (typeof value !== "object") return false;
+
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (/truncated/i.test(key) && entry === true) return true;
+    if (containsTruncation(entry, depth + 1)) return true;
+  }
+  return false;
 }
 
 function recordFailedToolResponse(
@@ -1383,6 +1490,7 @@ function createMcpServer(
       instructions: serverInstructions(config),
     },
   );
+  installMeasuredToolRegistration(server, activityLog);
 
   registerAppResource(
     server,

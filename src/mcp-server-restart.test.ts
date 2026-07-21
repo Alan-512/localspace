@@ -223,6 +223,9 @@ try {
     const sessionSummaryStructured = recordValue(sessionSummaryResult, "structuredContent");
     assert.equal(recordValue(sessionSummaryStructured, "totalEvents"), 2);
     assert.equal(recordValue(recordValue(sessionSummaryStructured, "tools"), "read"), 1);
+    const readStats = recordValue(recordValue(sessionSummaryStructured, "toolStats"), "read");
+    assert.ok(Number(recordValue(readStats, "averageOutputBytes")) > 0);
+    assert.ok(Number(recordValue(readStats, "averageStructuredOutputBytes")) > 0);
     assert.equal(recordValue(sessionSummaryStructured, "durableAuditEvents"), 1);
     const requestMetrics = recordValue(sessionSummaryStructured, "requestMetrics");
     assert.equal(recordValue(requestMetrics, "totalRequests"), 1);

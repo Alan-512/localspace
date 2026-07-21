@@ -123,8 +123,11 @@ try {
       callToolRequest(209, "session_summary", { workspaceId, limit: 100 }),
     ));
     const sessionSummaryResult = await jsonRpcResult(sessionSummary.value);
-    const sessionSummaryStructured = recordValue(sessionSummaryResult.structuredContent, "requestMetrics");
-    assert.ok(sessionSummaryStructured && typeof sessionSummaryStructured === "object");
+    const sessionSummaryStructured = sessionSummaryResult.structuredContent;
+    const requestMetrics = recordValue(sessionSummaryStructured, "requestMetrics");
+    const toolStats = recordValue(sessionSummaryStructured, "toolStats");
+    assert.ok(requestMetrics && typeof requestMetrics === "object");
+    assert.ok(toolStats && typeof toolStats === "object");
     measurements.sessionSummaryMs = sessionSummary.ms;
 
     const output = {
@@ -148,7 +151,15 @@ try {
         excludes: ["ChatGPT model latency", "public tunnel latency", "browser UI rendering"],
       },
       measurements,
-      serverObservedRequestMetrics: sessionSummaryStructured,
+      serverObservedRequestMetrics: requestMetrics,
+      serverObservedToolActivity: {
+        totalEvents: recordValue(sessionSummaryStructured, "totalEvents"),
+        averageDurationMs: recordValue(sessionSummaryStructured, "averageDurationMs"),
+        maxDurationMs: recordValue(sessionSummaryStructured, "maxDurationMs"),
+        categories: recordValue(sessionSummaryStructured, "categories"),
+        concurrencyClasses: recordValue(sessionSummaryStructured, "concurrencyClasses"),
+        toolStats,
+      },
       outcomes: {
         toolsListConcurrentRequests: 8,
         independentProcessesCompleted: 2,

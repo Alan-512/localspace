@@ -7,6 +7,7 @@ import {
 } from "./tool-catalog.js";
 
 export interface ToolActivityInput {
+  activityId?: string;
   tool: string;
   workspaceId?: string;
   path?: string;
@@ -22,7 +23,7 @@ export interface ToolActivityInput {
   error?: string;
 }
 
-export interface ToolActivityEvent extends ToolActivityInput {
+export interface ToolActivityEvent extends Omit<ToolActivityInput, "activityId"> {
   id: string;
   time: string;
   category: ToolCategory | "unknown";
@@ -40,6 +41,12 @@ export interface ToolActivityStats {
   maxDurationMs: number;
   totalQueuedMs: number;
   maxQueuedMs: number;
+  totalOutputBytes: number;
+  averageOutputBytes: number;
+  maxOutputBytes: number;
+  totalStructuredOutputBytes: number;
+  averageStructuredOutputBytes: number;
+  maxStructuredOutputBytes: number;
 }
 
 export interface ToolActivitySummary {
@@ -68,16 +75,35 @@ export class ToolActivityLogManager {
   constructor(private readonly maxMemoryEvents: number) {}
 
   record(input: ToolActivityInput): void {
+    const { activityId, ...fields } = input;
     const catalog = safeCatalogEntry(input.tool);
     const event: ToolActivityEvent = {
-      id: `activity_${randomUUID()}`,
+      id: activityId ?? `activity_${randomUUID()}`,
       time: new Date().toISOString(),
-      ...input,
+      ...fields,
       category: catalog?.category ?? "unknown",
       concurrencyClass: catalog?.concurrencyClass ?? "unknown",
     };
     this.events.push(event);
     while (this.events.length > this.maxMemoryEvents) this.events.shift();
+  }
+
+  updateResult(
+    activityId: string,
+    result: {
+      outputBytes?: number;
+      structuredOutputBytes?: number;
+      truncated?: boolean;
+    },
+  ): boolean {
+    const event = [...this.events].reverse().find((candidate) => candidate.id === activityId);
+    if (!event) return false;
+    if (result.outputBytes !== undefined) event.outputBytes = result.outputBytes;
+    if (result.structuredOutputBytes !== undefined) {
+      event.structuredOutputBytes = result.structuredOutputBytes;
+    }
+    if (result.truncated) event.truncated = true;
+    return true;
   }
 
   summarize(options: { workspaceId?: string; limit?: number } = {}): ToolActivitySummary {
@@ -129,11 +155,25 @@ export class ToolActivityLogManager {
       stats.maxDurationMs = Math.max(stats.maxDurationMs, event.durationMs);
       stats.totalQueuedMs += queuedMs;
       stats.maxQueuedMs = Math.max(stats.maxQueuedMs, queuedMs);
+      const outputBytes = event.outputBytes ?? 0;
+      const structuredOutputBytes = event.structuredOutputBytes ?? 0;
+      stats.totalOutputBytes += outputBytes;
+      stats.maxOutputBytes = Math.max(stats.maxOutputBytes, outputBytes);
+      stats.totalStructuredOutputBytes += structuredOutputBytes;
+      stats.maxStructuredOutputBytes = Math.max(
+        stats.maxStructuredOutputBytes,
+        structuredOutputBytes,
+      );
       toolStats[event.tool] = stats;
     }
 
     for (const stats of Object.values(toolStats)) {
       stats.averageDurationMs = roundedAverage(stats.totalDurationMs, stats.count);
+      stats.averageOutputBytes = roundedAverage(stats.totalOutputBytes, stats.count);
+      stats.averageStructuredOutputBytes = roundedAverage(
+        stats.totalStructuredOutputBytes,
+        stats.count,
+      );
     }
 
     const summary: ToolActivitySummary = {
@@ -180,6 +220,12 @@ function emptyStats(): ToolActivityStats {
     maxDurationMs: 0,
     totalQueuedMs: 0,
     maxQueuedMs: 0,
+    totalOutputBytes: 0,
+    averageOutputBytes: 0,
+    maxOutputBytes: 0,
+    totalStructuredOutputBytes: 0,
+    averageStructuredOutputBytes: 0,
+    maxStructuredOutputBytes: 0,
   };
 }
 
