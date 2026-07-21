@@ -51,6 +51,14 @@ export function analyzeSensitivePath(path: string, context: SensitivePathContext
     });
   }
 
+  if (relativeToWorkspace.toLowerCase() === ".localspace/policy.json") {
+    findings.push({
+      level: "protected",
+      category: "workspace-policy",
+      message: "Protects the workspace policy from tool-driven trust changes.",
+    });
+  }
+
   if (isEnvFile(fileName)) {
     findings.push({
       level: "protected",

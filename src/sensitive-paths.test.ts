@@ -17,6 +17,7 @@ assert.equal(analyzeSensitivePath(join(root, ".env"), context).level, "protected
 assert.equal(analyzeSensitivePath(join(root, ".env.local"), context).level, "protected");
 assert.equal(analyzeSensitivePath(join(root, ".git", "config"), context).level, "protected");
 assert.equal(analyzeSensitivePath(join(root, ".git", "hooks", "pre-commit"), context).level, "protected");
+assert.equal(analyzeSensitivePath(join(root, ".localspace", "policy.json"), context).level, "protected");
 assert.equal(analyzeSensitivePath(join(root, "auth.json"), context).level, "protected");
 assert.equal(analyzeSensitivePath(join(root, "service-token.txt"), context).level, "protected");
 assert.equal(analyzeSensitivePath(join(root, "private-key.pem"), context).level, "protected");

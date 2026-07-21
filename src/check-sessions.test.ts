@@ -68,6 +68,8 @@ function definition(name: string, command: string) {
   return {
     name,
     script: command,
+    scriptNames: [name],
+    scripts: [{ name, script: command }],
     command,
     approvalCommand: `run_checks:${name}\n${command}`,
     safety: analyzeCommandSafety(command),

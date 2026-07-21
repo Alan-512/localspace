@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { relative } from "node:path";
 import { readFileSync } from "node:fs";
-import { access, realpath } from "node:fs/promises";
+import { access, lstat, realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
@@ -42,7 +42,7 @@ import {
 import { SingleUserOAuthProvider } from "./oauth-provider.js";
 import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.js";
 import { getGitChangesData } from "./git-changes.js";
-import { gitAddData, gitCommitData, gitDiffData, gitLogData, gitStatusData } from "./git-tools.js";
+import { gitAddData, gitCommitData, gitDiffData, gitLogData, gitStagedPaths, gitStatusData } from "./git-tools.js";
 import { generateDoctorReportData, generateWorkspaceInfoData } from "./diagnostics.js";
 import {
   analyzeCommandSafety,
@@ -59,7 +59,7 @@ import { shutdownHttpServer } from "./server-shutdown.js";
 import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
 import { formatPathForPrompt } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
-import { formatAgentsPath, WorkspaceRegistry } from "./workspaces.js";
+import { formatAgentsPath, WorkspaceRegistry, type Workspace } from "./workspaces.js";
 import { createFinalReport, createHandoffSummary } from "./final-report.js";
 import { createTaskSummary, createValidationSummary } from "./task-summary.js";
 import { createNextSteps, createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
@@ -99,6 +99,20 @@ import {
   type LocationsResult,
   type RenamePreviewResult,
 } from "./code-intelligence.js";
+import {
+  WorkspacePolicyError,
+  WorkspacePolicyManager,
+  assertPolicyCommandAllowed,
+  assertPolicyGitAddPaths,
+  assertPolicyMutationAllowed,
+  assertPolicyPackageScriptsAllowed,
+  assertPolicyReadManyAllowed,
+  assertPolicyWritablePaths,
+  commandSafetyWithPolicyApproval,
+  policyRequiresApproval,
+  workspacePolicySummary,
+  type WorkspacePolicySnapshot,
+} from "./workspace-policy.js";
 
 type Transport = StreamableHTTPServerTransport;
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
@@ -1632,6 +1646,7 @@ function registerCodexProcessTools(
   auditLog: AuditLogManager,
   activityLog: ToolActivityLogManager,
   approvals: CommandApprovalManager,
+  workspacePolicies: WorkspacePolicyManager,
 ): void {
   const logToolCall = (currentConfig: ServerConfig, fields: ToolLogFields): void => {
     recordToolCall(currentConfig, activityLog, fields);
@@ -1691,7 +1706,26 @@ function registerCodexProcessTools(
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const cwd = workspaces.resolveWorkingDirectory(workspace, workingDirectory);
-      const safety = analyzeCommandSafety(cmd);
+      const policy = await policyForTool(
+        config,
+        workspacePolicies,
+        workspace,
+        auditLog,
+        activityLog,
+        {
+          tool: toolNames.execCommand,
+          workspaceId,
+          startedAt,
+          workingDirectory: workingDirectory ?? ".",
+          command: cmd,
+          enforce: (snapshot) => assertPolicyCommandAllowed(snapshot, cmd, tty),
+        },
+      );
+      const safety = commandSafetyWithPolicyApproval(
+        analyzeCommandSafety(cmd),
+        policy,
+        "exec_command",
+      );
       const approvalContext = { workspaceId, cwd, command: cmd, safety };
       const approval = safety.level === "danger"
         ? approvals.consume(approvalToken, approvalContext)
@@ -1802,7 +1836,27 @@ function registerCodexProcessTools(
     async ({ workspaceId, checks, concurrency, failFast, yieldTimeMs, maxOutputTokens, approvals: suppliedApprovals }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
-      const prepared = await preparePackageChecks(workspace.root, checks);
+      const preparedBase = await preparePackageChecks(workspace.root, checks);
+      const policy = await policyForTool(
+        config,
+        workspacePolicies,
+        workspace,
+        auditLog,
+        activityLog,
+        {
+          tool: toolNames.runChecks,
+          workspaceId,
+          startedAt,
+          enforce: (snapshot) => assertPolicyPackageScriptsAllowed(snapshot, preparedBase.checks),
+        },
+      );
+      const prepared = {
+        ...preparedBase,
+        checks: preparedBase.checks.map((check) => ({
+          ...check,
+          safety: commandSafetyWithPolicyApproval(check.safety, policy, "run_checks"),
+        })),
+      };
       const dangerous = prepared.checks.filter((check) => check.safety.level === "danger");
       const supplied = new Map(
         (suppliedApprovals ?? []).map((approval) => [approval.check, approval.approvalToken]),
@@ -2332,6 +2386,79 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+async function assertGitAddTargetsAreExplicitFiles(paths: readonly string[]): Promise<void> {
+  for (const path of paths) {
+    try {
+      const info = await lstat(path);
+      if (info.isDirectory()) {
+        throw new Error(
+          `git_add requires explicit file paths; directory staging is not supported: ${path}`,
+        );
+      }
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+function workspacePolicyRoot(workspace: Workspace): string {
+  return workspace.sourceRoot ?? workspace.root;
+}
+
+async function policyForTool(
+  config: ServerConfig,
+  policies: WorkspacePolicyManager,
+  workspace: Workspace,
+  auditLog: AuditLogManager,
+  activityLog: ToolActivityLogManager,
+  input: {
+    tool: string;
+    workspaceId: string;
+    startedAt: number;
+    path?: string;
+    workingDirectory?: string;
+    command?: string;
+    enforce?: (policy: WorkspacePolicySnapshot) => void | Promise<void>;
+  },
+): Promise<WorkspacePolicySnapshot> {
+  const policy = await policies.resolve(workspacePolicyRoot(workspace));
+  try {
+    await input.enforce?.(policy);
+    return policy;
+  } catch (error) {
+    if (error instanceof WorkspacePolicyError) {
+      recordToolCall(config, activityLog, {
+        tool: input.tool,
+        workspaceId: input.workspaceId,
+        path: input.path,
+        workingDirectory: input.workingDirectory,
+        command: input.command,
+        commandLength: input.command?.length,
+        success: false,
+        durationMs: Math.round(performance.now() - input.startedAt),
+        error: error.message,
+      });
+      auditLog.record({
+        tool: input.tool,
+        workspaceId: input.workspaceId,
+        action: `policy_block:${error.rule}`,
+        success: false,
+        blocked: true,
+        paths: input.path ? [input.path] : undefined,
+        commandPreview: input.command && config.logging.shellCommands
+          ? commandPreview(input.command)
+          : undefined,
+        durationMs: Math.round(performance.now() - input.startedAt),
+        error: error.message,
+      });
+    }
+    throw error;
+  }
+}
+
 function createMcpServer(
   config: ServerConfig,
   workspaces: WorkspaceRegistry,
@@ -2344,6 +2471,7 @@ function createMcpServer(
   requestMetrics: McpRequestMetricsManager,
   concurrency: ToolConcurrencyScheduler,
   commandApprovals: CommandApprovalManager,
+  workspacePolicies: WorkspacePolicyManager,
 ): McpServer {
   const logToolCall = (currentConfig: ServerConfig, fields: ToolLogFields): void => {
     recordToolCall(currentConfig, activityLog, fields);
@@ -2445,6 +2573,22 @@ function createMcpServer(
         availableAgentsFiles: z.array(workspaceAvailableAgentsFileOutputSchema),
         skills: z.array(workspaceSkillOutputSchema),
         skillDiagnostics: z.array(z.unknown()),
+        policy: z.object({
+          status: z.enum(["absent", "active", "anchored", "invalid"]),
+          sourcePath: z.string(),
+          present: z.boolean(),
+          valid: z.boolean(),
+          failClosed: z.boolean(),
+          fingerprint: z.string().optional(),
+          readOnlyPaths: z.number(),
+          deniedCommandPatterns: z.number(),
+          allowedPackageScripts: z.number().optional(),
+          maxReadManyFiles: z.number(),
+          allowCommands: z.boolean(),
+          allowPty: z.boolean(),
+          requireApprovalTools: z.array(z.enum(["exec_command", "run_checks"])),
+          diagnostics: z.array(z.string()),
+        }),
         instruction: z.string(),
       },
       ...toolWidgetDescriptorMeta(config, "open_workspace"),
@@ -2453,6 +2597,8 @@ function createMcpServer(
     async ({ path, mode, baseRef }) => {
       const startedAt = performance.now();
       const { workspace, agentsFiles, availableAgentsFiles } = await workspaces.openWorkspace({ path, mode, baseRef });
+      const policy = await workspacePolicies.resolve(workspacePolicyRoot(workspace));
+      const policyData = workspacePolicySummary(policy);
       if (config.widgets === "changes") {
         void reviewCheckpoints.initializeWorkspace({
           workspaceId: workspace.id,
@@ -2473,9 +2619,12 @@ function createMcpServer(
       const availableAgentsFileOutputs = availableAgentsFiles.map((file) => ({
         path: formatAgentsPath(file.path, workspace.root),
       }));
-      const instruction = config.skillsEnabled
+      const baseInstruction = config.skillsEnabled
         ? "Use this workspaceId in all subsequent tool calls for this project. Do not call open_workspace again for this same folder unless this workspaceId stops working, the user asks to reopen, or you switch to a different folder/worktree. Follow loaded agentsFiles instructions. Before working under a path listed in availableAgentsFiles, read that instruction file. When a task matches an available skill in skills, read its path before proceeding."
         : "Use this workspaceId in all subsequent tool calls for this project. Do not call open_workspace again for this same folder unless this workspaceId stops working, the user asks to reopen, or you switch to a different folder/worktree. Follow loaded agentsFiles instructions. Before working under a path listed in availableAgentsFiles, read that instruction file.";
+      const instruction = policy.status === "absent"
+        ? baseInstruction
+        : `${baseInstruction} Workspace policy restrictions are authoritative and may only reduce available operations.${policy.failClosed ? " The policy is invalid, so mutations and commands are fail-closed until it is fixed outside LocalSpace." : ""}`;
       const resultContent: ToolContent[] = [
         {
           type: "text" as const,
@@ -2492,6 +2641,8 @@ function createMcpServer(
             visibleSkills.length > 0
               ? `Available skills: ${visibleSkills.map((skill) => skill.name).join(", ")}`
               : undefined,
+            `Workspace policy: ${policyData.status}${policyData.failClosed ? " (fail-closed)" : ""}`,
+            ...policyData.diagnostics.map((diagnostic) => `Policy diagnostic: ${diagnostic}`),
             instruction,
           ].filter(Boolean).join("\n"),
         },
@@ -2510,6 +2661,16 @@ function createMcpServer(
         paths: [workspace.root],
         durationMs: Math.round(performance.now() - startedAt),
       });
+      auditLog.record({
+        tool: "workspace_policy",
+        workspaceId: workspace.id,
+        action: `load:${policy.status}`,
+        success: policy.valid,
+        blocked: policy.failClosed,
+        paths: [policyData.sourcePath],
+        durationMs: Math.round(performance.now() - startedAt),
+        error: policyData.diagnostics.join(" ") || undefined,
+      });
 
       return {
         content: resultContent,
@@ -2524,6 +2685,8 @@ function createMcpServer(
               availableAgentsFiles: availableAgentsFileOutputs.length,
               skills: visibleSkills.length,
               skillDiagnostics: workspace.skillDiagnostics.length,
+              policyStatus: policyData.status,
+              policyFailClosed: policyData.failClosed,
             },
           },
         },
@@ -2537,6 +2700,7 @@ function createMcpServer(
           availableAgentsFiles: availableAgentsFileOutputs,
           skills: visibleSkills,
           skillDiagnostics: workspace.skillDiagnostics,
+          policy: policyData,
           instruction,
         },
       };
@@ -2666,6 +2830,20 @@ function createMcpServer(
       async ({ workspaceId, files, maxTotalCharacters }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
+        await policyForTool(
+          config,
+          workspacePolicies,
+          workspace,
+          auditLog,
+          activityLog,
+          {
+            tool: toolNames.readMany,
+            workspaceId,
+            startedAt,
+            path: `${files.length} files`,
+            enforce: (policy) => assertPolicyReadManyAllowed(policy, files.length),
+          },
+        );
         const prepared = files.map((file) => {
           try {
             return { readPath: workspaces.resolveReadPath(workspace, file.path) };
@@ -3303,6 +3481,20 @@ function createMcpServer(
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const targetPath = workspaces.resolvePath(workspace, input.path);
+      await policyForTool(
+        config,
+        workspacePolicies,
+        workspace,
+        auditLog,
+        activityLog,
+        {
+          tool: toolNames.write,
+          workspaceId,
+          startedAt,
+          path: input.path,
+          enforce: (policy) => assertPolicyWritablePaths(policy, workspace.root, [targetPath]),
+        },
+      );
       assertWritablePath(targetPath, { workspaceRoot: workspace.root, config });
       const response = await writeFileTool(input, {
         cwd: workspace.root,
@@ -3711,6 +3903,20 @@ function createMcpServer(
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const targetPath = workspaces.resolvePath(workspace, input.path);
+      await policyForTool(
+        config,
+        workspacePolicies,
+        workspace,
+        auditLog,
+        activityLog,
+        {
+          tool: toolNames.edit,
+          workspaceId,
+          startedAt,
+          path: input.path,
+          enforce: (policy) => assertPolicyWritablePaths(policy, workspace.root, [targetPath]),
+        },
+      );
       assertWritablePath(targetPath, { workspaceRoot: workspace.root, config });
       const response = await editFileTool(input, {
         cwd: workspace.root,
@@ -3811,8 +4017,23 @@ function createMcpServer(
           if (action.kind === "update" && action.moveTo) return [action.path, action.moveTo];
           return [action.path];
         });
+        const absolutePatchPaths = patchPaths.map((path) => workspaces.resolvePath(workspace, path));
+        await policyForTool(
+          config,
+          workspacePolicies,
+          workspace,
+          auditLog,
+          activityLog,
+          {
+            tool: toolNames.applyPatch,
+            workspaceId,
+            startedAt,
+            path: patchPaths.length === 1 ? patchPaths[0] : `${patchPaths.length} files`,
+            enforce: (policy) => assertPolicyWritablePaths(policy, workspace.root, absolutePatchPaths),
+          },
+        );
         assertWritablePaths(
-          patchPaths.map((path) => workspaces.resolvePath(workspace, path)),
+          absolutePatchPaths,
           { workspaceRoot: workspace.root, config },
         );
         const applied = await applyPatch(workspace.root, patch);
@@ -4112,8 +4333,24 @@ function createMcpServer(
       async ({ workspaceId, paths, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
+        const absolutePaths = paths.map((path) => workspaces.resolvePath(workspace, path));
+        await assertGitAddTargetsAreExplicitFiles(absolutePaths);
+        await policyForTool(
+          config,
+          workspacePolicies,
+          workspace,
+          auditLog,
+          activityLog,
+          {
+            tool: toolNames.gitAdd,
+            workspaceId,
+            startedAt,
+            path: paths.join(", "),
+            enforce: (policy) => assertPolicyGitAddPaths(policy, workspace.root, absolutePaths),
+          },
+        );
         assertWritablePaths(
-          paths.map((path) => workspaces.resolvePath(workspace, path)),
+          absolutePaths,
           { workspaceRoot: workspace.root, config },
         );
         const data = await gitAddData(workspace.root, paths, { maxOutputChars });
@@ -4179,6 +4416,32 @@ function createMcpServer(
       async ({ workspaceId, message, maxOutputChars }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
+        const stagedPaths = await gitStagedPaths(workspace.root);
+        const workspaceStagedPaths = stagedPaths.map((path) => workspaces.resolvePath(workspace, path));
+        await policyForTool(
+          config,
+          workspacePolicies,
+          workspace,
+          auditLog,
+          activityLog,
+          {
+            tool: toolNames.gitCommit,
+            workspaceId,
+            startedAt,
+            path: workspaceStagedPaths.length > 0
+              ? workspaceStagedPaths.map((path) => workspaceRelativePath(workspace.root, path)).join(", ")
+              : undefined,
+            enforce: (policy) => {
+              assertPolicyMutationAllowed(policy);
+              assertPolicyWritablePaths(
+                policy,
+                workspace.root,
+                workspaceStagedPaths,
+              );
+            },
+          },
+        );
+        assertWritablePaths(workspaceStagedPaths, { workspaceRoot: workspace.root, config });
         const data = await gitCommitData(workspace.root, { message, maxOutputChars });
         const content = [textBlock(data.text)];
         logToolCall(config, {
@@ -4509,6 +4772,29 @@ function createMcpServer(
         workspace,
         workingDirectory,
       );
+      await policyForTool(
+        config,
+        workspacePolicies,
+        workspace,
+        auditLog,
+        activityLog,
+        {
+          tool: toolNames.shell,
+          workspaceId,
+          startedAt,
+          workingDirectory: workingDirectory ?? ".",
+          command: input.command,
+          enforce: (policy) => {
+            assertPolicyCommandAllowed(policy, input.command, false);
+            if (policyRequiresApproval(policy, "exec_command")) {
+              throw new WorkspacePolicyError(
+                "requireApprovalTools",
+                "The legacy shell cannot satisfy explicit command approval; use exec_command.",
+              );
+            }
+          },
+        },
+      );
       const response = await runShellTool(input, {
         cwd,
         root: workspace.root,
@@ -4569,6 +4855,7 @@ function createMcpServer(
       auditLog,
       activityLog,
       commandApprovals,
+      workspacePolicies,
     );
   }
 
@@ -4608,6 +4895,7 @@ export function createServer(config = loadConfig()): RunningServer {
   });
   const workspaceStore = createWorkspaceStore(config.stateDir);
   const workspaces = new WorkspaceRegistry(config, workspaceStore);
+  const workspacePolicies = new WorkspacePolicyManager(config.stateDir);
   const reviewCheckpoints = createReviewCheckpointManager();
   const processSessions = new ProcessSessionManager({
     shell: config.shell,
@@ -4752,6 +5040,7 @@ export function createServer(config = loadConfig()): RunningServer {
           requestMetrics,
           concurrency,
           commandApprovals,
+          workspacePolicies,
         );
         serverCreateMs = Math.round((performance.now() - serverCreateStartedAt) * 100) / 100;
 
@@ -4827,6 +5116,7 @@ export function createServer(config = loadConfig()): RunningServer {
           requestMetrics,
           concurrency,
           commandApprovals,
+          workspacePolicies,
         );
         serverCreateMs = Math.round((performance.now() - serverCreateStartedAt) * 100) / 100;
         const connectStartedAt = performance.now();

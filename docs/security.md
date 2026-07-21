@@ -90,6 +90,38 @@ client must be trusted and the Owner password must stay private.
 High-risk `danger` commands are blocked before execution and require a one-time
 approval token after explicit user confirmation.
 
+## Workspace Policy
+
+Projects can add `.localspace/policy.json` to reduce the permissions available
+inside that workspace. Policies can mark paths read-only, deny command patterns,
+allowlist package scripts, lower `read_many` limits, disable arbitrary commands
+or PTYs, and require approval for every `exec_command` or `run_checks` call.
+
+Project policy is not a trust grant. It cannot add allowed roots, enable hidden
+tools, enlarge limits, disable sensitive-path checks, or auto-approve a command.
+LocalSpace persists the first valid policy as a state-directory anchor and
+monotonically merges later versions, so a repository cannot relax or delete its
+own previously accepted restrictions. Managed worktrees use the source
+checkout's policy rather than treating a copied worktree file as a new trust
+root.
+
+Malformed or unknown policy content fails closed for mutations and commands.
+Policy decisions and blocks are written to the audit log, while read-only tools
+remain usable for diagnosis. The policy file itself is protected from
+LocalSpace-driven modification.
+
+The shell boundary remains important: `readOnlyPaths` protects dedicated file
+and Git tools, not every possible side effect of an arbitrary operating-system
+command. Use `allowCommands: false` when a project must prevent shell-based
+writes, and prefer allowlisted `run_checks` scripts for deterministic validation.
+Package-script allowlists also cover existing `pre*` and `post*` lifecycle
+hooks, and command-risk analysis evaluates those hooks before starting a check.
+
+Dedicated Git staging uses literal, explicit file paths rather than broad
+directories or pathspec magic. Commit-time validation rechecks all staged paths,
+including rename sources and destinations, against workspace containment,
+sensitive-path protection, and the active read-only policy.
+
 ## Sensitive Path Protection
 
 LocalSpace protects sensitive paths with generic cross-platform rules. It does
@@ -105,6 +137,7 @@ Write-like tools block protected paths before modifying or staging files:
 Protected path detection is based on:
 
 - the current workspace root, such as `.git/config` and `.git/hooks/**`
+- the workspace policy file at `.localspace/policy.json`
 - LocalSpace config roots, such as `stateDir`, `agentDir`, and `worktreeRoot`
 - the current user's home directory root from `os.homedir()`
 - operating system roots and system directories for the current platform

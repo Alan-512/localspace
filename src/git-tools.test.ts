@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
-import { gitAdd, gitAddData, gitCommit, gitCommitData, gitDiff, gitDiffData, gitLog, gitLogData, gitStatus, gitStatusData } from "./git-tools.js";
+import { gitAdd, gitAddData, gitCommit, gitCommitData, gitDiff, gitDiffData, gitLog, gitLogData, gitStagedPaths, gitStatus, gitStatusData } from "./git-tools.js";
 
 const execFileAsync = promisify(execFile);
 const root = await mkdtemp(join(tmpdir(), "localspace-git-tools-test-"));
@@ -50,6 +50,7 @@ try {
   const stagedDiff = await gitDiff(root, { staged: true });
   assert.match(stagedDiff, /\+world/);
   assert.match(stagedDiff, /new\.txt/);
+  assert.deepEqual(await gitStagedPaths(root), [join(root, "README.md"), join(root, "new.txt")]);
 
   const commit = await gitCommit(root, { message: "Update readme" });
   assert.match(commit, /Update readme/);
@@ -67,6 +68,13 @@ try {
 
   const truncated = await gitLog(root, { limit: 2, maxOutputChars: 20 });
   assert.match(truncated, /truncated after 20 characters/);
+
+  await rename(join(root, "new.txt"), join(root, "renamed.txt"));
+  await git(root, ["add", "-A"]);
+  const renamedPaths = await gitStagedPaths(root);
+  assert.ok(renamedPaths.includes(join(root, "new.txt")));
+  assert.ok(renamedPaths.includes(join(root, "renamed.txt")));
+  await git(root, ["reset", "--hard", "HEAD"]);
 
   const nonGitRoot = await mkdtemp(join(tmpdir(), "localspace-non-git-tools-test-"));
   try {

@@ -13,6 +13,8 @@ try {
       typecheck: "tsc --noEmit",
       test: "node test.js",
       danger: "git reset --hard HEAD",
+      hooked: "node hooked.js",
+      prehooked: "git reset --hard HEAD",
     },
   }), "utf8");
 
@@ -28,6 +30,11 @@ try {
   const danger = await preparePackageChecks(root, ["danger"]);
   assert.equal(danger.checks[0]?.safety.level, "danger");
   assert.match(danger.checks[0]?.approvalCommand ?? "", /git reset --hard/);
+
+  const hooked = await preparePackageChecks(root, ["hooked"]);
+  assert.equal(hooked.checks[0]?.safety.level, "danger");
+  assert.deepEqual(hooked.checks[0]?.scriptNames, ["prehooked", "hooked"]);
+  assert.match(hooked.checks[0]?.approvalCommand ?? "", /\[prehooked\] git reset --hard/);
 
   await assert.rejects(
     preparePackageChecks(root, ["missing"]),

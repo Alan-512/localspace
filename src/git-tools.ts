@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -123,11 +124,37 @@ export async function gitAddData(cwd: string, paths: string[], options: GitToolO
   if (!(await isGitRepository(cwd))) return { isRepository: false, paths, stagedCount: 0, truncated: false, text: "Not a git repository." };
   if (paths.length === 0) return { isRepository: true, paths, stagedCount: 0, truncated: false, text: "No paths provided." };
 
-  const result = await runGit(cwd, ["add", "--", ...paths]);
+  const result = await runGit(cwd, ["--literal-pathspecs", "add", "--", ...paths]);
   const commandOutput = formatCommandOutput(result);
   const output = [commandOutput, `Staged ${paths.length} path(s).`].filter(Boolean).join("\n");
   const limited = limitOutputData(output, options.maxOutputChars);
   return { isRepository: true, paths, stagedCount: paths.length, truncated: limited.truncated, text: limited.text };
+}
+
+export async function gitStagedPaths(cwd: string): Promise<string[]> {
+  if (!(await isGitRepository(cwd))) return [];
+  const gitRoot = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).stdout.trim();
+  const result = await runGit(gitRoot, [
+    "diff",
+    "--cached",
+    "--find-renames",
+    "--name-status",
+    "-z",
+  ]);
+  const fields = result.stdout.split("\0");
+  const paths: string[] = [];
+  let index = 0;
+  while (index < fields.length) {
+    const status = fields[index++];
+    if (!status) continue;
+    const firstPath = fields[index++];
+    if (firstPath) paths.push(resolve(gitRoot, firstPath));
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const secondPath = fields[index++];
+      if (secondPath) paths.push(resolve(gitRoot, secondPath));
+    }
+  }
+  return [...new Set(paths)];
 }
 
 export async function gitCommit(cwd: string, options: GitCommitOptions): Promise<string> {

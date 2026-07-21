@@ -36,6 +36,7 @@ experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
 
 | Tool | Structured fields |
 | --- | --- |
+| `open_workspace` | `workspaceId`, `root`, `mode`, optional worktree fields, `agentsFiles[]`, `availableAgentsFiles[]`, `skills[]`, `skillDiagnostics[]`, `policy`, `instruction` |
 | `doctor` | `configuration`, `runtime`, `workspace`, `checks[]`, `overall` |
 | `workspace_info` | `workspace`, `git`, `package` |
 | `session_summary` | `totalEvents`, `successfulEvents`, `failedEvents`, `runningEvents`, `truncatedEvents`, `processPolls`, `averageDurationMs`, `maxDurationMs`, `averageQueuedMs`, `maxQueuedMs`, `blockedEvents`, `approvedEvents`, `durableAuditEvents`, `tools`, `categories`, `concurrencyClasses`, `toolStats`, `paths`, `commands`, `risks`, `recentEvents`, `recentAuditEvents`, `requestMetrics` |

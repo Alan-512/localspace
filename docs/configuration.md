@@ -116,6 +116,83 @@ Queue waits are bounded by `LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS`. Tool activity and
 process results expose `queuedMs`; a timeout fails the waiting call without
 executing its operation.
 
+## Workspace Policy
+
+A project may add a restrictive policy at:
+
+```text
+.localspace/policy.json
+```
+
+Policy version 1 supports:
+
+```json
+{
+  "version": 1,
+  "readOnlyPaths": ["src/generated", "package-lock.json"],
+  "deniedCommandPatterns": ["npm publish*", "git push*--force*"],
+  "allowedPackageScripts": ["test", "typecheck"],
+  "maxReadManyFiles": 5,
+  "allowCommands": true,
+  "allowPty": false,
+  "requireApprovalTools": ["exec_command", "run_checks"]
+}
+```
+
+Every field is restrictive:
+
+- `readOnlyPaths` blocks LocalSpace write, edit, patch, Git staging, and commit
+  operations that target the listed workspace-relative paths;
+- `deniedCommandPatterns` uses bounded `*` and `?` wildcard matching against the
+  complete command string; it does not execute project-provided regular
+  expressions;
+- `allowedPackageScripts` limits `run_checks` to the named `package.json`
+  scripts; omitting the field leaves the server's existing script behavior
+  unchanged, while an empty array denies every package script. When a package
+  manager would invoke `pre<name>` or `post<name>`, those lifecycle script names
+  must also appear in the allowlist;
+- `maxReadManyFiles` lowers the server maximum of 20 files per `read_many` call;
+- `allowCommands: false` disables arbitrary shell commands;
+- `allowPty: false` disables pseudo-terminal allocation;
+- `requireApprovalTools` can require the existing one-time approval flow for
+  every `exec_command` or `run_checks` call, even when the command's built-in
+  risk analysis would otherwise be below `danger`.
+
+The policy cannot enable a tool, expand an allowed root, weaken sensitive-path
+protection, increase server limits, or bypass command approval. Unknown fields,
+invalid paths, unsupported approval tool names, malformed JSON, and oversized
+policy files cause mutations and commands to fail closed. Read-only inspection
+remains available so the problem can be diagnosed.
+
+On first successful load LocalSpace stores a policy anchor under the configured
+state directory. Later project-file changes are merged monotonically with that
+anchor: read-only paths and denied commands can only accumulate, script
+allowlists can only shrink, limits can only decrease, and disabled capabilities
+remain disabled. Deleting or relaxing the project file therefore does not relax
+an already anchored session, including after a normal service restart. Policy
+relaxation is an explicit out-of-band administrative action and is not exposed
+through MCP tools.
+
+Managed worktrees inherit the source checkout's policy. The policy file itself
+is a protected sensitive path and cannot be changed through LocalSpace write,
+edit, patch, or Git staging tools.
+
+`readOnlyPaths` constrains LocalSpace's dedicated mutation and Git tools. An
+arbitrary shell command still runs with the operating-system permissions of the
+LocalSpace process. Projects that require path-level enforcement against shell
+commands should set `allowCommands: false`, or combine a narrow command deny
+policy with trusted package scripts.
+
+`git_add` uses literal Git pathspecs and accepts explicit file paths only.
+Directory staging is rejected so a broad path cannot silently include a
+read-only or sensitive descendant. Deleted tracked files remain stageable by
+their explicit former path. `git_commit` independently rechecks every staged
+source and destination path, including both sides of detected renames.
+
+Package-check safety analysis includes the selected script plus existing
+`pre<name>` and `post<name>` lifecycle scripts. A dangerous lifecycle hook
+therefore requires the same one-time approval as a dangerous main script.
+
 ## OAuth
 
 LocalSpace uses a single-user OAuth approval flow.

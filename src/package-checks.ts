@@ -11,6 +11,11 @@ const SAFE_SCRIPT_NAME = /^[A-Za-z0-9:_-]+$/;
 export interface PreparedPackageCheck {
   name: string;
   script: string;
+  scriptNames: string[];
+  scripts: Array<{
+    name: string;
+    script: string;
+  }>;
   command: string;
   approvalCommand: string;
   safety: CommandSafetyAnalysis;
@@ -63,13 +68,24 @@ export async function preparePackageChecks(
   const packageManager = await detectPackageManager(root, packageJson.packageManager);
   const checks = checkNames.map((name) => {
     const script = String(scripts[name]);
+    const lifecycleScripts = [`pre${name}`, name, `post${name}`]
+      .filter((scriptName) => typeof scripts[scriptName] === "string")
+      .map((scriptName) => ({
+        name: scriptName,
+        script: String(scripts[scriptName]),
+      }));
+    const analyzedScript = lifecycleScripts
+      .map((entry) => `[${entry.name}] ${entry.script}`)
+      .join("\n");
     const command = `${packageManager} run ${name}`;
     return {
       name,
       script,
+      scriptNames: lifecycleScripts.map((entry) => entry.name),
+      scripts: lifecycleScripts,
       command,
-      approvalCommand: `run_checks:${name}\n${script}`,
-      safety: analyzeCommandSafety(script),
+      approvalCommand: `run_checks:${name}\n${analyzedScript}`,
+      safety: analyzeCommandSafety(analyzedScript),
     };
   });
   return { packageName: packageJson.name, packageManager, checks };

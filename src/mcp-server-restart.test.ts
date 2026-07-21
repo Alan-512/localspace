@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
@@ -61,6 +61,31 @@ try {
       "check:fail": "node -e \"process.exit(2)\"",
       "check:danger": "node -e \"console.log('git reset --hard HEAD')\""
     }
+  }, null, 2), "utf8");
+  const policyRoot = join(root, "policy-workspace");
+  await mkdir(join(policyRoot, ".localspace"), { recursive: true });
+  await writeFile(join(policyRoot, "locked.txt"), "locked\n", "utf8");
+  await writeFile(join(policyRoot, "free.txt"), "free\n", "utf8");
+  await writeFile(join(policyRoot, "other.txt"), "other\n", "utf8");
+  await writeFile(join(policyRoot, "package.json"), JSON.stringify({
+    name: "policy-workspace",
+    scripts: {
+      "precheck:allowed": "node -e \"console.log('policy-precheck-allowed')\"",
+      "check:allowed": "node -e \"console.log('policy-check-allowed')\"",
+      "check:blocked": "node -e \"console.log('policy-check-blocked')\"",
+      "precheck:hooked": "node -e \"console.log('policy-precheck-hooked')\"",
+      "check:hooked": "node -e \"console.log('policy-check-hooked')\""
+    }
+  }, null, 2), "utf8");
+  await writeFile(join(policyRoot, ".localspace", "policy.json"), JSON.stringify({
+    version: 1,
+    readOnlyPaths: ["locked.txt"],
+    deniedCommandPatterns: ["*blocked-command*"],
+    allowedPackageScripts: ["precheck:allowed", "check:allowed", "check:hooked"],
+    maxReadManyFiles: 1,
+    allowCommands: true,
+    allowPty: false,
+    requireApprovalTools: ["exec_command", "run_checks"]
   }, null, 2), "utf8");
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
@@ -391,7 +416,7 @@ try {
     const readStats = recordValue(recordValue(sessionSummaryStructured, "toolStats"), "read");
     assert.ok(Number(recordValue(readStats, "averageOutputBytes")) > 0);
     assert.ok(Number(recordValue(readStats, "averageStructuredOutputBytes")) > 0);
-    assert.equal(recordValue(sessionSummaryStructured, "durableAuditEvents"), 1);
+    assert.equal(recordValue(sessionSummaryStructured, "durableAuditEvents"), 2);
     const requestMetrics = recordValue(sessionSummaryStructured, "requestMetrics");
     assert.equal(recordValue(requestMetrics, "totalRequests"), 1);
     assert.equal(recordValue(recordValue(requestMetrics, "tools"), "read"), 1);
@@ -574,6 +599,191 @@ try {
     assert.match(
       String(recordValue(writeStdinResult.structuredContent, "result")),
       /stateless-process-done/,
+    );
+
+    const policyOpen = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(601, "open_workspace", { path: policyRoot }),
+      sessionId,
+    );
+    const policyOpenResult = await jsonRpcResult(policyOpen);
+    const policyWorkspaceId = recordValue(policyOpenResult.structuredContent, "workspaceId");
+    assert.equal(typeof policyWorkspaceId, "string");
+    const policyInfo = recordValue(policyOpenResult.structuredContent, "policy");
+    assert.equal(recordValue(policyInfo, "status"), "active");
+    assert.equal(recordValue(policyInfo, "valid"), true);
+    assert.equal(recordValue(policyInfo, "maxReadManyFiles"), 1);
+    assert.equal(recordValue(policyInfo, "allowPty"), false);
+
+    const policyReadMany = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(602, "read_many", {
+        workspaceId: policyWorkspaceId,
+        files: [{ path: "free.txt" }, { path: "other.txt" }],
+      }),
+      sessionId,
+    );
+    const policyReadManyResult = await jsonRpcResult(policyReadMany);
+    assert.equal(recordValue(policyReadManyResult, "isError"), true);
+    assert.match(toolResultText(policyReadManyResult), /policy maximum is 1/i);
+
+    const policyPatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(603, "apply_patch", {
+        workspaceId: policyWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: locked.txt\n@@\n-locked\n+changed\n*** End Patch",
+      }),
+      sessionId,
+    );
+    const policyPatchResult = await jsonRpcResult(policyPatch);
+    assert.equal(recordValue(policyPatchResult, "isError"), true);
+    assert.match(toolResultText(policyPatchResult), /read-only policy path locked\.txt/i);
+    assert.equal(await readFile(join(policyRoot, "locked.txt"), "utf8"), "locked\n");
+
+    const policyGitAddDirectory = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(6031, "git_add", {
+        workspaceId: policyWorkspaceId,
+        paths: ["."],
+      }),
+      sessionId,
+    );
+    const policyGitAddDirectoryResult = await jsonRpcResult(policyGitAddDirectory);
+    assert.equal(recordValue(policyGitAddDirectoryResult, "isError"), true);
+    assert.match(toolResultText(policyGitAddDirectoryResult), /requires explicit file paths/i);
+
+    const deniedPolicyCommand = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(604, "exec_command", {
+        workspaceId: policyWorkspaceId,
+        cmd: "node -e \"console.log('blocked-command')\"",
+      }),
+      sessionId,
+    );
+    const deniedPolicyCommandResult = await jsonRpcResult(deniedPolicyCommand);
+    assert.equal(recordValue(deniedPolicyCommandResult, "isError"), true);
+    assert.match(toolResultText(deniedPolicyCommandResult), /denied pattern/i);
+
+    const policyCommand = "node -e \"console.log('policy-command-ok')\"";
+    const approvalPolicyCommand = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(605, "exec_command", {
+        workspaceId: policyWorkspaceId,
+        cmd: policyCommand,
+      }),
+      sessionId,
+    );
+    const approvalPolicyCommandResult = await jsonRpcResult(approvalPolicyCommand);
+    assert.equal(recordValue(approvalPolicyCommandResult.structuredContent, "approvalRequired"), true);
+    const policyCommandToken = recordValue(
+      approvalPolicyCommandResult.structuredContent,
+      "approvalToken",
+    );
+    assert.equal(typeof policyCommandToken, "string");
+
+    const approvedPolicyCommand = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(606, "exec_command", {
+        workspaceId: policyWorkspaceId,
+        cmd: policyCommand,
+        approvalToken: policyCommandToken,
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    const approvedPolicyCommandResult = await jsonRpcResult(approvedPolicyCommand);
+    assert.equal(recordValue(approvedPolicyCommandResult.structuredContent, "commandApproved"), true);
+    assert.match(
+      String(recordValue(approvedPolicyCommandResult.structuredContent, "result")),
+      /policy-command-ok/,
+    );
+
+    const policyBlockedCheck = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(607, "run_checks", {
+        workspaceId: policyWorkspaceId,
+        checks: ["check:blocked"],
+      }),
+      sessionId,
+    );
+    const policyBlockedCheckResult = await jsonRpcResult(policyBlockedCheck);
+    assert.equal(recordValue(policyBlockedCheckResult, "isError"), true);
+    assert.match(toolResultText(policyBlockedCheckResult), /not allowed: check:blocked/i);
+
+    const policyHookedCheck = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(6071, "run_checks", {
+        workspaceId: policyWorkspaceId,
+        checks: ["check:hooked"],
+      }),
+      sessionId,
+    );
+    const policyHookedCheckResult = await jsonRpcResult(policyHookedCheck);
+    assert.equal(recordValue(policyHookedCheckResult, "isError"), true);
+    assert.match(toolResultText(policyHookedCheckResult), /precheck:hooked/i);
+
+    const policyAllowedCheck = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(608, "run_checks", {
+        workspaceId: policyWorkspaceId,
+        checks: ["check:allowed"],
+      }),
+      sessionId,
+    );
+    const policyAllowedCheckResult = await jsonRpcResult(policyAllowedCheck);
+    assert.equal(recordValue(policyAllowedCheckResult.structuredContent, "approvalRequired"), true);
+    const policyApprovalRequests = arrayValue(
+      recordValue(policyAllowedCheckResult.structuredContent, "approvalRequests"),
+    );
+    const policyCheckToken = recordValue(policyApprovalRequests[0], "approvalToken");
+    assert.equal(typeof policyCheckToken, "string");
+
+    const policyApprovedCheck = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(609, "run_checks", {
+        workspaceId: policyWorkspaceId,
+        checks: ["check:allowed"],
+        approvals: [{ check: "check:allowed", approvalToken: policyCheckToken }],
+        yieldTimeMs: 5_000,
+      }),
+      sessionId,
+    );
+    const policyApprovedCheckResult = await jsonRpcResult(policyApprovedCheck);
+    assert.equal(recordValue(policyApprovedCheckResult.structuredContent, "commandApproved"), true);
+    assert.equal(
+      recordValue(recordValue(policyApprovedCheckResult.structuredContent, "checkSummary"), "passed"),
+      1,
+    );
+
+    const policySummary = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(610, "session_summary", {
+        workspaceId: policyWorkspaceId,
+        limit: 50,
+      }),
+      sessionId,
+    );
+    const policySummaryResult = await jsonRpcResult(policySummary);
+    const policySummaryStructured = recordValue(policySummaryResult, "structuredContent");
+    const policyAuditEvents = arrayValue(
+      recordValue(policySummaryStructured, "recentAuditEvents"),
+    );
+    assert.ok(
+      policyAuditEvents.some((event) =>
+        String(recordValue(event, "action")).startsWith("policy_block:")
+      ),
     );
   } finally {
     await stateless.close();
@@ -905,6 +1115,11 @@ function arrayValue(value: unknown): Record<string, unknown>[] {
 function recordValue(record: unknown, key: string): unknown {
   assert.ok(record && typeof record === "object" && !Array.isArray(record));
   return (record as Record<string, unknown>)[key];
+}
+
+function toolResultText(result: Record<string, unknown>): string {
+  const content = arrayValue(recordValue(result, "content"));
+  return content.map((block) => String(recordValue(block, "text") ?? "")).join("\n");
 }
 
 function hashToken(token: string): string {
