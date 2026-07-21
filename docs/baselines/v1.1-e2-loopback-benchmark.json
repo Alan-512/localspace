@@ -1,0 +1,267 @@
+{
+  "schemaVersion": 2,
+  "productBaselineVersion": "v1.0.6",
+  "productBaselineCommit": "1a4b0c2",
+  "captureCommit": "a9632ba",
+  "capturedAt": "2026-07-21T04:55:17.836Z",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "node": "v24.3.0",
+    "transport": "stateless",
+    "toolMode": "hybrid",
+    "widgets": "off",
+    "fixture": "temporary local Git repository"
+  },
+  "scope": {
+    "timing": "client-observed loopback round trip",
+    "includes": [
+      "HTTP",
+      "OAuth verification",
+      "stateless MCP server creation",
+      "tool execution",
+      "JSON response"
+    ],
+    "excludes": [
+      "ChatGPT model latency",
+      "public tunnel latency",
+      "browser UI rendering"
+    ]
+  },
+  "measurements": {
+    "initializeMs": 64.97,
+    "toolsListSequentialMs": [
+      24.22,
+      23.73,
+      33.12,
+      16.6,
+      20.01
+    ],
+    "toolsListSequentialSummary": {
+      "min": 16.6,
+      "median": 23.73,
+      "max": 33.12,
+      "mean": 23.54
+    },
+    "toolsListConcurrent8Ms": 108.05,
+    "openWorkspaceMs": 243.95,
+    "workspaceInfoMs": 163.78,
+    "readPackageMs": 25.04,
+    "grepExportMs": 50.22,
+    "projectMapMs": 30.43,
+    "processStartAMs": 48.78,
+    "processStartBMs": 48.5,
+    "processConcurrentPollMs": 531.77,
+    "sessionSummaryMs": 23.71
+  },
+  "serverObservedRequestMetrics": {
+    "totalRequests": 8,
+    "successfulRequests": 8,
+    "failedRequests": 0,
+    "statelessRequests": 8,
+    "statefulRequests": 0,
+    "averageTotalMs": 162.89,
+    "maxTotalMs": 510.52,
+    "averageRequestBytes": 188.75,
+    "averageResponseBytes": 848.25,
+    "phases": {
+      "auth": {
+        "averageMs": 0.22,
+        "maxMs": 0.28
+      },
+      "serverCreate": {
+        "averageMs": 5.93,
+        "maxMs": 8.39
+      },
+      "transportConnect": {
+        "averageMs": 0.01,
+        "maxMs": 0.02
+      },
+      "transportHandle": {
+        "averageMs": 156.66,
+        "maxMs": 505.2
+      },
+      "cleanup": {
+        "averageMs": 0.05,
+        "maxMs": 0.08
+      }
+    },
+    "rpcMethods": {
+      "tools/call": 8
+    },
+    "tools": {
+      "workspace_info": 1,
+      "read": 1,
+      "grep": 1,
+      "project_map": 1,
+      "exec_command": 2,
+      "write_stdin": 2
+    },
+    "recentRequests": [
+      {
+        "id": "request_49e75ae0-0986-4516-8eb5-d79c9589a1ce",
+        "time": "2026-07-21T04:55:17.019Z",
+        "requestId": "ef4a1920-c9dc-4611-a0ce-392e32a57649",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "workspace_info",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 153,
+        "responseBytes": 2444,
+        "authMs": 0.23,
+        "serverCreateMs": 6.54,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 147.34,
+        "cleanupMs": 0.05,
+        "totalMs": 154.2
+      },
+      {
+        "id": "request_667bc0ef-4201-4fed-8ded-aa5c4dc20cc9",
+        "time": "2026-07-21T04:55:17.045Z",
+        "requestId": "bc4aface-57f1-4772-a897-d0e2f98be995",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "read",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 165,
+        "responseBytes": 647,
+        "authMs": 0.27,
+        "serverCreateMs": 5.43,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 4.92,
+        "cleanupMs": 0.04,
+        "totalMs": 10.7
+      },
+      {
+        "id": "request_14da55ed-81d3-4851-95a1-3eb7e82f6bbe",
+        "time": "2026-07-21T04:55:17.095Z",
+        "requestId": "681ba68a-0d10-4c06-b3d7-8dc9aae7b15c",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "grep",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 175,
+        "responseBytes": 581,
+        "authMs": 0.23,
+        "serverCreateMs": 5.69,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 39.67,
+        "cleanupMs": 0.08,
+        "totalMs": 45.71
+      },
+      {
+        "id": "request_6075add4-1862-486f-8dbc-4e0cac5df1da",
+        "time": "2026-07-21T04:55:17.126Z",
+        "requestId": "a6c039c4-cb5e-494e-a8b9-a8d3d30c4f10",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "project_map",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 177,
+        "responseBytes": 610,
+        "authMs": 0.19,
+        "serverCreateMs": 8.39,
+        "transportConnectMs": 0.02,
+        "transportHandleMs": 5.72,
+        "cleanupMs": 0.03,
+        "totalMs": 14.37
+      },
+      {
+        "id": "request_dac49770-b282-4c18-9663-c7bad5688867",
+        "time": "2026-07-21T04:55:17.174Z",
+        "requestId": "db9a7fb2-23a9-40a6-9739-b81695bfbe2c",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "exec_command",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 237,
+        "responseBytes": 687,
+        "authMs": 0.21,
+        "serverCreateMs": 5.79,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 25.4,
+        "cleanupMs": 0.05,
+        "totalMs": 31.49
+      },
+      {
+        "id": "request_bb8b3b42-d3b0-4a07-b764-7b9dd87a7c6f",
+        "time": "2026-07-21T04:55:17.223Z",
+        "requestId": "c14af083-bddb-415b-b721-7fb717c9238e",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "exec_command",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 237,
+        "responseBytes": 687,
+        "authMs": 0.19,
+        "serverCreateMs": 5.52,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 27.34,
+        "cleanupMs": 0.04,
+        "totalMs": 33.12
+      },
+      {
+        "id": "request_006d4c1e-c918-4a05-95f3-9b76b8f4da4d",
+        "time": "2026-07-21T04:55:17.740Z",
+        "requestId": "3990cd2a-cedd-441d-909a-e9973935aef2",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "write_stdin",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 183,
+        "responseBytes": 565,
+        "authMs": 0.28,
+        "serverCreateMs": 4.99,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 497.65,
+        "cleanupMs": 0.05,
+        "totalMs": 503.02
+      },
+      {
+        "id": "request_948f6b9f-ce2c-4c49-b3f0-4f73f2cb0593",
+        "time": "2026-07-21T04:55:17.755Z",
+        "requestId": "a2e09305-b1ce-411f-bf4b-8c3b8e4d9a1c",
+        "transportMode": "stateless",
+        "httpMethod": "POST",
+        "rpcMethod": "tools/call",
+        "tool": "write_stdin",
+        "workspaceId": "ws_9e8a59e3-db88-43e3-a5e1-7082e3f0c741",
+        "status": 200,
+        "success": true,
+        "requestBytes": 183,
+        "responseBytes": 565,
+        "authMs": 0.18,
+        "serverCreateMs": 5.06,
+        "transportConnectMs": 0.01,
+        "transportHandleMs": 505.2,
+        "cleanupMs": 0.05,
+        "totalMs": 510.52
+      }
+    ]
+  },
+  "outcomes": {
+    "toolsListConcurrentRequests": 8,
+    "independentProcessesCompleted": 2
+  }
+}
