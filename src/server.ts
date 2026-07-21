@@ -65,6 +65,10 @@ import { createNextSteps, createReviewChecklist, createValidatePlan } from "./wo
 import { McpSessionRegistry, type McpSessionRegistryEvent } from "./mcp-session-registry.js";
 import { createWorkspaceAppResourceUri } from "./workspace-app-resource.js";
 import {
+  ToolActivityLogManager,
+  type ToolActivityInput,
+} from "./activity-log.js";
+import {
   toolAvailable,
   toolNames,
   toolSummary,
@@ -175,16 +179,9 @@ function toolWidgetDescriptorMeta(
   };
 }
 
-interface ToolLogFields {
-  tool: string;
-  workspaceId?: string;
-  path?: string;
-  workingDirectory?: string;
+interface ToolLogFields extends ToolActivityInput {
   command?: string;
   commandLength?: number;
-  success: boolean;
-  durationMs: number;
-  error?: string;
 }
 
 export function buildServerInstructions(
@@ -453,13 +450,39 @@ const sessionSummaryOutputSchema = structuredTextOutputSchema({
   totalEvents: z.number(),
   successfulEvents: z.number(),
   failedEvents: z.number(),
+  runningEvents: z.number(),
+  truncatedEvents: z.number(),
+  processPolls: z.number(),
+  averageDurationMs: z.number(),
+  maxDurationMs: z.number(),
+  averageQueuedMs: z.number(),
+  maxQueuedMs: z.number(),
   blockedEvents: z.number(),
   approvedEvents: z.number(),
+  durableAuditEvents: z.number(),
   tools: z.record(z.string(), z.number()),
+  categories: z.record(z.string(), z.number()),
+  concurrencyClasses: z.record(z.string(), z.number()),
+  toolStats: z.record(
+    z.string(),
+    z.object({
+      count: z.number(),
+      successful: z.number(),
+      failed: z.number(),
+      running: z.number(),
+      truncated: z.number(),
+      totalDurationMs: z.number(),
+      averageDurationMs: z.number(),
+      maxDurationMs: z.number(),
+      totalQueuedMs: z.number(),
+      maxQueuedMs: z.number(),
+    }),
+  ),
   paths: z.array(z.string()),
   commands: z.array(z.string()),
   risks: z.record(z.string(), z.number()),
   recentEvents: z.array(z.unknown()),
+  recentAuditEvents: z.array(z.unknown()),
 });
 
 const workflowCommandOutputSchema = z.object({
@@ -703,7 +726,7 @@ function requestLogFields(req: Request, config: ServerConfig): Record<string, un
   };
 }
 
-function logToolCall(config: ServerConfig, fields: ToolLogFields): void {
+function emitToolCallLog(config: ServerConfig, fields: ToolLogFields): void {
   if (!config.logging.toolCalls) return;
 
   const { command, ...safeFields } = fields;
@@ -728,13 +751,23 @@ function toolErrorPreview(content: ToolContent[]): string | undefined {
   return text.length > 240 ? `${text.slice(0, 237)}...` : text;
 }
 
-function logFailedToolResponse(
+function recordToolCall(
   config: ServerConfig,
+  activityLog: ToolActivityLogManager,
+  fields: ToolLogFields,
+): void {
+  activityLog.record(fields);
+  emitToolCallLog(config, fields);
+}
+
+function recordFailedToolResponse(
+  config: ServerConfig,
+  activityLog: ToolActivityLogManager,
   fields: Omit<ToolLogFields, "success" | "durationMs" | "error">,
   content: ToolContent[],
   startedAt: number,
 ): void {
-  logToolCall(config, {
+  recordToolCall(config, activityLog, {
     ...fields,
     success: false,
     durationMs: Math.round(performance.now() - startedAt),
@@ -1055,8 +1088,21 @@ function registerCodexProcessTools(
   workspaces: WorkspaceRegistry,
   processSessions: ProcessSessionManager,
   auditLog: AuditLogManager,
+  activityLog: ToolActivityLogManager,
   approvals: CommandApprovalManager,
 ): void {
+  const logToolCall = (currentConfig: ServerConfig, fields: ToolLogFields): void => {
+    recordToolCall(currentConfig, activityLog, fields);
+  };
+  const logFailedToolResponse = (
+    currentConfig: ServerConfig,
+    fields: Omit<ToolLogFields, "success" | "durationMs" | "error">,
+    content: ToolContent[],
+    startedAt: number,
+  ): void => {
+    recordFailedToolResponse(currentConfig, activityLog, fields, content, startedAt);
+  };
+
   registerAppTool(
     server,
     toolNames.execCommand,
@@ -1151,6 +1197,10 @@ function registerCodexProcessTools(
         commandLength: cmd.length,
         success: true,
         durationMs: Math.round(performance.now() - startedAt),
+        running: snapshot.running,
+        exitCode: snapshot.exitCode,
+        outputBytes: snapshot.output?.length ?? 0,
+        truncated: snapshot.outputTruncated,
       });
 
       auditLog.record({
@@ -1225,6 +1275,10 @@ function registerCodexProcessTools(
         workspaceId,
         success: true,
         durationMs: Math.round(performance.now() - startedAt),
+        running: snapshot.running,
+        exitCode: snapshot.exitCode,
+        outputBytes: snapshot.output?.length ?? 0,
+        truncated: snapshot.outputTruncated,
       });
 
       return processToolResponse("write_stdin", workspaceId, snapshot, {
@@ -1244,8 +1298,21 @@ function createMcpServer(
   reviewCheckpoints: ReturnType<typeof createReviewCheckpointManager>,
   processSessions: ProcessSessionManager,
   auditLog: AuditLogManager,
+  activityLog: ToolActivityLogManager,
   commandApprovals: CommandApprovalManager,
 ): McpServer {
+  const logToolCall = (currentConfig: ServerConfig, fields: ToolLogFields): void => {
+    recordToolCall(currentConfig, activityLog, fields);
+  };
+  const logFailedToolResponse = (
+    currentConfig: ServerConfig,
+    fields: Omit<ToolLogFields, "success" | "durationMs" | "error">,
+    content: ToolContent[],
+    startedAt: number,
+  ): void => {
+    recordFailedToolResponse(currentConfig, activityLog, fields, content, startedAt);
+  };
+
   const workspaceApp = getWorkspaceAppBuild();
   const server = new McpServer(
     {
@@ -1612,7 +1679,7 @@ function createMcpServer(
       description: toolSummary(toolNames.sessionSummary),
       inputSchema: {
         workspaceId: z.string().optional().describe("Optional workspace identifier returned by open_workspace. Omit to summarize all recent workspaces."),
-        limit: z.number().int().min(1).max(500).optional().describe("Maximum recent audit events to summarize. Defaults to 50."),
+        limit: z.number().int().min(1).max(500).optional().describe("Maximum recent activity and audit events to summarize. Defaults to 50."),
       },
       outputSchema: sessionSummaryOutputSchema,
       ...toolWidgetDescriptorMeta(config, "workspace"),
@@ -1621,7 +1688,23 @@ function createMcpServer(
     async ({ workspaceId, limit }) => {
       const startedAt = performance.now();
       if (workspaceId) workspaces.getWorkspace(workspaceId);
-      const data = auditLog.summarize({ workspaceId, limit });
+      const activity = activityLog.summarize({ workspaceId, limit });
+      const audit = auditLog.summarize({ workspaceId, limit });
+      const data = {
+        ...activity,
+        blockedEvents: audit.blockedEvents,
+        approvedEvents: audit.approvedEvents,
+        durableAuditEvents: audit.totalEvents,
+        paths: [...new Set([...activity.paths, ...audit.paths])].sort(),
+        commands: audit.commands,
+        risks: audit.risks,
+        recentAuditEvents: audit.recentEvents,
+        text: [
+          activity.text,
+          "",
+          audit.text.replace(/^Session summary/, "Durable audit summary"),
+        ].join("\n"),
+      };
       const content = [textBlock(data.text)];
 
       logToolCall(config, {
@@ -3347,6 +3430,7 @@ function createMcpServer(
       workspaces,
       processSessions,
       auditLog,
+      activityLog,
       commandApprovals,
     );
   }
@@ -3380,6 +3464,7 @@ export function createServer(config = loadConfig()): RunningServer {
   const reviewCheckpoints = createReviewCheckpointManager();
   const processSessions = new ProcessSessionManager({ shell: config.shell });
   const auditLog = new AuditLogManager(config.audit);
+  const activityLog = new ToolActivityLogManager(config.audit.maxMemoryEvents);
   const commandApprovals = new CommandApprovalManager();
 
   if (config.logging.trustProxy) {
@@ -3490,6 +3575,7 @@ export function createServer(config = loadConfig()): RunningServer {
           reviewCheckpoints,
           processSessions,
           auditLog,
+          activityLog,
           commandApprovals,
         );
 
@@ -3548,6 +3634,7 @@ export function createServer(config = loadConfig()): RunningServer {
           reviewCheckpoints,
           processSessions,
           auditLog,
+          activityLog,
           commandApprovals,
         );
         await server.connect(transport);

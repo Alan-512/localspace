@@ -175,11 +175,17 @@ and hooks, `.env` files, secret/token/private-key-like filenames, LocalSpace
 state/agent/worktree directories, home-directory roots, and platform system
 directories.
 
-Audit logging is enabled by default. It records recent events in memory for
-`session_summary` and appends JSONL records to `LOCALSPACE_AUDIT_LOG_PATH`,
-defaulting to `audit.jsonl` under the LocalSpace state directory. Use
-`LOCALSPACE_AUDIT_LOG=0` to disable it and
-`LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` to tune in-memory retention.
+LocalSpace keeps a bounded in-memory activity ring for `session_summary`. It
+records recent read, search, navigation, process, mutation, Git, workflow, and
+diagnostic tool calls without persisting normal read activity. The ring capacity
+uses `LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` and is lost when the service restarts.
+
+Durable audit logging is enabled by default for security-relevant events such as
+file mutations, shell commands, Git writes, approvals, and blocked actions. It
+appends JSONL records to `LOCALSPACE_AUDIT_LOG_PATH`, defaulting to `audit.jsonl`
+under the LocalSpace state directory. `LOCALSPACE_AUDIT_LOG=0` disables durable
+JSONL audit persistence; the bounded in-memory activity summary remains
+available.
 
 Workflow helper tools are exposed only in the legacy `minimal` and `full`
 surfaces. They are read-only. `next_steps` recommends the next action,

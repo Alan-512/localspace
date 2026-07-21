@@ -238,7 +238,8 @@ In the default `hybrid` mode, ChatGPT can:
 - review changes with `changes`, `git_status`, `git_diff`, and `git_log`
 - stage and commit explicit files with `git_add` and `git_commit` when the user
   asks for it
-- summarize recent audited activity with `session_summary`
+- summarize recent in-memory tool activity and durable security audit events with
+  `session_summary`
 
 Longer validation, review, release, and handoff guidance is progressively loaded
 from the built-in Skills. The legacy `minimal` and `full` surfaces retain the

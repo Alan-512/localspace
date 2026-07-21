@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
@@ -15,6 +15,7 @@ const accessToken = "restart-test-access-token";
 const refreshToken = "restart-test-refresh-token";
 
 try {
+  await writeFile(join(root, "activity.txt"), "activity baseline\n", "utf8");
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
 
@@ -196,6 +197,36 @@ try {
     const workspaceId = recordValue(openWorkspaceResult.structuredContent, "workspaceId");
     assert.equal(typeof workspaceId, "string");
 
+    const readActivity = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(23, "read", {
+        workspaceId,
+        path: "activity.txt",
+      }),
+      sessionId,
+    );
+    assert.equal(readActivity.status, 200);
+    await jsonRpcResult(readActivity);
+
+    const sessionSummary = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(24, "session_summary", {
+        workspaceId,
+        limit: 50,
+      }),
+      sessionId,
+    );
+    assert.equal(sessionSummary.status, 200);
+    const sessionSummaryResult = await jsonRpcResult(sessionSummary);
+    const sessionSummaryStructured = recordValue(sessionSummaryResult, "structuredContent");
+    assert.equal(recordValue(sessionSummaryStructured, "totalEvents"), 2);
+    assert.equal(recordValue(recordValue(sessionSummaryStructured, "tools"), "read"), 1);
+    assert.equal(recordValue(sessionSummaryStructured, "durableAuditEvents"), 1);
+    const durableAudit = await readFile(config.audit.path, "utf8");
+    assert.doesNotMatch(durableAudit, /"tool":"read"/);
+
     const dangerousCommand = "git reset --hard HEAD";
     const blockedCommand = await mcpRequest(
       stateless.baseUrl,
@@ -301,7 +332,7 @@ function testConfig(root: string): ServerConfig {
       trustProxy: false,
     },
     audit: {
-      enabled: false,
+      enabled: true,
       path: join(stateDir, "audit.jsonl"),
       maxMemoryEvents: 10,
     },
