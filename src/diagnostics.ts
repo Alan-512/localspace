@@ -42,6 +42,7 @@ export interface DoctorReportData {
     skillsEnabled: boolean;
     configuredShell?: string;
     mcpSessions: ServerConfig["mcpSessions"];
+    concurrency: ServerConfig["concurrency"];
   };
   runtime: {
     platform: NodeJS.Platform;
@@ -118,6 +119,7 @@ export async function generateDoctorReportData(
       skillsEnabled: config.skillsEnabled,
       configuredShell: config.shell,
       mcpSessions: config.mcpSessions,
+      concurrency: config.concurrency,
     },
     runtime: {
       platform: process.platform,
@@ -154,6 +156,11 @@ function formatDoctorReport(data: DoctorReportData): string {
   lines.push(`- MCP session idle TTL: ${data.configuration.mcpSessions.idleTtlMs} ms`);
   lines.push(`- MCP session cleanup interval: ${data.configuration.mcpSessions.cleanupIntervalMs} ms`);
   lines.push(`- MCP max sessions: ${data.configuration.mcpSessions.maxSessions}`);
+  lines.push(`- max concurrent tool calls: ${data.configuration.concurrency.maxConcurrentToolCalls}`);
+  lines.push(`- max concurrent scans: ${data.configuration.concurrency.maxConcurrentScans}`);
+  lines.push(`- max concurrent processes: ${data.configuration.concurrency.maxConcurrentProcesses}`);
+  lines.push(`- max workspace processes: ${data.configuration.concurrency.maxWorkspaceProcesses}`);
+  lines.push(`- tool queue timeout: ${data.configuration.concurrency.queueTimeoutMs} ms`);
   lines.push("");
 
   lines.push("Runtime:");

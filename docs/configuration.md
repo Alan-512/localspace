@@ -81,6 +81,40 @@ session cap is exceeded, the least recently used session is removed first. MCP
 clients can reconnect and call `open_workspace` again if they try to use a
 session that has already expired.
 
+## Tool Concurrency
+
+LocalSpace applies bounded concurrency before invoking registered tools. The
+defaults permit parallel read-only work while preserving deterministic mutation,
+Git, and process-session behavior.
+
+| Variable | Default |
+| --- | --- |
+| `LOCALSPACE_MAX_CONCURRENT_TOOL_CALLS` | `8` |
+| `LOCALSPACE_MAX_CONCURRENT_SCANS` | `2` |
+| `LOCALSPACE_MAX_CONCURRENT_PROCESSES` | `4` |
+| `LOCALSPACE_MAX_WORKSPACE_PROCESSES` | `2` |
+| `LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS` | `120000` |
+
+The scheduler uses the concurrency class stored in `src/tool-catalog.ts`:
+
+- shared reads may run together for the same workspace;
+- heavy TypeScript/JavaScript scans also consume the global scan limit;
+- LocalSpace file mutations take an exclusive workspace lock;
+- Git writes take a Git-root mutex before the exclusive workspace lock;
+- `write_stdin` calls for the same process session are serialized;
+- worktree creation uses a global exclusive execution lock;
+- process permits remain held until the child process exits, not merely until
+  `exec_command` returns a session ID.
+
+`exec_command` remains an open-world command surface. Concurrency limits prevent
+unbounded process creation but cannot prove that two arbitrary commands do not
+write the same generated file, database, cache, or port. Use conservative
+workspace process limits and only run independent commands in parallel.
+
+Queue waits are bounded by `LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS`. Tool activity and
+process results expose `queuedMs`; a timeout fails the waiting call without
+executing its operation.
+
 ## OAuth
 
 LocalSpace uses a single-user OAuth approval flow.

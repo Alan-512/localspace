@@ -44,6 +44,27 @@ assert.deepEqual(loadConfig(baseEnv).mcpSessions, {
   cleanupIntervalMs: 60000,
   maxSessions: 128,
 });
+assert.deepEqual(loadConfig(baseEnv).concurrency, {
+  maxConcurrentToolCalls: 8,
+  maxConcurrentScans: 2,
+  maxConcurrentProcesses: 4,
+  maxWorkspaceProcesses: 2,
+  queueTimeoutMs: 120000,
+});
+assert.deepEqual(loadConfig({
+  ...baseEnv,
+  LOCALSPACE_MAX_CONCURRENT_TOOL_CALLS: "12",
+  LOCALSPACE_MAX_CONCURRENT_SCANS: "3",
+  LOCALSPACE_MAX_CONCURRENT_PROCESSES: "6",
+  LOCALSPACE_MAX_WORKSPACE_PROCESSES: "2",
+  LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS: "90000",
+}).concurrency, {
+  maxConcurrentToolCalls: 12,
+  maxConcurrentScans: 3,
+  maxConcurrentProcesses: 6,
+  maxWorkspaceProcesses: 2,
+  queueTimeoutMs: 90000,
+});
 assert.deepEqual(loadConfig({
   ...baseEnv,
   LOCALSPACE_MCP_SESSION_IDLE_TTL_MS: "120000",
@@ -82,6 +103,14 @@ assert.throws(
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_MCP_MAX_SESSIONS: "0" }),
   /Invalid LOCALSPACE_MCP_MAX_SESSIONS: 0/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, LOCALSPACE_MAX_CONCURRENT_TOOL_CALLS: "0" }),
+  /Invalid LOCALSPACE_MAX_CONCURRENT_TOOL_CALLS: 0/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS: "0" }),
+  /Invalid LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS: 0/,
 );
 
 assert.deepEqual(loadConfig(baseEnv).logging, {

@@ -46,7 +46,8 @@ experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
 | `git_add` | `isRepository`, `paths[]`, `stagedCount`, `truncated` |
 | `git_commit` | `isRepository`, `message`, `committed`, `truncated` |
 | `git_log` | `isRepository`, `limit`, `commits[]`, `truncated` |
-| `exec_command` | `running`, `exitCode`, `wallTimeMs`, `outputTruncated`, `commandRisk`, `commandSafetyFindings[]`, `blocked`, `approvalRequired`, `approvalToken`, `approvalTokenExpiresAt`, `commandApproved` |
+| `exec_command` | `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated`, `commandRisk`, `commandSafetyFindings[]`, `blocked`, `approvalRequired`, `approvalToken`, `approvalTokenExpiresAt`, `commandApproved` |
+| `write_stdin` | `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `outputTruncated` |
 
 ## Convention
 

@@ -214,3 +214,80 @@ try {
 } finally {
   manager.shutdown();
 }
+
+const limitedManager = new ProcessSessionManager({
+  maxConcurrentProcesses: 1,
+  maxWorkspaceProcesses: 1,
+  queueTimeoutMs: 2_000,
+  completedSessionTtlMs: 1_000,
+});
+try {
+  const firstLimited = await limitedManager.start({
+    workspaceId: "workspace-limit-a",
+    cwd: process.cwd(),
+    command: `${node} -e "setTimeout(() => console.log('limit-first'), 150)"`,
+    yieldTimeMs: 5,
+  });
+  assert.equal(firstLimited.running, true);
+
+  let secondLimitedResolved = false;
+  const secondLimitedPromise = limitedManager.start({
+    workspaceId: "workspace-limit-b",
+    cwd: process.cwd(),
+    command: `${node} -e "console.log('limit-second')"`,
+    yieldTimeMs: 2_000,
+  }).then((snapshot) => {
+    secondLimitedResolved = true;
+    return snapshot;
+  });
+  await delay(30);
+  assert.equal(secondLimitedResolved, false);
+  const secondLimited = await secondLimitedPromise;
+  assert.equal(secondLimited.running, false);
+  assert.match(secondLimited.output, /limit-second/);
+  assert.ok(secondLimited.queuedMs > 0);
+} finally {
+  limitedManager.shutdown();
+}
+
+const serializedManager = new ProcessSessionManager({
+  maxConcurrentProcesses: 2,
+  maxWorkspaceProcesses: 2,
+  queueTimeoutMs: 2_000,
+  completedSessionTtlMs: 1_000,
+});
+try {
+  const serialized = await serializedManager.start({
+    workspaceId: "workspace-session-lock",
+    cwd: process.cwd(),
+    command: `${node} -e "setTimeout(() => console.log('phase-one'), 60); setTimeout(() => console.log('phase-two'), 180); setTimeout(() => process.exit(0), 260)"`,
+    yieldTimeMs: 5,
+  });
+  assert.equal(serialized.running, true);
+  assert.ok(serialized.sessionId);
+
+  const firstPollPromise = serializedManager.write({
+    workspaceId: "workspace-session-lock",
+    sessionId: serialized.sessionId,
+    yieldTimeMs: 120,
+  });
+  await delay(10);
+  const secondPollPromise = serializedManager.write({
+    workspaceId: "workspace-session-lock",
+    sessionId: serialized.sessionId,
+    yieldTimeMs: 500,
+  });
+  const firstPoll = await firstPollPromise;
+  const secondPoll = await secondPollPromise;
+  const combinedPollOutput = `${firstPoll.output}\n${secondPoll.output}`;
+  assert.match(combinedPollOutput, /phase-one/);
+  assert.match(combinedPollOutput, /phase-two/);
+  assert.ok(secondPoll.queuedMs > 0);
+  assert.equal(secondPoll.running, false);
+} finally {
+  serializedManager.shutdown();
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}

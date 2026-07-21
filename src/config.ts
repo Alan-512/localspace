@@ -16,8 +16,22 @@ import {
 export type ToolMode = "minimal" | "full" | "codex" | "hybrid";
 export type WidgetMode = "off" | "changes" | "full";
 export type McpTransportMode = "stateful" | "stateless";
+export interface ToolConcurrencyConfig {
+  maxConcurrentToolCalls: number;
+  maxConcurrentScans: number;
+  maxConcurrentProcesses: number;
+  maxWorkspaceProcesses: number;
+  queueTimeoutMs: number;
+}
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 const DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const DEFAULT_TOOL_CONCURRENCY: ToolConcurrencyConfig = {
+  maxConcurrentToolCalls: 8,
+  maxConcurrentScans: 2,
+  maxConcurrentProcesses: 4,
+  maxWorkspaceProcesses: 2,
+  queueTimeoutMs: 120_000,
+};
 
 export interface ServerConfig {
   host: string;
@@ -38,6 +52,7 @@ export interface ServerConfig {
   logging: LoggingConfig;
   audit: AuditLogConfig;
   mcpSessions: McpSessionConfig;
+  concurrency: ToolConcurrencyConfig;
 }
 
 function parsePort(value: string | number | undefined): number {
@@ -191,6 +206,36 @@ function parseMcpSessionConfig(env: NodeJS.ProcessEnv): McpSessionConfig {
   };
 }
 
+function parseToolConcurrencyConfig(env: NodeJS.ProcessEnv): ToolConcurrencyConfig {
+  return {
+    maxConcurrentToolCalls: parsePositiveInteger(
+      env.LOCALSPACE_MAX_CONCURRENT_TOOL_CALLS,
+      DEFAULT_TOOL_CONCURRENCY.maxConcurrentToolCalls,
+      "LOCALSPACE_MAX_CONCURRENT_TOOL_CALLS",
+    ),
+    maxConcurrentScans: parsePositiveInteger(
+      env.LOCALSPACE_MAX_CONCURRENT_SCANS,
+      DEFAULT_TOOL_CONCURRENCY.maxConcurrentScans,
+      "LOCALSPACE_MAX_CONCURRENT_SCANS",
+    ),
+    maxConcurrentProcesses: parsePositiveInteger(
+      env.LOCALSPACE_MAX_CONCURRENT_PROCESSES,
+      DEFAULT_TOOL_CONCURRENCY.maxConcurrentProcesses,
+      "LOCALSPACE_MAX_CONCURRENT_PROCESSES",
+    ),
+    maxWorkspaceProcesses: parsePositiveInteger(
+      env.LOCALSPACE_MAX_WORKSPACE_PROCESSES,
+      DEFAULT_TOOL_CONCURRENCY.maxWorkspaceProcesses,
+      "LOCALSPACE_MAX_WORKSPACE_PROCESSES",
+    ),
+    queueTimeoutMs: parsePositiveInteger(
+      env.LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS,
+      DEFAULT_TOOL_CONCURRENCY.queueTimeoutMs,
+      "LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS",
+    ),
+  };
+}
+
 function parseMcpTransportMode(value: string | undefined): McpTransportMode {
   if (!value || value === "stateless") return "stateless";
   if (value === "stateful") return "stateful";
@@ -296,6 +341,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     logging: parseLoggingConfig(env),
     audit: parseAuditConfig(env, stateDir),
     mcpSessions: parseMcpSessionConfig(env),
+    concurrency: parseToolConcurrencyConfig(env),
   };
 }
 

@@ -243,6 +243,13 @@ function benchmarkConfig(root) {
       cleanupIntervalMs: 0,
       maxSessions: 16,
     },
+    concurrency: {
+      maxConcurrentToolCalls: 8,
+      maxConcurrentScans: 2,
+      maxConcurrentProcesses: 4,
+      maxWorkspaceProcesses: 2,
+      queueTimeoutMs: 120_000,
+    },
   };
 }
 

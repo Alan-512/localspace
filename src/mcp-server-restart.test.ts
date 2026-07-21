@@ -302,6 +302,97 @@ try {
   } finally {
     await stateless.close();
   }
+
+  const boundedProcesses = await startServer({
+    ...config,
+    toolMode: "hybrid",
+    mcpTransportMode: "stateless",
+    concurrency: {
+      ...config.concurrency,
+      maxConcurrentProcesses: 1,
+      maxWorkspaceProcesses: 1,
+    },
+  });
+  try {
+    await writeFile(join(root, "concurrent-patch.txt"), "base\n", "utf8");
+    const boundedWorkspaceResponse = await mcpRequest(
+      boundedProcesses.baseUrl,
+      accessToken,
+      callToolRequest(40, "open_workspace", { path: root }),
+    );
+    const boundedWorkspaceResult = await jsonRpcResult(boundedWorkspaceResponse);
+    const boundedWorkspaceId = recordValue(boundedWorkspaceResult.structuredContent, "workspaceId");
+    assert.equal(typeof boundedWorkspaceId, "string");
+
+    const concurrentPatchResults = await Promise.all([
+      mcpRequest(
+        boundedProcesses.baseUrl,
+        accessToken,
+        callToolRequest(43, "apply_patch", {
+          workspaceId: boundedWorkspaceId,
+          patch: `*** Begin Patch\n*** Update File: concurrent-patch.txt\n@@\n-base\n+first\n*** End Patch`,
+        }),
+      ),
+      mcpRequest(
+        boundedProcesses.baseUrl,
+        accessToken,
+        callToolRequest(44, "apply_patch", {
+          workspaceId: boundedWorkspaceId,
+          patch: `*** Begin Patch\n*** Update File: concurrent-patch.txt\n@@\n-base\n+second\n*** End Patch`,
+        }),
+      ),
+    ]);
+    const concurrentPatchToolResults = await Promise.all(
+      concurrentPatchResults.map((response) => jsonRpcResult(response)),
+    );
+    assert.equal(
+      concurrentPatchToolResults.filter((result) => recordValue(result, "isError") === true).length,
+      1,
+    );
+    assert.match(
+      await readFile(join(root, "concurrent-patch.txt"), "utf8"),
+      /^(first|second)\n$/,
+    );
+
+    const firstBoundedProcess = await mcpRequest(
+      boundedProcesses.baseUrl,
+      accessToken,
+      callToolRequest(41, "exec_command", {
+        workspaceId: boundedWorkspaceId,
+        cmd: `node -e "setTimeout(() => console.log('bounded-first'), 300)"`,
+        yieldTimeMs: 0,
+      }),
+    );
+    const firstBoundedResult = await jsonRpcResult(firstBoundedProcess);
+    assert.equal(recordValue(firstBoundedResult.structuredContent, "running"), true);
+
+    let secondBoundedResolved = false;
+    const secondBoundedPromise = mcpRequest(
+      boundedProcesses.baseUrl,
+      accessToken,
+      callToolRequest(42, "exec_command", {
+        workspaceId: boundedWorkspaceId,
+        cmd: `node -e "console.log('bounded-second')"`,
+        yieldTimeMs: 2_000,
+      }),
+    ).then((response) => {
+      secondBoundedResolved = true;
+      return response;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(secondBoundedResolved, false);
+
+    const secondBoundedResponse = await secondBoundedPromise;
+    const secondBoundedResult = await jsonRpcResult(secondBoundedResponse);
+    assert.equal(recordValue(secondBoundedResult.structuredContent, "running"), false);
+    assert.match(
+      String(recordValue(secondBoundedResult.structuredContent, "result")),
+      /bounded-second/,
+    );
+    assert.ok(Number(recordValue(secondBoundedResult.structuredContent, "queuedMs")) > 0);
+  } finally {
+    await boundedProcesses.close();
+  }
 } finally {
   await rm(root, { recursive: true, force: true });
 }
@@ -347,6 +438,13 @@ function testConfig(root: string): ServerConfig {
       idleTtlMs: 60_000,
       cleanupIntervalMs: 0,
       maxSessions: 4,
+    },
+    concurrency: {
+      maxConcurrentToolCalls: 8,
+      maxConcurrentScans: 2,
+      maxConcurrentProcesses: 4,
+      maxWorkspaceProcesses: 2,
+      queueTimeoutMs: 120_000,
     },
   };
 }

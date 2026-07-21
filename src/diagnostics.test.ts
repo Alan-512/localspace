@@ -126,6 +126,13 @@ function testConfig(root: string): ServerConfig {
       cleanupIntervalMs: 60000,
       maxSessions: 128,
     },
+    concurrency: {
+      maxConcurrentToolCalls: 8,
+      maxConcurrentScans: 2,
+      maxConcurrentProcesses: 4,
+      maxWorkspaceProcesses: 2,
+      queueTimeoutMs: 120000,
+    },
   };
 }
 

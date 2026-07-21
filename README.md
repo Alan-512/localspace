@@ -56,7 +56,7 @@ and inspectable.
   Legacy `minimal` and `full` modes also expose read-only workflow helper tools.
 - **Safety rails**: use filesystem allowlists, OAuth owner approval, Host header
   checks, sensitive-path protection, command risk warnings, danger-command
-  approval tokens, and audit logs.
+  approval tokens, bounded tool/process concurrency, and audit logs.
 
 LocalSpace does **not** replace your judgment. Shell access is intentionally
 powerful, so treat a connected MCP client like a trusted coding partner with

@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
 import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  AsyncSemaphore,
+  KeyedMutex,
+  KeyedResourceMap,
+  type AcquiredPermit,
+} from "./concurrency.js";
 
 const DEFAULT_EXEC_YIELD_MS = 10_000;
 const DEFAULT_INTERACTIVE_YIELD_MS = 250;
@@ -11,6 +17,9 @@ const DEFAULT_BUFFER_CHARACTERS = 1_000_000;
 const COMPLETED_SESSION_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_COLUMNS = 80;
 const DEFAULT_ROWS = 24;
+const DEFAULT_MAX_CONCURRENT_PROCESSES = 4;
+const DEFAULT_MAX_WORKSPACE_PROCESSES = 2;
+const DEFAULT_PROCESS_QUEUE_TIMEOUT_MS = 120_000;
 
 export interface StartCommandInput {
   workspaceId: string;
@@ -41,6 +50,7 @@ export interface ProcessSnapshot {
   exitCode?: number;
   signal?: string;
   wallTimeMs: number;
+  queuedMs: number;
 }
 
 interface ManagedProcess {
@@ -63,12 +73,24 @@ interface ProcessSession {
   exitPromise: Promise<void>;
   resolveExit: () => void;
   cleanupTimer?: NodeJS.Timeout;
+  processPermits?: ProcessPermits;
+}
+
+interface ProcessPermits {
+  global: AcquiredPermit;
+  workspace: AcquiredPermit;
+  releaseWorkspaceResource: () => void;
+  queuedMs: number;
+  released: boolean;
 }
 
 interface ProcessSessionManagerOptions {
   maxBufferCharacters?: number;
   completedSessionTtlMs?: number;
   shell?: string;
+  maxConcurrentProcesses?: number;
+  maxWorkspaceProcesses?: number;
+  queueTimeoutMs?: number;
 }
 
 function boundedInteger(value: number | undefined, fallback: number, maximum: number): number {
@@ -211,16 +233,29 @@ export class ProcessSessionManager {
   private readonly maxBufferCharacters: number;
   private readonly completedSessionTtlMs: number;
   private readonly shell?: string;
+  private readonly globalProcesses: AsyncSemaphore;
+  private readonly workspaceProcesses: KeyedResourceMap<AsyncSemaphore>;
+  private readonly sessionInteractions = new KeyedMutex();
+  private readonly queueTimeoutMs: number;
   private nextSessionId = 1;
 
   constructor(options: ProcessSessionManagerOptions = {}) {
     this.maxBufferCharacters = options.maxBufferCharacters ?? DEFAULT_BUFFER_CHARACTERS;
     this.completedSessionTtlMs = options.completedSessionTtlMs ?? COMPLETED_SESSION_TTL_MS;
     this.shell = options.shell;
+    const maxConcurrentProcesses = options.maxConcurrentProcesses ?? DEFAULT_MAX_CONCURRENT_PROCESSES;
+    const maxWorkspaceProcesses = options.maxWorkspaceProcesses ?? DEFAULT_MAX_WORKSPACE_PROCESSES;
+    this.globalProcesses = new AsyncSemaphore(maxConcurrentProcesses);
+    this.workspaceProcesses = new KeyedResourceMap(
+      () => new AsyncSemaphore(maxWorkspaceProcesses),
+    );
+    this.queueTimeoutMs = options.queueTimeoutMs ?? DEFAULT_PROCESS_QUEUE_TIMEOUT_MS;
   }
 
   async start(input: StartCommandInput): Promise<ProcessSnapshot> {
+    const processPermits = await this.acquireProcessPermits(input.workspaceId);
     const session = this.createSession(input);
+    session.processPermits = processPermits;
     this.sessions.set(session.id, session);
 
     try {
@@ -228,18 +263,31 @@ export class ProcessSessionManager {
       else this.startPipe(session, input);
     } catch (error) {
       this.sessions.delete(session.id);
+      this.releaseProcessPermits(session);
       throw error;
     }
 
     const yieldTimeMs = boundedInteger(input.yieldTimeMs, DEFAULT_EXEC_YIELD_MS, MAX_COMMAND_YIELD_MS);
     await this.waitForExit(session, yieldTimeMs);
 
-    const snapshot = this.consume(session, input.maxOutputTokens);
+    const snapshot = this.consume(session, input.maxOutputTokens, processPermits.queuedMs);
     if (!session.running) this.removeSession(session.id);
     return snapshot;
   }
 
   async write(input: WriteStdinInput): Promise<ProcessSnapshot> {
+    const interactionPermit = await this.sessionInteractions.acquire(
+      `${input.workspaceId}:${input.sessionId}`,
+      { timeoutMs: this.queueTimeoutMs },
+    );
+    try {
+      return await this.writeLocked(input, interactionPermit.queuedMs);
+    } finally {
+      interactionPermit.release();
+    }
+  }
+
+  private async writeLocked(input: WriteStdinInput, queuedMs: number): Promise<ProcessSnapshot> {
     const session = this.getOwnedSession(input.workspaceId, input.sessionId);
     const chars = input.chars ?? "";
     const interactionRequested =
@@ -268,7 +316,7 @@ export class ProcessSessionManager {
       await this.waitForExit(session, yieldTimeMs);
     }
 
-    const snapshot = this.consume(session, input.maxOutputTokens);
+    const snapshot = this.consume(session, input.maxOutputTokens, queuedMs);
     if (!session.running) this.removeSession(session.id);
     return snapshot;
   }
@@ -282,6 +330,7 @@ export class ProcessSessionManager {
     for (const session of this.sessions.values()) {
       if (session.cleanupTimer) clearTimeout(session.cleanupTimer);
       if (session.running) session.process?.kill("SIGTERM");
+      this.releaseProcessPermits(session);
     }
     this.sessions.clear();
   }
@@ -388,6 +437,7 @@ export class ProcessSessionManager {
     session.running = false;
     session.exitCode = exitCode;
     session.signal = signal;
+    this.releaseProcessPermits(session);
     session.resolveExit();
     session.cleanupTimer = setTimeout(
       () => this.sessions.delete(session.id),
@@ -400,7 +450,11 @@ export class ProcessSessionManager {
     session.buffer.append(output);
   }
 
-  private consume(session: ProcessSession, maxOutputTokens?: number): ProcessSnapshot {
+  private consume(
+    session: ProcessSession,
+    maxOutputTokens?: number,
+    queuedMs = 0,
+  ): ProcessSnapshot {
     const limit = boundedInteger(maxOutputTokens, DEFAULT_MAX_OUTPUT_TOKENS, 100_000);
     const maxCharacters = Math.max(256, limit * 4);
     const buffered = session.buffer.drain(maxCharacters);
@@ -413,7 +467,42 @@ export class ProcessSessionManager {
       exitCode: session.exitCode,
       signal: session.signal,
       wallTimeMs: Date.now() - session.startedAt,
+      queuedMs,
     };
+  }
+
+  private async acquireProcessPermits(workspaceId: string): Promise<ProcessPermits> {
+    const startedAt = performance.now();
+    const global = await this.globalProcesses.acquire({ timeoutMs: this.queueTimeoutMs });
+    const workspaceEntry = this.workspaceProcesses.acquire(workspaceId);
+    try {
+      const elapsed = performance.now() - startedAt;
+      const timeoutMs = Math.max(0, this.queueTimeoutMs - elapsed);
+      if (timeoutMs <= 0) {
+        throw new Error(`Process concurrency wait timed out after ${this.queueTimeoutMs} ms.`);
+      }
+      const workspace = await workspaceEntry.resource.acquire({ timeoutMs });
+      return {
+        global,
+        workspace,
+        releaseWorkspaceResource: workspaceEntry.release,
+        queuedMs: roundQueueMs(global.queuedMs + workspace.queuedMs),
+        released: false,
+      };
+    } catch (error) {
+      workspaceEntry.release();
+      global.release();
+      throw error;
+    }
+  }
+
+  private releaseProcessPermits(session: ProcessSession): void {
+    const permits = session.processPermits;
+    if (!permits || permits.released) return;
+    permits.released = true;
+    permits.workspace.release();
+    permits.releaseWorkspaceResource();
+    permits.global.release();
   }
 
   private getOwnedSession(workspaceId: string, sessionId: number): ProcessSession {
@@ -435,4 +524,8 @@ export class ProcessSessionManager {
 function shellEnvironment(shell: string | undefined): NodeJS.ProcessEnv {
   if (!shell) return process.env;
   return { ...process.env, LOCALSPACE_SHELL: shell };
+}
+
+function roundQueueMs(value: number): number {
+  return Math.round(value * 100) / 100;
 }

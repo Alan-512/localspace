@@ -76,6 +76,7 @@ import {
   toolSummary,
   type ToolName,
 } from "./tool-catalog.js";
+import { ToolConcurrencyScheduler } from "./tool-concurrency.js";
 
 type Transport = StreamableHTTPServerTransport;
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
@@ -188,6 +189,7 @@ interface ToolLogFields extends ToolActivityInput {
 
 interface ToolInvocationContext {
   activityId: string;
+  queuedMs: number;
 }
 
 const toolInvocationContext = new AsyncLocalStorage<ToolInvocationContext>();
@@ -436,6 +438,18 @@ const doctorStructuredOutputSchema = structuredTextOutputSchema({
     agentDir: z.string(),
     skillsEnabled: z.boolean(),
     configuredShell: z.string().optional(),
+    mcpSessions: z.object({
+      idleTtlMs: z.number(),
+      cleanupIntervalMs: z.number(),
+      maxSessions: z.number(),
+    }),
+    concurrency: z.object({
+      maxConcurrentToolCalls: z.number(),
+      maxConcurrentScans: z.number(),
+      maxConcurrentProcesses: z.number(),
+      maxWorkspaceProcesses: z.number(),
+      queueTimeoutMs: z.number(),
+    }),
   }),
   runtime: z.object({
     platform: z.string(),
@@ -828,6 +842,9 @@ function recordToolCall(
   activityLog.record({
     ...fields,
     activityId: toolInvocationContext.getStore()?.activityId,
+    queuedMs: roundMetric(
+      (fields.queuedMs ?? 0) + (toolInvocationContext.getStore()?.queuedMs ?? 0),
+    ),
   });
   emitToolCallLog(config, fields);
 }
@@ -835,6 +852,7 @@ function recordToolCall(
 function installMeasuredToolRegistration(
   server: McpServer,
   activityLog: ToolActivityLogManager,
+  concurrency: ToolConcurrencyScheduler,
 ): void {
   const mutableServer = server as unknown as {
     registerTool: (...args: unknown[]) => unknown;
@@ -854,10 +872,43 @@ function installMeasuredToolRegistration(
       const activityId = `activity_${randomUUID()}`;
       const startedAt = performance.now();
       const workspaceId = toolWorkspaceId(args[0]);
-      return toolInvocationContext.run({ activityId }, async () => {
+      let concurrencyPermit: Awaited<ReturnType<ToolConcurrencyScheduler["acquire"]>> | undefined;
+      let queuedMs = 0;
+      try {
+        concurrencyPermit = await concurrency.acquire(name as ToolName, args[0], {
+          signal: toolAbortSignal(args[1]),
+        });
+        queuedMs = concurrencyPermit.queuedMs;
+      } catch (error) {
+        activityLog.record({
+          activityId,
+          tool: name,
+          workspaceId,
+          success: false,
+          durationMs: Math.round(performance.now() - startedAt),
+          queuedMs: Math.round((performance.now() - startedAt) * 100) / 100,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+
+      try {
+        return await toolInvocationContext.run({ activityId, queuedMs }, async () => {
         try {
           const result = await (callback as (...callbackArgs: unknown[]) => unknown)(...args);
-          activityLog.updateResult(activityId, toolResultMetrics(result));
+          const metrics = toolResultMetrics(result);
+          const updated = activityLog.updateResult(activityId, metrics);
+          if (!updated) {
+            activityLog.record({
+              activityId,
+              tool: name,
+              workspaceId,
+              success: true,
+              durationMs: Math.round(performance.now() - startedAt - queuedMs),
+              queuedMs,
+              ...metrics,
+            });
+          }
           return result;
         } catch (error) {
           const updated = activityLog.updateResult(activityId, {});
@@ -867,17 +918,33 @@ function installMeasuredToolRegistration(
               tool: name,
               workspaceId,
               success: false,
-              durationMs: Math.round(performance.now() - startedAt),
+              durationMs: Math.round(performance.now() - startedAt - queuedMs),
+              queuedMs,
               error: error instanceof Error ? error.message : String(error),
             });
           }
           throw error;
         }
       });
+      } finally {
+        concurrencyPermit.release();
+      }
     };
 
     return originalRegisterTool(name, config, measuredCallback);
   };
+}
+
+function toolAbortSignal(extra: unknown): AbortSignal | undefined {
+  if (!extra || typeof extra !== "object" || Array.isArray(extra)) return undefined;
+  const signal = (extra as Record<string, unknown>).signal;
+  if (!signal || typeof signal !== "object") return undefined;
+  const candidate = signal as Partial<AbortSignal>;
+  return typeof candidate.aborted === "boolean"
+    && typeof candidate.addEventListener === "function"
+    && typeof candidate.removeEventListener === "function"
+    ? signal as AbortSignal
+    : undefined;
 }
 
 function toolWorkspaceId(input: unknown): string | undefined {
@@ -907,6 +974,10 @@ function serializedByteLength(value: unknown): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+function roundMetric(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function containsTruncation(value: unknown, depth = 0): boolean {
@@ -1129,6 +1200,7 @@ function processOutputSchema(): z.ZodRawShape {
     exitCode: z.number().int().optional(),
     signal: z.string().optional(),
     wallTimeMs: z.number().nonnegative(),
+    queuedMs: z.number().nonnegative(),
     outputTruncated: z.boolean(),
     blocked: z.boolean().optional(),
     approvalRequired: z.boolean().optional(),
@@ -1190,6 +1262,7 @@ function blockedCommandResult(
       result,
       running: false,
       wallTimeMs: 0,
+      queuedMs: 0,
       outputTruncated: false,
       blocked: true,
       approvalRequired: true,
@@ -1237,6 +1310,7 @@ function processToolResponse(
       exitCode: snapshot.exitCode,
       signal: snapshot.signal,
       wallTimeMs: snapshot.wallTimeMs,
+      queuedMs: snapshot.queuedMs,
       outputTruncated: snapshot.outputTruncated,
       commandApproved: typeof summary.commandApproved === "boolean" ? summary.commandApproved : undefined,
       commandRisk: safety?.level,
@@ -1364,6 +1438,7 @@ function registerCodexProcessTools(
         exitCode: snapshot.exitCode,
         outputBytes: snapshot.output?.length ?? 0,
         truncated: snapshot.outputTruncated,
+        queuedMs: snapshot.queuedMs,
       });
 
       auditLog.record({
@@ -1442,6 +1517,7 @@ function registerCodexProcessTools(
         exitCode: snapshot.exitCode,
         outputBytes: snapshot.output?.length ?? 0,
         truncated: snapshot.outputTruncated,
+        queuedMs: snapshot.queuedMs,
       });
 
       return processToolResponse("write_stdin", workspaceId, snapshot, {
@@ -1463,6 +1539,7 @@ function createMcpServer(
   auditLog: AuditLogManager,
   activityLog: ToolActivityLogManager,
   requestMetrics: McpRequestMetricsManager,
+  concurrency: ToolConcurrencyScheduler,
   commandApprovals: CommandApprovalManager,
 ): McpServer {
   const logToolCall = (currentConfig: ServerConfig, fields: ToolLogFields): void => {
@@ -1490,7 +1567,7 @@ function createMcpServer(
       instructions: serverInstructions(config),
     },
   );
-  installMeasuredToolRegistration(server, activityLog);
+  installMeasuredToolRegistration(server, activityLog, concurrency);
 
   registerAppResource(
     server,
@@ -3629,10 +3706,18 @@ export function createServer(config = loadConfig()): RunningServer {
   const workspaceStore = createWorkspaceStore(config.stateDir);
   const workspaces = new WorkspaceRegistry(config, workspaceStore);
   const reviewCheckpoints = createReviewCheckpointManager();
-  const processSessions = new ProcessSessionManager({ shell: config.shell });
+  const processSessions = new ProcessSessionManager({
+    shell: config.shell,
+    maxConcurrentProcesses: config.concurrency.maxConcurrentProcesses,
+    maxWorkspaceProcesses: config.concurrency.maxWorkspaceProcesses,
+    queueTimeoutMs: config.concurrency.queueTimeoutMs,
+  });
   const auditLog = new AuditLogManager(config.audit);
   const activityLog = new ToolActivityLogManager(config.audit.maxMemoryEvents);
   const requestMetrics = new McpRequestMetricsManager(config.audit.maxMemoryEvents);
+  const concurrency = new ToolConcurrencyScheduler(config.concurrency, {
+    workspaceKey: (workspaceId) => workspaces.getWorkspace(workspaceId).root,
+  });
   const commandApprovals = new CommandApprovalManager();
 
   if (config.logging.trustProxy) {
@@ -3758,6 +3843,7 @@ export function createServer(config = loadConfig()): RunningServer {
           auditLog,
           activityLog,
           requestMetrics,
+          concurrency,
           commandApprovals,
         );
         serverCreateMs = Math.round((performance.now() - serverCreateStartedAt) * 100) / 100;
@@ -3830,6 +3916,7 @@ export function createServer(config = loadConfig()): RunningServer {
           auditLog,
           activityLog,
           requestMetrics,
+          concurrency,
           commandApprovals,
         );
         serverCreateMs = Math.round((performance.now() - serverCreateStartedAt) * 100) / 100;
