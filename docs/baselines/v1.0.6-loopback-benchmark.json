@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "productBaselineVersion": "v1.0.6",
+  "productBaselineCommit": "1a4b0c2",
+  "captureCommit": "c1821ca",
+  "capturedAt": "2026-07-21T04:04:57.905Z",
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "node": "v24.3.0",
+    "transport": "stateless",
+    "toolMode": "hybrid",
+    "widgets": "off",
+    "fixture": "temporary local Git repository"
+  },
+  "scope": {
+    "timing": "client-observed loopback round trip",
+    "includes": [
+      "HTTP",
+      "OAuth verification",
+      "stateless MCP server creation",
+      "tool execution",
+      "JSON response"
+    ],
+    "excludes": [
+      "ChatGPT model latency",
+      "public tunnel latency",
+      "browser UI rendering"
+    ]
+  },
+  "measurements": {
+    "initializeMs": 85.07,
+    "toolsListSequentialMs": [
+      27.29,
+      34.72,
+      28.86,
+      30.04,
+      29.04
+    ],
+    "toolsListSequentialSummary": {
+      "min": 27.29,
+      "median": 29.04,
+      "max": 34.72,
+      "mean": 29.99
+    },
+    "toolsListConcurrent8Ms": 148.31,
+    "openWorkspaceMs": 195.05,
+    "workspaceInfoMs": 181.73,
+    "readPackageMs": 16.08,
+    "grepExportMs": 70.07,
+    "projectMapMs": 23.05,
+    "processStartAMs": 48.89,
+    "processStartBMs": 62.49,
+    "processConcurrentPollMs": 471.39
+  },
+  "outcomes": {
+    "toolsListConcurrentRequests": 8,
+    "independentProcessesCompleted": 2
+  }
+}
