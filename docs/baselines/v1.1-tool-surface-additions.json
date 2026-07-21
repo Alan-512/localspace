@@ -1,6 +1,6 @@
 {
   "baseVersion": "v1.0.6",
-  "currentPhase": "E4",
+  "currentPhase": "E6",
   "description": "Approved v1.1 development additions layered over the frozen v1.0.6 tool surface baseline.",
   "widgetsOffAdds": {
     "minimal": [],
@@ -12,6 +12,14 @@
     "hybrid": [
       "read_many",
       "run_checks"
+    ]
+  },
+  "toolPackAdds": {
+    "code-intelligence": [
+      "diagnostics",
+      "definition",
+      "implementations",
+      "rename_preview"
     ]
   }
 }

@@ -7,6 +7,8 @@ const expectedSchemas = new Map([
   ["toolNames.read", "resultOutputSchema"],
   ["toolNames.readMany", "readManyOutputSchema"],
   ["toolNames.runChecks", "processOutputSchema"],
+  ["toolNames.diagnostics", "diagnosticsStructuredOutputSchema"],
+  ["toolNames.renamePreview", "renamePreviewStructuredOutputSchema"],
   ["toolNames.doctor", "doctorStructuredOutputSchema"],
   ["toolNames.workspaceInfo", "workspaceInfoStructuredOutputSchema"],
   ["toolNames.projectMap", "resultOutputSchema"],
@@ -25,6 +27,14 @@ const expectedSchemas = new Map([
 for (const [toolRef, expectedSchema] of expectedSchemas) {
   assert.equal(outputSchemaNameForTool(toolRef), expectedSchema, `${toolRef} outputSchema`);
 }
+
+assert.match(
+  source,
+  /outputSchema:\s*locationsStructuredOutputSchema/,
+  "definition and implementation tools need the locations schema",
+);
+assert.match(source, /toolNames\.definition/);
+assert.match(source, /toolNames\.implementations/);
 
 assert.equal(toolWidgetKindForTool("toolNames.openWorkspace"), '"open_workspace"');
 assert.equal(toolWidgetKindForTool("toolNames.doctor"), '"workspace"');

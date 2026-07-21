@@ -65,6 +65,7 @@ try {
 
   const doctorData = await generateDoctorReportData(config, { workspace });
   assert.equal(doctorData.configuration.toolMode, "hybrid");
+  assert.deepEqual(doctorData.configuration.toolPacks, []);
   assert.equal(doctorData.configuration.mcpTransportMode, "stateful");
   assert.equal(doctorData.workspace?.id, "ws_test");
   assert.ok(doctorData.checks.some((check) => check.name === "npm" && check.status === "ok"));
@@ -100,6 +101,7 @@ function testConfig(root: string): ServerConfig {
     allowedHosts: ["localhost"],
     publicBaseUrl: "http://127.0.0.1:7676",
     toolMode: "hybrid",
+    toolPacks: [],
     widgets: "full",
     mcpTransportMode: "stateful",
     stateDir: join(root, "state"),

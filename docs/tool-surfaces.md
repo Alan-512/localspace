@@ -104,6 +104,11 @@ Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are li
 - `final_report`
 - `handoff_summary`
 
+## Optional tool packs
+
+- `LOCALSPACE_TOOL_PACKS=code-intelligence` adds `diagnostics`, `definition`, `implementations`, and `rename_preview` to every tool mode.
+- Optional pack tools are absent when `LOCALSPACE_TOOL_PACKS` is unset.
+
 ## Widget overlays
 
 - `LOCALSPACE_WIDGETS=changes` adds `show_changes` to every tool mode.

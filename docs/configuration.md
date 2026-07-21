@@ -40,6 +40,7 @@ localspace config set publicBaseUrl https://localspace.example.com
 | `LOCALSPACE_STATE_DIR` | Directory for SQLite state. Defaults to `~/.local/share/localspace`. |
 | `LOCALSPACE_SHELL` | Optional shell executable for `exec_command`, for example `cmd.exe`, `powershell.exe`, `pwsh`, Git Bash, or `wsl.exe`. |
 | `LOCALSPACE_MCP_TRANSPORT_MODE` | MCP transport mode. Defaults to `stateless`; set `stateful` only when session-scoped transport behavior is required. |
+| `LOCALSPACE_TOOL_PACKS` | Optional comma-separated tool packs. Currently accepts only `code-intelligence`; defaults to no packs. |
 
 ## MCP Session Lifecycle
 
@@ -152,6 +153,43 @@ experiments, but most users should leave it unset.
 
 The exact generated tool lists, including compatibility helpers and Widget
 overlays, are maintained in [`tool-surfaces.md`](tool-surfaces.md).
+
+### Optional code-intelligence pack
+
+Set:
+
+```bash
+LOCALSPACE_TOOL_PACKS="code-intelligence" node dist/cli.js serve
+```
+
+This adds four read-only tools to every tool mode:
+
+- `diagnostics`
+- `definition`
+- `implementations`
+- `rename_preview`
+
+The pack is limited to TypeScript and JavaScript source extensions. It discovers
+the nearest `tsconfig.json` or `jsconfig.json`, supports path aliases, recursively
+loads workspace-local project references for interactive navigation, and keeps
+a process-level Language Service cache with an LRU limit of 32 projects. Source snapshots invalidate when file
+metadata changes; project configuration and root-file-list changes rebuild the
+cached project.
+
+`rename_preview` only returns bounded edit locations and replacement text. It
+does not write files. Definitions, implementations, and rename edits outside the
+opened workspace are omitted. A configured project is bounded to 5,000 source
+files, diagnostics default to 100 results, and location tools default to 200.
+
+TypeScript is an optional npm dependency. Normal npm installation includes it;
+installations using `--omit=optional` can still start and use the core LocalSpace
+surface. If the pack is enabled without TypeScript installed, its tools return
+`supported: false` with an installation message instead of failing server startup.
+
+For solution-style projects, the pack preserves project-reference metadata but
+combines workspace-local referenced source files into the interactive Language
+Service so navigation works before `tsc -b` output exists. This is an editor
+navigation model, not a replacement for the exact build semantics of `tsc -b`.
 
 `LOCALSPACE_MINIMAL_TOOLS` remains a backward-compatible alias when
 `LOCALSPACE_TOOL_MODE` is unset: `1` selects `minimal` and `0` selects `full`.

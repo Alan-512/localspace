@@ -51,6 +51,9 @@ and inspectable.
   `write_stdin`, `changes`, and dedicated `git_*` tools.
 - **Fast code orientation**: use `project_map`, `entrypoints`, `symbols`,
   `imports`, `references`, and `code_map` before changing unfamiliar code.
+- **Optional code intelligence**: enable `LOCALSPACE_TOOL_PACKS=code-intelligence`
+  for bounded TypeScript/JavaScript diagnostics, definitions, implementations,
+  and read-only rename previews without changing the default tool surface.
 - **Workflow guidance**: use `doctor`, `workspace_info`, `session_summary`, and
   progressively loaded Skills to keep default `hybrid` sessions grounded.
   Legacy `minimal` and `full` modes also expose read-only workflow helper tools.
@@ -241,6 +244,11 @@ In the default `hybrid` mode, ChatGPT can:
   asks for it
 - summarize recent in-memory tool activity and durable security audit events with
   `session_summary`
+
+When the optional `code-intelligence` pack is enabled, all tool modes also gain
+`diagnostics`, `definition`, `implementations`, and `rename_preview` for
+TypeScript and JavaScript. `rename_preview` returns proposed edits but never
+modifies files; apply accepted changes separately with the normal editing tools.
 
 Longer validation, review, release, and handoff guidance is progressively loaded
 from the built-in Skills. The legacy `minimal` and `full` surfaces retain the

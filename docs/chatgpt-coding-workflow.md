@@ -155,6 +155,13 @@ surface.
 The exact generated lists for every mode and Widget overlay are in
 [`tool-surfaces.md`](tool-surfaces.md).
 
+For TypeScript or JavaScript tasks that need compiler-aware navigation, operators
+can enable `LOCALSPACE_TOOL_PACKS=code-intelligence`. Use `diagnostics` for
+bounded compiler feedback, `definition` and `implementations` for source-position
+navigation, and `rename_preview` to inspect workspace-local rename edits. A
+rename preview is never an edit operation; apply the accepted change separately
+and validate it with normal LocalSpace tools.
+
 Minimal mode exposes:
 
 - `open_workspace`

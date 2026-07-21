@@ -18,6 +18,39 @@ try {
   await writeFile(join(root, "activity.txt"), "activity baseline\n", "utf8");
   await writeFile(join(root, "batch-a.txt"), "batch alpha\n", "utf8");
   await writeFile(join(root, "batch-b.txt"), "batch bravo\n", "utf8");
+  const codeLib = [
+    "export interface Runner {",
+    "  run(): string;",
+    "}",
+    "",
+    "export function run(): string {",
+    '  return "ok";',
+    "}",
+    "",
+  ].join("\n");
+  const codeMain = [
+    'import { run, type Runner } from "./ci-lib.js";',
+    "",
+    "export class Implementation implements Runner {",
+    "  run(): string {",
+    "    return run();",
+    "  }",
+    "}",
+    "",
+    "export const broken: string = 123;",
+    "",
+  ].join("\n");
+  await writeFile(join(root, "tsconfig.json"), JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      target: "ES2022",
+      module: "NodeNext",
+      moduleResolution: "NodeNext"
+    },
+    include: ["ci-*.ts"]
+  }, null, 2), "utf8");
+  await writeFile(join(root, "ci-lib.ts"), codeLib, "utf8");
+  await writeFile(join(root, "ci-main.ts"), codeMain, "utf8");
   await writeFile(join(root, "package.json"), JSON.stringify({
     name: "mcp-restart-fixture",
     packageManager: "npm@10.0.0",
@@ -115,6 +148,112 @@ try {
       [...expected, ...toolSurfaceBaseline.widgetsFullAdds].sort(),
       `${mode} full-widget tool overlay drifted from the v1.0.6 baseline`,
     );
+  }
+
+  for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
+    const expected = [
+      ...toolSurfaceBaseline.widgetsOff[mode],
+      ...toolSurfaceBaseline.toolPackAdds["code-intelligence"],
+    ].sort();
+    const actual = await listToolNames(
+      {
+        ...config,
+        toolMode: mode,
+        toolPacks: ["code-intelligence"],
+        widgets: "off",
+        mcpTransportMode: "stateless",
+      },
+      accessToken,
+    );
+    assert.deepEqual(actual, expected, `${mode} code-intelligence pack drifted`);
+  }
+
+  const codeServer = await startServer({
+    ...config,
+    toolMode: "hybrid",
+    toolPacks: ["code-intelligence"],
+    widgets: "off",
+    mcpTransportMode: "stateless",
+  });
+  try {
+    const initialized = await mcpRequest(codeServer.baseUrl, accessToken, initializeRequest());
+    assert.equal(initialized.status, 200);
+    await jsonRpcResult(initialized);
+    const opened = await mcpRequest(
+      codeServer.baseUrl,
+      accessToken,
+      callToolRequest(501, "open_workspace", { path: root }),
+    );
+    const codeWorkspaceId = recordValue((await jsonRpcResult(opened)).structuredContent, "workspaceId");
+    assert.equal(typeof codeWorkspaceId, "string");
+
+    const diagnosticResponse = await mcpRequest(
+      codeServer.baseUrl,
+      accessToken,
+      callToolRequest(502, "diagnostics", {
+        workspaceId: codeWorkspaceId,
+        path: "ci-main.ts",
+      }),
+    );
+    const diagnosticResult = await jsonRpcResult(diagnosticResponse);
+    assert.equal(recordValue(diagnosticResult.structuredContent, "supported"), true);
+    assert.ok(
+      arrayValue(recordValue(diagnosticResult.structuredContent, "diagnostics"))
+        .some((item) => recordValue(item, "code") === 2322),
+    );
+
+    const definitionResponse = await mcpRequest(
+      codeServer.baseUrl,
+      accessToken,
+      callToolRequest(503, "definition", {
+        workspaceId: codeWorkspaceId,
+        path: "ci-main.ts",
+        line: 5,
+        column: 12,
+      }),
+    );
+    const definitionResult = await jsonRpcResult(definitionResponse);
+    assert.ok(
+      arrayValue(recordValue(definitionResult.structuredContent, "locations"))
+        .some((item) => recordValue(item, "path") === "ci-lib.ts"),
+    );
+
+    const implementationResponse = await mcpRequest(
+      codeServer.baseUrl,
+      accessToken,
+      callToolRequest(504, "implementations", {
+        workspaceId: codeWorkspaceId,
+        path: "ci-lib.ts",
+        line: 1,
+        column: 18,
+      }),
+    );
+    const implementationResult = await jsonRpcResult(implementationResponse);
+    assert.ok(
+      arrayValue(recordValue(implementationResult.structuredContent, "locations"))
+        .some((item) => recordValue(item, "path") === "ci-main.ts"),
+    );
+
+    const libBeforeRename = await readFile(join(root, "ci-lib.ts"), "utf8");
+    const mainBeforeRename = await readFile(join(root, "ci-main.ts"), "utf8");
+    const renameResponse = await mcpRequest(
+      codeServer.baseUrl,
+      accessToken,
+      callToolRequest(505, "rename_preview", {
+        workspaceId: codeWorkspaceId,
+        path: "ci-lib.ts",
+        line: 5,
+        column: 17,
+        newName: "execute",
+      }),
+    );
+    const renameResult = await jsonRpcResult(renameResponse);
+    assert.equal(recordValue(renameResult.structuredContent, "canRename"), true);
+    assert.ok(arrayValue(recordValue(renameResult.structuredContent, "edits")).length >= 2);
+    assert.equal(await readFile(join(root, "ci-lib.ts"), "utf8"), libBeforeRename);
+    assert.equal(await readFile(join(root, "ci-main.ts"), "utf8"), mainBeforeRename);
+  } finally {
+    await codeServer.close();
   }
 
   const stateless = await startServer({
@@ -550,6 +689,7 @@ function testConfig(root: string): ServerConfig {
     allowedHosts: ["*"],
     publicBaseUrl: "http://127.0.0.1:7676",
     toolMode: "minimal",
+    toolPacks: [],
     widgets: "off",
     mcpTransportMode: "stateful",
     stateDir,
@@ -776,11 +916,13 @@ interface ToolSurfaceBaseline {
   widgetsOff: Record<"minimal" | "full" | "codex" | "hybrid", string[]>;
   widgetsChangesAdds: string[];
   widgetsFullAdds: string[];
+  toolPackAdds: Record<"code-intelligence", string[]>;
 }
 
 interface ToolSurfaceAdditions {
   baseVersion: string;
   widgetsOffAdds: Record<"minimal" | "full" | "codex" | "hybrid", string[]>;
+  toolPackAdds: Record<"code-intelligence", string[]>;
 }
 
 async function loadToolSurfaceBaseline(): Promise<ToolSurfaceBaseline> {
@@ -794,6 +936,7 @@ async function loadToolSurfaceBaseline(): Promise<ToolSurfaceBaseline> {
   assert.equal(additions.baseVersion, baseline.version);
   return {
     ...baseline,
+    toolPackAdds: additions.toolPackAdds,
     widgetsOff: Object.fromEntries(
       Object.entries(baseline.widgetsOff).map(([mode, tools]) => [
         mode,

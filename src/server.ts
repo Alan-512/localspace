@@ -92,6 +92,13 @@ import {
   type ToolName,
 } from "./tool-catalog.js";
 import { ToolConcurrencyScheduler } from "./tool-concurrency.js";
+import {
+  CodeIntelligenceManager,
+  type CodeIntelligenceProject,
+  type DiagnosticsResult,
+  type LocationsResult,
+  type RenamePreviewResult,
+} from "./code-intelligence.js";
 
 type Transport = StreamableHTTPServerTransport;
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
@@ -210,9 +217,14 @@ interface ToolInvocationContext {
 const toolInvocationContext = new AsyncLocalStorage<ToolInvocationContext>();
 
 export function buildServerInstructions(
-  config: Pick<ServerConfig, "toolMode" | "widgets" | "skillsEnabled">,
+  config: Pick<ServerConfig, "toolMode" | "toolPacks" | "widgets" | "skillsEnabled">,
 ): string {
-  const has = (name: ToolName): boolean => toolAvailable(name, config.toolMode, config.widgets);
+  const has = (name: ToolName): boolean => toolAvailable(
+    name,
+    config.toolMode,
+    config.widgets,
+    config.toolPacks,
+  );
   const sections = [
     `Use LocalSpace as a local coding workspace. Call ${toolLabel(toolNames.openWorkspace)} once per project folder or worktree and reuse its workspaceId until the client changes folder, worktree mode, or the ID is rejected.`,
     `Follow project instructions returned by ${toolLabel(toolNames.openWorkspace)}. Before working under a path listed in availableAgentsFiles, use ${toolLabel(toolNames.read)} to read that instruction file.`,
@@ -243,6 +255,16 @@ export function buildServerInstructions(
     toolNames.ls,
   ]);
   sections.push(`Use ${formatToolList(navigation)} for project inspection before editing.`);
+
+  const codeIntelligence = availableNames(config, [
+    toolNames.diagnostics,
+    toolNames.definition,
+    toolNames.implementations,
+    toolNames.renamePreview,
+  ]);
+  if (codeIntelligence.length > 0) {
+    sections.push(`Use ${formatToolList(codeIntelligence)} for optional TypeScript and JavaScript language-service analysis; ${toolLabel(toolNames.renamePreview)} never modifies files.`);
+  }
 
   if (has(toolNames.applyPatch)) {
     sections.push(`Use ${toolLabel(toolNames.applyPatch)} for all file modifications.`);
@@ -292,10 +314,15 @@ function serverInstructions(config: ServerConfig): string {
 }
 
 function availableNames(
-  config: Pick<ServerConfig, "toolMode" | "widgets">,
+  config: Pick<ServerConfig, "toolMode" | "toolPacks" | "widgets">,
   candidates: readonly ToolName[],
 ): ToolName[] {
-  return candidates.filter((name) => toolAvailable(name, config.toolMode, config.widgets));
+  return candidates.filter((name) => toolAvailable(
+    name,
+    config.toolMode,
+    config.widgets,
+    config.toolPacks,
+  ));
 }
 
 function formatToolList(names: readonly ToolName[]): string {
@@ -443,6 +470,7 @@ const packageDataOutputSchema = z.object({
 const doctorStructuredOutputSchema = structuredTextOutputSchema({
   configuration: z.object({
     toolMode: z.string(),
+    toolPacks: z.array(z.string()),
     widgets: z.string(),
     mcpTransportMode: z.string(),
     host: z.string(),
@@ -476,6 +504,78 @@ const doctorStructuredOutputSchema = structuredTextOutputSchema({
   workspace: workspaceDataOutputSchema.optional(),
   checks: z.array(commandCheckOutputSchema),
   overall: z.enum(["ok", "warning", "error"]),
+});
+
+const codeIntelligenceProjectOutputSchema = z.object({
+  kind: z.enum(["configured", "inferred"]),
+  configPath: z.string().optional(),
+  rootFileCount: z.number().int().nonnegative(),
+  projectReferences: z.array(z.string()),
+});
+
+const codeIntelligencePositionOutputSchema = z.object({
+  path: z.string(),
+  line: z.number().int().positive(),
+  column: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  endColumn: z.number().int().positive(),
+});
+
+const diagnosticsStructuredOutputSchema = structuredTextOutputSchema({
+  supported: z.boolean(),
+  reason: z.string().optional(),
+  project: codeIntelligenceProjectOutputSchema.optional(),
+  summary: z.object({
+    files: z.number().int().nonnegative(),
+    diagnostics: z.number().int().nonnegative(),
+    errors: z.number().int().nonnegative(),
+    warnings: z.number().int().nonnegative(),
+    suggestions: z.number().int().nonnegative(),
+    messages: z.number().int().nonnegative(),
+    truncated: z.boolean(),
+  }),
+  diagnostics: z.array(codeIntelligencePositionOutputSchema.extend({
+    category: z.enum(["warning", "error", "suggestion", "message"]),
+    code: z.number().int(),
+    message: z.string(),
+    source: z.string().optional(),
+  })),
+  projectDiagnostics: z.array(z.object({
+    category: z.enum(["warning", "error", "suggestion", "message"]),
+    code: z.number().int(),
+    message: z.string(),
+    source: z.string().optional(),
+  })),
+});
+
+const locationsStructuredOutputSchema = structuredTextOutputSchema({
+  supported: z.boolean(),
+  reason: z.string().optional(),
+  project: codeIntelligenceProjectOutputSchema.optional(),
+  locations: z.array(codeIntelligencePositionOutputSchema.extend({
+    kind: z.string(),
+    name: z.string(),
+    containerName: z.string().optional(),
+  })),
+  omittedExternal: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+});
+
+const renamePreviewStructuredOutputSchema = structuredTextOutputSchema({
+  supported: z.boolean(),
+  canRename: z.boolean(),
+  reason: z.string().optional(),
+  displayName: z.string().optional(),
+  fullDisplayName: z.string().optional(),
+  kind: z.string().optional(),
+  project: codeIntelligenceProjectOutputSchema.optional(),
+  edits: z.array(codeIntelligencePositionOutputSchema.extend({
+    oldText: z.string(),
+    newText: z.string(),
+  })),
+  files: z.number().int().nonnegative(),
+  omittedExternal: z.number().int().nonnegative(),
+  truncated: z.boolean(),
 });
 
 const workspaceInfoStructuredOutputSchema = structuredTextOutputSchema({
@@ -1905,12 +2005,340 @@ function registerCodexProcessTools(
   );
 }
 
+function registerCodeIntelligenceTools(
+  server: McpServer,
+  config: ServerConfig,
+  workspaces: WorkspaceRegistry,
+  codeIntelligence: CodeIntelligenceManager,
+  activityLog: ToolActivityLogManager,
+): void {
+  const commonPositionInput = {
+    workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+    path: z.string().describe("TypeScript or JavaScript file path relative to the workspace root."),
+    line: z.number().int().positive().describe("1-indexed source line."),
+    column: z.number().int().positive().describe("1-indexed source column."),
+    maxResults: z.number().int().min(1).max(1_000).optional().describe("Maximum workspace-local locations to return."),
+  };
+
+  registerAppTool(
+    server,
+    toolNames.diagnostics,
+    {
+      title: "Code diagnostics",
+      description: toolSummary(toolNames.diagnostics),
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+        path: z.string().optional().describe("Optional TypeScript or JavaScript file path. Omit for the configured project."),
+        scope: z.enum(["all", "syntactic", "semantic", "suggestion"]).optional().describe("Diagnostic scope. Defaults to all."),
+        maxResults: z.number().int().min(1).max(500).optional().describe("Maximum diagnostics to return. Defaults to 100."),
+      },
+      outputSchema: diagnosticsStructuredOutputSchema,
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ workspaceId, path, scope, maxResults }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const absolutePath = path ? workspaces.resolvePath(workspace, path) : undefined;
+      let data: DiagnosticsResult;
+      try {
+        data = await codeIntelligence.diagnostics({
+          root: workspace.root,
+          path: absolutePath,
+          scope,
+          maxResults,
+        });
+      } catch (error) {
+        data = failedDiagnosticsResult(error);
+      }
+      recordToolCall(config, activityLog, {
+        tool: toolNames.diagnostics,
+        workspaceId,
+        path,
+        success: data.supported,
+        durationMs: Math.round(performance.now() - startedAt),
+        truncated: data.summary.truncated,
+      });
+      return codeIntelligenceResponse(
+        toolNames.diagnostics,
+        workspaceId,
+        formatDiagnosticsResult(data),
+        data,
+        {
+          supported: data.supported,
+          diagnostics: data.summary.diagnostics,
+          errors: data.summary.errors,
+          truncated: data.summary.truncated,
+        },
+        path,
+      );
+    },
+  );
+
+  for (const [name, title, run] of [
+    [
+      toolNames.definition,
+      "Find definition",
+      (input: Parameters<CodeIntelligenceManager["definitions"]>[0]) =>
+        codeIntelligence.definitions(input),
+    ],
+    [
+      toolNames.implementations,
+      "Find implementations",
+      (input: Parameters<CodeIntelligenceManager["implementations"]>[0]) =>
+        codeIntelligence.implementations(input),
+    ],
+  ] as const) {
+    registerAppTool(
+      server,
+      name,
+      {
+        title,
+        description: toolSummary(name),
+        inputSchema: commonPositionInput,
+        outputSchema: locationsStructuredOutputSchema,
+        ...toolWidgetDescriptorMeta(config, "workspace"),
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ workspaceId, path, line, column, maxResults }) => {
+        const startedAt = performance.now();
+        const workspace = workspaces.getWorkspace(workspaceId);
+        const absolutePath = workspaces.resolvePath(workspace, path);
+        let data: LocationsResult;
+        try {
+          data = await run({
+            root: workspace.root,
+            path: absolutePath,
+            line,
+            column,
+            maxResults,
+          });
+        } catch (error) {
+          data = failedLocationsResult(error);
+        }
+        recordToolCall(config, activityLog, {
+          tool: name,
+          workspaceId,
+          path,
+          success: data.supported,
+          durationMs: Math.round(performance.now() - startedAt),
+          truncated: data.truncated,
+        });
+        return codeIntelligenceResponse(
+          name,
+          workspaceId,
+          formatLocationsResult(name, data),
+          data,
+          {
+            supported: data.supported,
+            locations: data.locations.length,
+            omittedExternal: data.omittedExternal,
+            truncated: data.truncated,
+          },
+          path,
+        );
+      },
+    );
+  }
+
+  registerAppTool(
+    server,
+    toolNames.renamePreview,
+    {
+      title: "Preview rename",
+      description: toolSummary(toolNames.renamePreview),
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
+        path: z.string().describe("TypeScript or JavaScript file path relative to the workspace root."),
+        line: z.number().int().positive().describe("1-indexed source line."),
+        column: z.number().int().positive().describe("1-indexed source column."),
+        newName: z.string().min(1).max(200).describe("Replacement symbol name. This tool only previews edits."),
+        maxLocations: z.number().int().min(1).max(1_000).optional().describe("Maximum edit locations to return. Defaults to 200."),
+      },
+      outputSchema: renamePreviewStructuredOutputSchema,
+      ...toolWidgetDescriptorMeta(config, "workspace"),
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async ({ workspaceId, path, line, column, newName, maxLocations }) => {
+      const startedAt = performance.now();
+      const workspace = workspaces.getWorkspace(workspaceId);
+      const absolutePath = workspaces.resolvePath(workspace, path);
+      let data: RenamePreviewResult;
+      try {
+        data = await codeIntelligence.renamePreview({
+          root: workspace.root,
+          path: absolutePath,
+          line,
+          column,
+          newName,
+          maxLocations,
+        });
+      } catch (error) {
+        data = failedRenamePreviewResult(error);
+      }
+      recordToolCall(config, activityLog, {
+        tool: toolNames.renamePreview,
+        workspaceId,
+        path,
+        success: data.supported && data.canRename,
+        durationMs: Math.round(performance.now() - startedAt),
+        truncated: data.truncated,
+      });
+      return codeIntelligenceResponse(
+        toolNames.renamePreview,
+        workspaceId,
+        formatRenamePreviewResult(data, newName),
+        data,
+        {
+          supported: data.supported,
+          canRename: data.canRename,
+          files: data.files,
+          edits: data.edits.length,
+          truncated: data.truncated,
+        },
+        path,
+      );
+    },
+  );
+}
+
+function codeIntelligenceResponse<T extends object>(
+  tool: ToolName,
+  workspaceId: string,
+  text: string,
+  data: T,
+  summary: Record<string, unknown>,
+  path?: string,
+) {
+  const content = [textBlock(text)];
+  return {
+    content,
+    _meta: {
+      tool,
+      card: {
+        workspaceId,
+        path,
+        summary: { ...summary, ...textSummary(content) },
+        payload: { content },
+      },
+    },
+    structuredContent: {
+      result: text,
+      text,
+      ...data,
+    } as Record<string, unknown>,
+  };
+}
+
+function formatDiagnosticsResult(data: DiagnosticsResult): string {
+  if (!data.supported) return `Code diagnostics unavailable: ${data.reason ?? "unknown reason"}`;
+  const lines = [
+    "Code diagnostics",
+    `Project: ${formatCodeIntelligenceProject(data.project)}`,
+    `Files: ${data.summary.files}; diagnostics: ${data.summary.diagnostics}; errors: ${data.summary.errors}; warnings: ${data.summary.warnings}; truncated: ${data.summary.truncated ? "yes" : "no"}`,
+  ];
+  if (data.diagnostics.length === 0 && data.projectDiagnostics.length === 0) {
+    lines.push("No diagnostics.");
+  }
+  for (const item of data.projectDiagnostics) {
+    lines.push(`- PROJECT ${item.category.toUpperCase()} TS${item.code}: ${item.message}`);
+  }
+  for (const item of data.diagnostics) {
+    lines.push(
+      `- ${item.path}:${item.line}:${item.column} ${item.category.toUpperCase()} TS${item.code}: ${item.message}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function formatLocationsResult(tool: ToolName, data: LocationsResult): string {
+  const label = tool === toolNames.definition ? "Definitions" : "Implementations";
+  if (!data.supported) return `${label} unavailable: ${data.reason ?? "unknown reason"}`;
+  const lines = [
+    label,
+    `Project: ${formatCodeIntelligenceProject(data.project)}`,
+    `Locations: ${data.locations.length}; omitted external: ${data.omittedExternal}; truncated: ${data.truncated ? "yes" : "no"}`,
+  ];
+  if (data.locations.length === 0) lines.push("No workspace-local locations found.");
+  for (const item of data.locations) {
+    lines.push(`- ${item.path}:${item.line}:${item.column} ${item.kind} ${item.name}`);
+  }
+  return lines.join("\n");
+}
+
+function formatRenamePreviewResult(data: RenamePreviewResult, newName: string): string {
+  if (!data.supported) return `Rename preview unavailable: ${data.reason ?? "unknown reason"}`;
+  if (!data.canRename) return `Rename is not available: ${data.reason ?? "unknown reason"}`;
+  const lines = [
+    `Rename preview: ${data.displayName ?? "symbol"} -> ${newName}`,
+    `Project: ${formatCodeIntelligenceProject(data.project)}`,
+    `Files: ${data.files}; edits: ${data.edits.length}; omitted external: ${data.omittedExternal}; truncated: ${data.truncated ? "yes" : "no"}`,
+    "No files were modified.",
+  ];
+  for (const edit of data.edits) {
+    lines.push(`- ${edit.path}:${edit.line}:${edit.column} ${JSON.stringify(edit.oldText)} -> ${JSON.stringify(edit.newText)}`);
+  }
+  return lines.join("\n");
+}
+
+function formatCodeIntelligenceProject(project: CodeIntelligenceProject | undefined): string {
+  if (!project) return "unknown";
+  return project.kind === "configured"
+    ? `configured (${project.configPath ?? "config"}; ${project.rootFileCount} root files)`
+    : `inferred (${project.rootFileCount} root files)`;
+}
+
+function failedDiagnosticsResult(error: unknown): DiagnosticsResult {
+  return {
+    supported: false,
+    reason: errorMessage(error),
+    summary: {
+      files: 0,
+      diagnostics: 0,
+      errors: 0,
+      warnings: 0,
+      suggestions: 0,
+      messages: 0,
+      truncated: false,
+    },
+    diagnostics: [],
+    projectDiagnostics: [],
+  };
+}
+
+function failedLocationsResult(error: unknown): LocationsResult {
+  return {
+    supported: false,
+    reason: errorMessage(error),
+    locations: [],
+    omittedExternal: 0,
+    truncated: false,
+  };
+}
+
+function failedRenamePreviewResult(error: unknown): RenamePreviewResult {
+  return {
+    supported: false,
+    canRename: false,
+    reason: errorMessage(error),
+    edits: [],
+    files: 0,
+    omittedExternal: 0,
+    truncated: false,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function createMcpServer(
   config: ServerConfig,
   workspaces: WorkspaceRegistry,
   reviewCheckpoints: ReturnType<typeof createReviewCheckpointManager>,
   processSessions: ProcessSessionManager,
   checkSessions: CheckSessionManager,
+  codeIntelligence: CodeIntelligenceManager,
   auditLog: AuditLogManager,
   activityLog: ToolActivityLogManager,
   requestMetrics: McpRequestMetricsManager,
@@ -2203,7 +2631,7 @@ function createMcpServer(
     },
   );
 
-  if (toolAvailable(toolNames.readMany, config.toolMode, config.widgets)) {
+  if (toolAvailable(toolNames.readMany, config.toolMode, config.widgets, config.toolPacks)) {
     registerAppTool(
       server,
       toolNames.readMany,
@@ -4144,6 +4572,16 @@ function createMcpServer(
     );
   }
 
+  if (config.toolPacks.includes("code-intelligence")) {
+    registerCodeIntelligenceTools(
+      server,
+      config,
+      workspaces,
+      codeIntelligence,
+      activityLog,
+    );
+  }
+
   return server;
 }
 
@@ -4178,6 +4616,7 @@ export function createServer(config = loadConfig()): RunningServer {
     queueTimeoutMs: config.concurrency.queueTimeoutMs,
   });
   const checkSessions = new CheckSessionManager(processSessions);
+  const codeIntelligence = new CodeIntelligenceManager();
   const auditLog = new AuditLogManager(config.audit);
   const activityLog = new ToolActivityLogManager(config.audit.maxMemoryEvents);
   const requestMetrics = new McpRequestMetricsManager(config.audit.maxMemoryEvents);
@@ -4307,6 +4746,7 @@ export function createServer(config = loadConfig()): RunningServer {
           reviewCheckpoints,
           processSessions,
           checkSessions,
+          codeIntelligence,
           auditLog,
           activityLog,
           requestMetrics,
@@ -4381,6 +4821,7 @@ export function createServer(config = loadConfig()): RunningServer {
           reviewCheckpoints,
           processSessions,
           checkSessions,
+          codeIntelligence,
           auditLog,
           activityLog,
           requestMetrics,
@@ -4446,6 +4887,7 @@ export function createServer(config = loadConfig()): RunningServer {
         await transports?.closeAll("server_shutdown");
         checkSessions.shutdown();
         processSessions.shutdown();
+        codeIntelligence.dispose();
         oauthProvider.close();
         workspaceStore.close?.();
       })();

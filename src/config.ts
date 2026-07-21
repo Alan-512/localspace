@@ -14,6 +14,7 @@ import {
 } from "./mcp-session-registry.js";
 
 export type ToolMode = "minimal" | "full" | "codex" | "hybrid";
+export type ToolPack = "code-intelligence";
 export type WidgetMode = "off" | "changes" | "full";
 export type McpTransportMode = "stateful" | "stateless";
 export interface ToolConcurrencyConfig {
@@ -41,6 +42,7 @@ export interface ServerConfig {
   allowedHosts: string[];
   publicBaseUrl: string;
   toolMode: ToolMode;
+  toolPacks: ToolPack[];
   widgets: WidgetMode;
   mcpTransportMode: McpTransportMode;
   stateDir: string;
@@ -115,6 +117,21 @@ function parseToolMode(env: NodeJS.ProcessEnv): ToolMode {
     return parseBoolean(env.LOCALSPACE_MINIMAL_TOOLS) ? "minimal" : "full";
   }
   return "hybrid";
+}
+
+function parseToolPacks(value: string | undefined): ToolPack[] {
+  const entries = value
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean) ?? [];
+  const packs = new Set<ToolPack>();
+  for (const entry of entries) {
+    if (entry !== "code-intelligence") {
+      throw new Error(`Invalid LOCALSPACE_TOOL_PACKS entry: ${entry}`);
+    }
+    packs.add(entry);
+  }
+  return [...packs];
 }
 
 function parseLogLevel(value: string | undefined): LogLevel {
@@ -330,6 +347,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     allowedHosts: parseAllowedHosts(env.LOCALSPACE_ALLOWED_HOSTS, derivedAllowedHosts),
     publicBaseUrl,
     toolMode: parseToolMode(env),
+    toolPacks: parseToolPacks(env.LOCALSPACE_TOOL_PACKS),
     widgets: parseWidgetMode(env.LOCALSPACE_WIDGETS),
     mcpTransportMode: parseMcpTransportMode(env.LOCALSPACE_MCP_TRANSPORT_MODE),
     stateDir,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import type { ToolMode, WidgetMode } from "./config.js";
+import type { ToolMode, ToolPack, WidgetMode } from "./config.js";
 import {
   renderToolSurfacesMarkdown,
   toolCatalog,
@@ -21,6 +21,7 @@ const additions = JSON.parse(
 ) as {
   baseVersion: string;
   widgetsOffAdds: Record<ToolMode, string[]>;
+  toolPackAdds: Record<ToolPack, string[]>;
 };
 assert.equal(additions.baseVersion, "v1.0.6");
 
@@ -43,6 +44,18 @@ for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
   );
 }
 
+for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
+  assert.deepEqual(
+    sorted(toolNamesForMode(mode, "off", ["code-intelligence"])),
+    sorted([
+      ...baseline.widgetsOff[mode],
+      ...additions.widgetsOffAdds[mode],
+      ...additions.toolPackAdds["code-intelligence"],
+    ]),
+    `${mode} code-intelligence pack differs from the approved optional surface`,
+  );
+}
+
 assert.equal(new Set(toolCatalog.map((tool) => tool.name)).size, toolCatalog.length);
 for (const tool of toolCatalog) {
   assert.ok(tool.summary.length >= 20, `${tool.name} summary is too short`);
@@ -55,7 +68,12 @@ assert.equal(generatedDoc.replaceAll("\r\n", "\n"), renderToolSurfacesMarkdown()
 for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
   for (const widgets of ["off", "changes", "full"] as const satisfies readonly WidgetMode[]) {
     const available = new Set(toolNamesForMode(mode, widgets));
-    const instructions = buildServerInstructions({ toolMode: mode, widgets, skillsEnabled: true });
+    const instructions = buildServerInstructions({
+      toolMode: mode,
+      toolPacks: [],
+      widgets,
+      skillsEnabled: true,
+    });
     for (const tool of toolCatalog) {
       if (containsToolName(instructions, tool.name)) {
         assert.ok(available.has(tool.name), `${mode}/${widgets} instructions mention unavailable ${tool.name}`);
@@ -65,7 +83,12 @@ for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
 }
 
 for (const mode of ["codex", "hybrid"] as const) {
-  const instructions = buildServerInstructions({ toolMode: mode, widgets: "off", skillsEnabled: true });
+  const instructions = buildServerInstructions({
+    toolMode: mode,
+    toolPacks: [],
+    widgets: "off",
+    skillsEnabled: true,
+  });
   for (const unavailable of [
     toolNames.nextSteps,
     toolNames.validatePlan,
@@ -77,6 +100,21 @@ for (const mode of ["codex", "hybrid"] as const) {
   ]) {
     assert.equal(containsToolName(instructions, unavailable), false, `${mode} instructions mention ${unavailable}`);
   }
+}
+
+const codeIntelligenceInstructions = buildServerInstructions({
+  toolMode: "hybrid",
+  toolPacks: ["code-intelligence"],
+  widgets: "off",
+  skillsEnabled: true,
+});
+for (const name of [
+  toolNames.diagnostics,
+  toolNames.definition,
+  toolNames.implementations,
+  toolNames.renamePreview,
+]) {
+  assert.equal(containsToolName(codeIntelligenceInstructions, name), true);
 }
 
 function containsToolName(text: string, name: string): boolean {

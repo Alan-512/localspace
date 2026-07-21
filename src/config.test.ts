@@ -25,6 +25,11 @@ assert.equal(
   "stateless",
 );
 assert.equal(loadConfig(baseEnv).toolMode, "hybrid");
+assert.deepEqual(loadConfig(baseEnv).toolPacks, []);
+assert.deepEqual(
+  loadConfig({ ...baseEnv, LOCALSPACE_TOOL_PACKS: "code-intelligence,code-intelligence" }).toolPacks,
+  ["code-intelligence"],
+);
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "minimal" }).toolMode, "minimal");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "full" }).toolMode, "full");
 assert.equal(loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "codex" }).toolMode, "codex");
@@ -91,6 +96,10 @@ assert.throws(
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_TOOL_MODE: "invalid" }),
   /Invalid LOCALSPACE_TOOL_MODE: invalid/,
+);
+assert.throws(
+  () => loadConfig({ ...baseEnv, LOCALSPACE_TOOL_PACKS: "browser" }),
+  /Invalid LOCALSPACE_TOOL_PACKS entry: browser/,
 );
 assert.throws(
   () => loadConfig({ ...baseEnv, LOCALSPACE_MCP_TRANSPORT_MODE: "invalid" }),

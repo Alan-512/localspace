@@ -21,6 +21,10 @@ Every structured tool keeps this compatibility field:
 | `code_map` | `scope`, `options`, `entrypoints`, `projectMap`, `symbols`, `imports` |
 | `read_many` | `results[]`, `summary` |
 | `run_checks` | `running`, `sessionId`, `wallTimeMs`, `queuedMs`, `checks[]`, `checkSummary`, `workspaceRevisionAtStart`, `workspaceRevisionAtEnd`, `workspaceChangedDuringRun`, `failFast`, `concurrency`, optional approval fields |
+| `diagnostics` | `supported`, `reason`, `project`, `summary`, `diagnostics[]`, `projectDiagnostics[]` |
+| `definition` | `supported`, `reason`, `project`, `locations[]`, `omittedExternal`, `truncated` |
+| `implementations` | `supported`, `reason`, `project`, `locations[]`, `omittedExternal`, `truncated` |
+| `rename_preview` | `supported`, `canRename`, `reason`, symbol display fields, `project`, `edits[]`, `files`, `omittedExternal`, `truncated` |
 
 ## Workspace, diagnostics, and Git review
 

@@ -1,4 +1,4 @@
-import type { ToolMode, WidgetMode } from "./config.js";
+import type { ToolMode, ToolPack, WidgetMode } from "./config.js";
 
 export type ToolCategory =
   | "workspace"
@@ -22,6 +22,10 @@ export const toolNames = {
   openWorkspace: "open_workspace",
   read: "read",
   readMany: "read_many",
+  diagnostics: "diagnostics",
+  definition: "definition",
+  implementations: "implementations",
+  renamePreview: "rename_preview",
   write: "write",
   edit: "edit",
   grep: "grep",
@@ -66,6 +70,7 @@ export interface ToolCatalogEntry {
   concurrencyClass: ToolConcurrencyClass;
   summary: string;
   widgetMode?: "changes";
+  toolPack?: ToolPack;
 }
 
 const allModes = ["minimal", "full", "codex", "hybrid"] as const satisfies readonly ToolMode[];
@@ -82,6 +87,11 @@ export const toolCatalog: readonly ToolCatalogEntry[] = [
   entry(toolNames.workspaceInfo, allModes, "workspace", "shared-read", "Show workspace identity, Git state, recent commits, and package scripts."),
   entry(toolNames.sessionSummary, allModes, "workflow", "shared-read", "Summarize recent tool activity, MCP request timings, and durable security audit events for one or all workspaces."),
   entry(toolNames.entrypoints, allModes, "navigation", "shared-read", "Show package entrypoints, likely source entry files, important config files, and suggested verification commands."),
+
+  packedEntry(toolNames.diagnostics, allModes, "diagnostics", "heavy-read", "Report bounded TypeScript and JavaScript compiler diagnostics from the configured or inferred workspace project.", "code-intelligence"),
+  packedEntry(toolNames.definition, allModes, "navigation", "heavy-read", "Find workspace-local TypeScript and JavaScript definitions for a source position.", "code-intelligence"),
+  packedEntry(toolNames.implementations, allModes, "navigation", "heavy-read", "Find workspace-local TypeScript and JavaScript implementations for a source position.", "code-intelligence"),
+  packedEntry(toolNames.renamePreview, allModes, "navigation", "heavy-read", "Preview bounded TypeScript and JavaScript rename edits without modifying workspace files.", "code-intelligence"),
 
   entry(toolNames.codeMap, navigationModes, "navigation", "heavy-read", "Combine entrypoints, project structure, exported symbols, and import relationships into one bounded overview."),
   entry(toolNames.projectMap, navigationModes, "navigation", "shared-read", "Render a bounded directory tree while skipping generated and dependency folders."),
@@ -136,9 +146,11 @@ export function toolSummary(name: ToolName): string {
 export function toolNamesForMode(
   mode: ToolMode,
   widgets: WidgetMode = "off",
+  toolPacks: readonly ToolPack[] = [],
 ): ToolName[] {
   return toolCatalog
     .filter((tool) => tool.modes.includes(mode))
+    .filter((tool) => !tool.toolPack || toolPacks.includes(tool.toolPack))
     .filter((tool) => !tool.widgetMode || tool.widgetMode === widgets)
     .map((tool) => tool.name);
 }
@@ -147,8 +159,9 @@ export function toolAvailable(
   name: ToolName,
   mode: ToolMode,
   widgets: WidgetMode = "off",
+  toolPacks: readonly ToolPack[] = [],
 ): boolean {
-  return toolNamesForMode(mode, widgets).includes(name);
+  return toolNamesForMode(mode, widgets, toolPacks).includes(name);
 }
 
 export function renderToolSurfacesMarkdown(): string {
@@ -169,6 +182,11 @@ export function renderToolSurfacesMarkdown(): string {
   }
 
   lines.push(
+    "## Optional tool packs",
+    "",
+    "- `LOCALSPACE_TOOL_PACKS=code-intelligence` adds `diagnostics`, `definition`, `implementations`, and `rename_preview` to every tool mode.",
+    "- Optional pack tools are absent when `LOCALSPACE_TOOL_PACKS` is unset.",
+    "",
     "## Widget overlays",
     "",
     "- `LOCALSPACE_WIDGETS=changes` adds `show_changes` to every tool mode.",
@@ -187,4 +205,15 @@ function entry(
   summary: string,
 ): ToolCatalogEntry {
   return { name, modes, category, concurrencyClass, summary };
+}
+
+function packedEntry(
+  name: ToolName,
+  modes: readonly ToolMode[],
+  category: ToolCategory,
+  concurrencyClass: ToolConcurrencyClass,
+  summary: string,
+  toolPack: ToolPack,
+): ToolCatalogEntry {
+  return { name, modes, category, concurrencyClass, summary, toolPack };
 }

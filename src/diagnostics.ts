@@ -30,6 +30,7 @@ interface PackageJson {
 export interface DoctorReportData {
   configuration: {
     toolMode: ServerConfig["toolMode"];
+    toolPacks: ServerConfig["toolPacks"];
     widgets: ServerConfig["widgets"];
     mcpTransportMode: ServerConfig["mcpTransportMode"];
     host: string;
@@ -107,6 +108,7 @@ export async function generateDoctorReportData(
   const data: DoctorReportData = {
     configuration: {
       toolMode: config.toolMode,
+      toolPacks: config.toolPacks,
       widgets: config.widgets,
       mcpTransportMode: config.mcpTransportMode,
       host: config.host,
@@ -141,6 +143,7 @@ function formatDoctorReport(data: DoctorReportData): string {
 
   lines.push("Configuration:");
   lines.push(`- tool mode: ${data.configuration.toolMode}`);
+  lines.push(`- tool packs: ${data.configuration.toolPacks.join(", ") || "none"}`);
   lines.push(`- widgets: ${data.configuration.widgets}`);
   lines.push(`- MCP transport mode: ${data.configuration.mcpTransportMode}`);
   lines.push(`- host: ${data.configuration.host}`);
