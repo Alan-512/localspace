@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
@@ -56,6 +56,51 @@ try {
   assert.ok(sessionNotFoundLog);
   assert.equal(sessionNotFoundLog.sessionIdPrefix, sessionId.slice(0, 8));
   assert.equal(sessionNotFoundLog.activeSessions, 0);
+
+  const toolSurfaceBaseline = await loadToolSurfaceBaseline();
+  for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
+    const expected = [...toolSurfaceBaseline.widgetsOff[mode]].sort();
+    const actual = await listToolNames(
+      {
+        ...config,
+        toolMode: mode,
+        widgets: "off",
+        mcpTransportMode: "stateless",
+      },
+      accessToken,
+    );
+    assert.deepEqual(actual, expected, `${mode} tools/list drifted from the v1.0.6 baseline`);
+
+    const withChangesWidget = await listToolNames(
+      {
+        ...config,
+        toolMode: mode,
+        widgets: "changes",
+        mcpTransportMode: "stateless",
+      },
+      accessToken,
+    );
+    assert.deepEqual(
+      withChangesWidget,
+      [...expected, ...toolSurfaceBaseline.widgetsChangesAdds].sort(),
+      `${mode} changes-widget tool overlay drifted from the v1.0.6 baseline`,
+    );
+
+    const withFullWidgets = await listToolNames(
+      {
+        ...config,
+        toolMode: mode,
+        widgets: "full",
+        mcpTransportMode: "stateless",
+      },
+      accessToken,
+    );
+    assert.deepEqual(
+      withFullWidgets,
+      [...expected, ...toolSurfaceBaseline.widgetsFullAdds].sort(),
+      `${mode} full-widget tool overlay drifted from the v1.0.6 baseline`,
+    );
+  }
 
   const stateless = await startServer({
     ...config,
@@ -450,4 +495,39 @@ function recordValue(record: unknown, key: string): unknown {
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("base64url");
+}
+
+interface ToolSurfaceBaseline {
+  version: string;
+  widgetsOff: Record<"minimal" | "full" | "codex" | "hybrid", string[]>;
+  widgetsChangesAdds: string[];
+  widgetsFullAdds: string[];
+}
+
+async function loadToolSurfaceBaseline(): Promise<ToolSurfaceBaseline> {
+  const content = await readFile(
+    new URL("../docs/baselines/v1.0.6-tool-surfaces.json", import.meta.url),
+    "utf8",
+  );
+  const parsed = JSON.parse(content) as ToolSurfaceBaseline;
+  assert.equal(parsed.version, "v1.0.6");
+  return parsed;
+}
+
+async function listToolNames(config: ServerConfig, token: string): Promise<string[]> {
+  const server = await startServer(config);
+  try {
+    const initialize = await mcpRequest(server.baseUrl, token, initializeRequest());
+    assert.equal(initialize.status, 200);
+    await jsonRpcResult(initialize);
+
+    const response = await mcpRequest(server.baseUrl, token, toolsListRequest());
+    assert.equal(response.status, 200);
+    const result = await jsonRpcResult(response);
+    return arrayValue(result.tools)
+      .map((tool) => String(recordValue(tool, "name")))
+      .sort();
+  } finally {
+    await server.close();
+  }
 }
