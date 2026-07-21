@@ -64,6 +64,12 @@ import { createTaskSummary, createValidationSummary } from "./task-summary.js";
 import { createNextSteps, createReviewChecklist, createValidatePlan } from "./workflow-tools.js";
 import { McpSessionRegistry, type McpSessionRegistryEvent } from "./mcp-session-registry.js";
 import { createWorkspaceAppResourceUri } from "./workspace-app-resource.js";
+import {
+  toolAvailable,
+  toolNames,
+  toolSummary,
+  type ToolName,
+} from "./tool-catalog.js";
 
 type Transport = StreamableHTTPServerTransport;
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
@@ -169,39 +175,6 @@ function toolWidgetDescriptorMeta(
   };
 }
 
-const toolNames = {
-  openWorkspace: "open_workspace",
-  read: "read",
-  write: "write",
-  edit: "edit",
-  grep: "grep",
-  glob: "glob",
-  ls: "ls",
-  doctor: "doctor",
-  workspaceInfo: "workspace_info",
-  sessionSummary: "session_summary",
-  validatePlan: "validate_plan",
-  reviewChecklist: "review_checklist",
-  nextSteps: "next_steps",
-  taskSummary: "task_summary",
-  validationSummary: "validation_summary",
-  finalReport: "final_report",
-  handoffSummary: "handoff_summary",
-  entrypoints: "entrypoints",
-  codeMap: "code_map",
-  projectMap: "project_map",
-  symbols: "symbols",
-  imports: "imports",
-  references: "references",
-  changes: "changes",
-  gitStatus: "git_status",
-  gitDiff: "git_diff",
-  gitAdd: "git_add",
-  gitCommit: "git_commit",
-  gitLog: "git_log",
-  shell: "bash",
-} as const;
-
 interface ToolLogFields {
   tool: string;
   workspaceId?: string;
@@ -214,31 +187,100 @@ interface ToolLogFields {
   error?: string;
 }
 
+export function buildServerInstructions(
+  config: Pick<ServerConfig, "toolMode" | "widgets" | "skillsEnabled">,
+): string {
+  const has = (name: ToolName): boolean => toolAvailable(name, config.toolMode, config.widgets);
+  const sections = [
+    `Use LocalSpace as a local coding workspace. Call ${toolLabel(toolNames.openWorkspace)} once per project folder or worktree and reuse its workspaceId until the client changes folder, worktree mode, or the ID is rejected.`,
+    `Follow project instructions returned by ${toolLabel(toolNames.openWorkspace)}. Before working under a path listed in availableAgentsFiles, use ${toolLabel(toolNames.read)} to read that instruction file.`,
+  ];
+
+  if (config.skillsEnabled) {
+    sections.push(`When ${toolLabel(toolNames.openWorkspace)} advertises a matching Skill, use ${toolLabel(toolNames.read)} to read its SKILL.md before following that workflow.`);
+  }
+
+  const orientation = availableNames(config, [
+    toolNames.doctor,
+    toolNames.workspaceInfo,
+    toolNames.sessionSummary,
+    toolNames.entrypoints,
+  ]);
+  sections.push(`Use ${formatToolList(orientation)} for environment, workspace, activity, and entrypoint orientation.`);
+
+  const navigation = availableNames(config, [
+    toolNames.codeMap,
+    toolNames.projectMap,
+    toolNames.symbols,
+    toolNames.imports,
+    toolNames.references,
+    toolNames.read,
+    toolNames.grep,
+    toolNames.glob,
+    toolNames.ls,
+  ]);
+  sections.push(`Use ${formatToolList(navigation)} for project inspection before editing.`);
+
+  if (has(toolNames.applyPatch)) {
+    sections.push(`Use ${toolLabel(toolNames.applyPatch)} for all file modifications.`);
+  } else {
+    sections.push(`Prefer ${toolLabel(toolNames.edit)} for targeted changes and ${toolLabel(toolNames.write)} only for new files or complete rewrites.`);
+  }
+
+  if (has(toolNames.execCommand)) {
+    sections.push(`Use ${toolLabel(toolNames.execCommand)} for tests, builds, package scripts, and commands; use ${toolLabel(toolNames.writeStdin)} to poll or interact with running processes.`);
+  } else if (has(toolNames.shell)) {
+    sections.push(`Use ${toolLabel(toolNames.shell)} for tests, builds, Git inspection, package scripts, and read-only shell inspection. Do not use shell redirection or generated scripts to modify project files.`);
+    if (config.toolMode === "minimal") {
+      sections.push(`Dedicated search tools are not exposed in minimal mode; use ${toolLabel(toolNames.shell)} with bounded command-line search and directory-listing utilities.`);
+    }
+  }
+
+  const workflow = availableNames(config, [
+    toolNames.nextSteps,
+    toolNames.validatePlan,
+    toolNames.validationSummary,
+    toolNames.reviewChecklist,
+    toolNames.taskSummary,
+    toolNames.finalReport,
+    toolNames.handoffSummary,
+  ]);
+  if (workflow.length > 0) sections.push(`Use ${formatToolList(workflow)} for optional workflow planning and reporting.`);
+
+  const gitReview = availableNames(config, [
+    toolNames.changes,
+    toolNames.gitStatus,
+    toolNames.gitDiff,
+    toolNames.gitLog,
+  ]);
+  if (gitReview.length > 0) sections.push(`Use ${formatToolList(gitReview)} to review repository state and changes.`);
+  if (has(toolNames.gitAdd)) sections.push(`Use ${toolLabel(toolNames.gitAdd)} only for explicit workspace-relative paths.`);
+  if (has(toolNames.gitCommit)) sections.push(`Use ${toolLabel(toolNames.gitCommit)} only after the user explicitly asks to commit.`);
+
+  if (has(toolNames.showChanges)) {
+    sections.push(`After the final file modification in a turn, call ${toolLabel(toolNames.showChanges)} exactly once before the final response so the user can inspect the aggregate diff.`);
+  }
+
+  return sections.join(" ");
+}
+
 function serverInstructions(config: ServerConfig): string {
-  const showChangesInstruction =
-    config.widgets === "changes"
-      ? " If the turn successfully modifies files by creating, editing, overwriting, deleting, moving, or applying patches, call show_changes exactly once for that workspace after the final related file change and before your final response so the user can inspect the aggregate diff for that turn. Do not call it after every individual file change; do not skip it because individual file-change tools already returned diffs."
-      : "";
+  return buildServerInstructions(config);
+}
 
-  if (config.toolMode === "codex") {
-    return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} or ${toolNames.finalReport} before final task summaries, ${toolNames.handoffSummary} when a new chat/window handoff is needed, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, ${toolNames.read} for direct file reads, apply_patch for all file modifications, exec_command for inspection, tests, builds, and other commands, write_stdin to poll or interact with running processes, ${toolNames.changes} or git_* tools to review workspace modifications, and ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.${showChangesInstruction}`;
-  }
+function availableNames(
+  config: Pick<ServerConfig, "toolMode" | "widgets">,
+  candidates: readonly ToolName[],
+): ToolName[] {
+  return candidates.filter((name) => toolAvailable(name, config.toolMode, config.widgets));
+}
 
-  if (config.toolMode === "hybrid") {
-    return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree and reuse its workspaceId. Use ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} or ${toolNames.finalReport} before final task summaries, ${toolNames.handoffSummary} when a new chat/window handoff is needed, ${toolNames.entrypoints} to identify project entrypoints and verification scripts, and ${toolNames.codeMap}, ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for project inspection. Use apply_patch for all file modifications. Use exec_command for tests, builds, and commands. Use write_stdin to poll or interact with running processes. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. Follow instructions returned by ${toolNames.openWorkspace}; read applicable instruction and skill files before working in their scope.`;
-  }
+function formatToolList(names: readonly ToolName[]): string {
+  return names.map(toolLabel).join(", ");
+}
 
-  const inspection = config.toolMode !== "full"
-    ? `In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use ${toolNames.shell} with command-line tools such as grep, rg, find, ls, and tree for search and directory inspection. `
-    : `Prefer ${toolNames.doctor} for environment diagnostics, ${toolNames.workspaceInfo} for project status, ${toolNames.sessionSummary} for recent tool activity, ${toolNames.nextSteps} for workflow recommendations, ${toolNames.validatePlan} before validation, ${toolNames.validationSummary} after validation, ${toolNames.reviewChecklist} before summarizing or committing, ${toolNames.taskSummary} or ${toolNames.finalReport} before final task summaries, ${toolNames.handoffSummary} when a new chat/window handoff is needed, ${toolNames.entrypoints} for project entrypoints and verification scripts, ${toolNames.codeMap} for a combined project overview, and ${toolNames.projectMap}, ${toolNames.symbols}, ${toolNames.imports}, ${toolNames.references}, ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Use ${toolNames.changes} or git_* tools to review workspace modifications before summarizing. Use ${toolNames.gitCommit} only after the user asks to commit. `;
-
-  const skills = config.skillsEnabled
-    ? `When ${toolNames.openWorkspace} returns available skills and a task matches a skill, use ${toolNames.read} to read that skill's path before proceeding. Skill paths may be outside the workspace, but ${toolNames.read} only permits advertised SKILL.md files and files under already-loaded skill directories. `
-    : "";
-
-  const agentsMd = `Follow instructions returned by ${toolNames.openWorkspace}. Before working under a path listed in availableAgentsFiles, use ${toolNames.read} to inspect that instruction file and follow it. `;
-
-  return `Use LocalSpace as a local coding workspace. Call ${toolNames.openWorkspace} once per project folder or worktree to obtain a workspaceId. Reuse that same workspaceId for all later file, search, edit, write, show-changes, and shell tools in that folder; do not call ${toolNames.openWorkspace} again unless switching folders/worktrees, changing checkout/worktree mode, the workspaceId is rejected as unknown, or the user explicitly asks to reopen. ${agentsMd}${skills}${inspection}Prefer ${toolNames.edit} for targeted modifications, ${toolNames.write} only for new files or complete rewrites, and ${toolNames.shell} for tests, builds, git inspection, package scripts, and commands that are better executed by the shell. Do not create or modify files with ${toolNames.shell}; avoid shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or any command whose purpose is to write project files.${showChangesInstruction}`;
+function toolLabel(name: ToolName): string {
+  return `\`${name}\``;
 }
 function resultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
   return {
@@ -1017,11 +1059,10 @@ function registerCodexProcessTools(
 ): void {
   registerAppTool(
     server,
-    "exec_command",
+    toolNames.execCommand,
     {
       title: "Execute command",
-      description:
-        "Run a command inside an open workspace. Returns its result when it exits during the yield window, otherwise returns a sessionId for write_stdin. Use this for file inspection, tests, builds, package scripts, and long-running processes. Call open_workspace first and pass workspaceId.",
+      description: toolSummary(toolNames.execCommand),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
         cmd: z.string().min(1).describe("Shell command to execute."),
@@ -1137,11 +1178,10 @@ function registerCodexProcessTools(
 
   registerAppTool(
     server,
-    "write_stdin",
+    toolNames.writeStdin,
     {
       title: "Write to process",
-      description:
-        "Poll or write characters to a process returned by exec_command. Omit chars or pass an empty string to poll. Pass \\u0003 to send Ctrl-C.",
+      description: toolSummary(toolNames.writeStdin),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier used to start the process."),
         sessionId: z.number().describe("Process session identifier returned by exec_command."),
@@ -1253,11 +1293,10 @@ function createMcpServer(
 
   registerAppTool(
     server,
-    "open_workspace",
+    toolNames.openWorkspace,
     {
       title: "Open workspace",
-      description:
-        "Open a local project directory as a coding workspace. Call this once per project folder or worktree before reading, editing, searching, writing, showing changes, or running commands. Reuse the returned workspaceId for later calls in the same folder; do not call open_workspace again unless switching folders/worktrees, changing checkout/worktree mode, the workspaceId is rejected as unknown, or the user explicitly asks to reopen. By default this opens the actual checkout; set mode=\"worktree\" when the user asks for an isolated or parallel coding session. Returns a workspaceId, loaded root project instructions, and nested instruction file paths the model should read before working in those directories.",
+      description: toolSummary(toolNames.openWorkspace),
       inputSchema: {
         path: z
           .string()
@@ -1397,16 +1436,7 @@ function createMcpServer(
     toolNames.read,
     {
       title: "Read file",
-      description:
-        [
-          "Read a file inside an open workspace. Use this for file inspection instead of shell commands like cat or sed. Call open_workspace first and pass workspaceId.",
-          "Use this tool to inspect relevant AGENTS.md or CLAUDE.md files listed by open_workspace before working in nested directories.",
-          config.skillsEnabled
-            ? "If available skills were returned and a task matches one, read that skill's path before proceeding. Skill paths may be outside the workspace; only advertised SKILL.md files and files under already-loaded skill directories are readable."
-            : "",
-        ]
-          .filter(Boolean)
-          .join(" "),
+      description: toolSummary(toolNames.read),
       inputSchema: {
         workspaceId: z
           .string()
@@ -1494,8 +1524,7 @@ function createMcpServer(
     toolNames.doctor,
     {
       title: "Doctor",
-      description:
-        "Run LocalSpace diagnostics for server configuration, runtime, command availability, shell selection, and optionally a workspace.",
+      description: toolSummary(toolNames.doctor),
       inputSchema: {
         workspaceId: z
           .string()
@@ -1539,8 +1568,7 @@ function createMcpServer(
     toolNames.workspaceInfo,
     {
       title: "Workspace info",
-      description:
-        "Show workspace root, mode, Git branch/status/recent commits, and package.json scripts for an open workspace.",
+      description: toolSummary(toolNames.workspaceInfo),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -1581,7 +1609,7 @@ function createMcpServer(
     toolNames.sessionSummary,
     {
       title: "Session summary",
-      description: "Summarize recent LocalSpace tool activity, including file changes, commands, blocked events, approvals, and touched paths.",
+      description: toolSummary(toolNames.sessionSummary),
       inputSchema: {
         workspaceId: z.string().optional().describe("Optional workspace identifier returned by open_workspace. Omit to summarize all recent workspaces."),
         limit: z.number().int().min(1).max(500).optional().describe("Maximum recent audit events to summarize. Defaults to 50."),
@@ -1623,7 +1651,7 @@ function createMcpServer(
     toolNames.entrypoints,
     {
       title: "Entrypoints",
-      description: "Show package entrypoints, scripts, likely source entry files, suggested verification commands, and important config files for an open workspace.",
+      description: toolSummary(toolNames.entrypoints),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -1665,8 +1693,7 @@ function createMcpServer(
       toolNames.codeMap,
       {
         title: "Code map",
-        description:
-          "Show a combined project overview with entrypoints, directory structure, exported symbols, and import/export relationships. Use this early in unfamiliar projects.",
+        description: toolSummary(toolNames.codeMap),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           path: z.string().optional().describe("File or directory path relative to the workspace root. Defaults to '.'."),
@@ -1728,8 +1755,7 @@ function createMcpServer(
       toolNames.projectMap,
       {
         title: "Project map",
-        description:
-          "Show a compact directory tree for an open workspace. Use this after open_workspace to quickly understand project structure before repeated ls/glob calls.",
+        description: toolSummary(toolNames.projectMap),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           path: z
@@ -1810,8 +1836,7 @@ function createMcpServer(
       toolNames.symbols,
       {
         title: "Symbols",
-        description:
-          "List TypeScript and JavaScript declarations under an open workspace path. Use this to locate functions, classes, interfaces, types, enums, variables, and class methods before reading files.",
+        description: toolSummary(toolNames.symbols),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           path: z
@@ -1893,8 +1918,7 @@ function createMcpServer(
       toolNames.imports,
       {
         title: "Imports",
-        description:
-          "List TypeScript and JavaScript import/export relationships under an open workspace path. Use this to understand file dependencies and public API before reading large files.",
+        description: toolSummary(toolNames.imports),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           path: z
@@ -1961,8 +1985,7 @@ function createMcpServer(
       toolNames.references,
       {
         title: "References",
-        description:
-          "Find TypeScript and JavaScript identifier references under an open workspace path. Use this before modifying a function, class, variable, or exported API to estimate impact.",
+        description: toolSummary(toolNames.references),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           query: z.string().min(1).describe("Identifier name to search for."),
@@ -2043,8 +2066,7 @@ function createMcpServer(
     toolNames.write,
     {
       title: "Write file",
-      description:
-        `Create or completely overwrite a file inside an open workspace. Prefer ${toolNames.edit} for targeted changes to existing files. Call open_workspace first and pass workspaceId.`,
+      description: toolSummary(toolNames.write),
       inputSchema: {
         workspaceId: z
           .string()
@@ -2127,7 +2149,7 @@ function createMcpServer(
     toolNames.validatePlan,
     {
       title: "Validation plan",
-      description: "Recommend project validation commands from package scripts without running them.",
+      description: toolSummary(toolNames.validatePlan),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -2168,7 +2190,7 @@ function createMcpServer(
     toolNames.reviewChecklist,
     {
       title: "Review checklist",
-      description: "Show a pre-summary or pre-commit checklist based on Git state and validation scripts.",
+      description: toolSummary(toolNames.reviewChecklist),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -2209,7 +2231,7 @@ function createMcpServer(
     toolNames.nextSteps,
     {
       title: "Next steps",
-      description: "Recommend the next coding workflow actions from workspace state, validation scripts, and recent audit activity.",
+      description: toolSummary(toolNames.nextSteps),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -2251,7 +2273,7 @@ function createMcpServer(
     toolNames.taskSummary,
     {
       title: "Task summary",
-      description: "Summarize changed paths, Git state, recent audit activity, recommended validation, warnings, and final-response guidance for the current task.",
+      description: toolSummary(toolNames.taskSummary),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -2293,7 +2315,7 @@ function createMcpServer(
     toolNames.validationSummary,
     {
       title: "Validation summary",
-      description: "Summarize recent validation-related exec_command audit events and recommended validation commands. Exact command classification requires LOCALSPACE_LOG_SHELL_COMMANDS=1.",
+      description: toolSummary(toolNames.validationSummary),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
       },
@@ -2335,7 +2357,7 @@ function createMcpServer(
     toolNames.finalReport,
     {
       title: "Final report",
-      description: "Generate a standard task-final report from Git state, recent audit activity, validation summaries, warnings, and optional user-provided completion notes.",
+      description: toolSummary(toolNames.finalReport),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
         taskTitle: z.string().optional().describe("Optional task or phase title to include in the report."),
@@ -2380,7 +2402,7 @@ function createMcpServer(
     toolNames.handoffSummary,
     {
       title: "Handoff summary",
-      description: "Generate a Markdown handoff summary for continuing the task in a new chat or window, including project path, latest commit, phase, validation, warnings, and next prompt.",
+      description: toolSummary(toolNames.handoffSummary),
       inputSchema: {
         workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
         taskTitle: z.string().optional().describe("Optional task or phase title to include indirectly through the generated report."),
@@ -2439,8 +2461,7 @@ function createMcpServer(
     toolNames.edit,
     {
       title: "Edit file",
-      description:
-        `Edit one file inside an open workspace by replacing exact text blocks. Prefer this over ${toolNames.write} for targeted changes. Each oldText must match a unique, non-overlapping region of the original file; merge nearby changes into one edit and keep oldText as small as possible while still unique. Call open_workspace first and pass workspaceId.`,
+      description: toolSummary(toolNames.edit),
       inputSchema: {
         workspaceId: z
           .string()
@@ -2538,11 +2559,10 @@ function createMcpServer(
   if (config.toolMode === "codex" || config.toolMode === "hybrid") {
     registerAppTool(
       server,
-      "apply_patch",
+      toolNames.applyPatch,
       {
         title: "Apply patch",
-        description:
-          "Apply one Codex-style patch inside an open workspace. Supports adding, overwriting, updating, deleting, and moving files. Use this for all file modifications. Paths must be relative to the workspace. Call open_workspace first and pass workspaceId.",
+        description: toolSummary(toolNames.applyPatch),
         inputSchema: {
           workspaceId: z
             .string()
@@ -2629,11 +2649,10 @@ function createMcpServer(
   if (config.widgets === "changes") {
     registerAppTool(
       server,
-      "show_changes",
+      toolNames.showChanges,
       {
         title: "Show changes",
-        description:
-          "Show aggregate file changes for an open workspace. If the current turn successfully modified files, call this exactly once after the final related file change and before your final response so the user can inspect the combined diff for the turn. Do not call it after every individual file change, and do not skip it because prior file-change tools already displayed per-tool diffs.",
+        description: toolSummary(toolNames.showChanges),
         inputSchema: {
           workspaceId: z
             .string()
@@ -2688,8 +2707,7 @@ function createMcpServer(
       toolNames.changes,
       {
         title: "Changes",
-        description:
-          "Show current Git changes for an open workspace as plain text. Use this to review modifications before summarizing or committing. Does not require widget mode.",
+        description: toolSummary(toolNames.changes),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           mode: z
@@ -2751,8 +2769,7 @@ function createMcpServer(
       toolNames.gitStatus,
       {
         title: "Git status",
-        description:
-          "Show Git branch and workspace status for an open workspace. Uses fixed git arguments and does not run through a shell.",
+        description: toolSummary(toolNames.gitStatus),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           maxOutputChars: z
@@ -2799,8 +2816,7 @@ function createMcpServer(
       toolNames.gitDiff,
       {
         title: "Git diff",
-        description:
-          "Show Git diff output for an open workspace. Supports unstaged, staged, and stat output using fixed git arguments.",
+        description: toolSummary(toolNames.gitDiff),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           staged: z.boolean().optional().describe("Show staged diff. Defaults to false."),
@@ -2853,8 +2869,7 @@ function createMcpServer(
       toolNames.gitAdd,
       {
         title: "Git add",
-        description:
-          "Stage specific workspace paths with git add. Uses fixed git arguments, validates each path stays inside the workspace, and does not run through a shell.",
+        description: toolSummary(toolNames.gitAdd),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           paths: z.array(z.string()).min(1).describe("Workspace-relative paths to stage."),
@@ -2921,8 +2936,7 @@ function createMcpServer(
       toolNames.gitCommit,
       {
         title: "Git commit",
-        description:
-          "Commit staged changes with a message. Use only after the user explicitly asks to commit. Uses fixed git arguments and does not run through a shell.",
+        description: toolSummary(toolNames.gitCommit),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           message: z.string().min(1).describe("Commit message."),
@@ -2981,8 +2995,7 @@ function createMcpServer(
       toolNames.gitLog,
       {
         title: "Git log",
-        description:
-          "Show recent Git commits for an open workspace using fixed git arguments.",
+        description: toolSummary(toolNames.gitLog),
         inputSchema: {
           workspaceId: z.string().describe("Workspace identifier returned by open_workspace."),
           limit: z.number().int().min(1).max(100).optional().describe("Number of commits. Defaults to 10, max 100."),
@@ -3035,8 +3048,7 @@ function createMcpServer(
       toolNames.grep,
       {
         title: "Grep",
-        description:
-          "Search file contents inside an open workspace. Use this before broad reads when looking for symbols, text, or usage sites. Respects project ignore rules. Call open_workspace first and pass workspaceId.",
+        description: toolSummary(toolNames.grep),
         inputSchema: {
           workspaceId: z
             .string()
@@ -3108,8 +3120,7 @@ function createMcpServer(
       toolNames.glob,
       {
         title: "Glob",
-        description:
-          "Find files by glob pattern inside an open workspace. Use this to discover filenames or narrow file sets before reading. Respects project ignore rules. Call open_workspace first and pass workspaceId.",
+        description: toolSummary(toolNames.glob),
         inputSchema: {
           workspaceId: z
             .string()
@@ -3178,8 +3189,7 @@ function createMcpServer(
       toolNames.ls,
       {
         title: "Ls",
-        description:
-          "List a directory inside an open workspace. Use this for directory inspection before reading files. Call open_workspace first and pass workspaceId.",
+        description: toolSummary(toolNames.ls),
         inputSchema: {
           workspaceId: z
             .string()
@@ -3246,9 +3256,7 @@ function createMcpServer(
     toolNames.shell,
     {
       title: "Bash",
-      description: config.toolMode !== "full"
-        ? `Run a shell command inside an open workspace. Use only for tests, builds, git inspection, package scripts, search, file discovery, and directory inspection. In minimal tool mode, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} are disabled; use command-line tools such as grep, rg, find, ls, and tree for those read-only inspection actions. Do not use ${toolNames.shell} to create or modify files. Do not use shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or generated scripts to write project files; use ${toolNames.edit} for targeted changes and ${toolNames.write} for new files or full rewrites. Prefer ${toolNames.read} for direct file reads. Call open_workspace first and pass workspaceId. This is powerful local execution and should only be exposed behind strong authentication.`
-        : `Run a shell command inside an open workspace. Use only for tests, builds, git inspection, package scripts, and commands that are better executed by the shell. Do not use ${toolNames.shell} to create or modify files. Do not use shell redirection, heredocs, tee, sed -i, perl -i, node/python/ruby scripts, or generated scripts to write project files; use ${toolNames.edit} for targeted changes and ${toolNames.write} for new files or full rewrites. Prefer ${toolNames.read}, ${toolNames.grep}, ${toolNames.glob}, and ${toolNames.ls} for file inspection. Call open_workspace first and pass workspaceId. This is powerful local execution and should only be exposed behind strong authentication.`,
+      description: toolSummary(toolNames.shell),
       inputSchema: {
         workspaceId: z
           .string()

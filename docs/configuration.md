@@ -104,7 +104,7 @@ MCP clients discover metadata from:
 LocalSpace is designed around `hybrid` as the default and recommended tool
 surface. It keeps the complete ChatGPT coding loop available: safe workspace
 inspection, code navigation, patching, process tools, Git helpers, and workflow
-summaries.
+Skills plus a bounded activity summary.
 
 `LOCALSPACE_TOOL_MODE` remains available for legacy compatibility and advanced
 experiments, but most users should leave it unset.
@@ -115,6 +115,9 @@ experiments, but most users should leave it unset.
 | `codex` | Experimental compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `apply_patch`, `exec_command`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
 | `full` | Legacy compatibility. Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `entrypoints`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
 | `minimal` | Legacy compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
+
+The exact generated tool lists, including compatibility helpers and Widget
+overlays, are maintained in [`tool-surfaces.md`](tool-surfaces.md).
 
 `LOCALSPACE_MINIMAL_TOOLS` remains a backward-compatible alias when
 `LOCALSPACE_TOOL_MODE` is unset: `1` selects `minimal` and `0` selects `full`.
@@ -178,7 +181,8 @@ defaulting to `audit.jsonl` under the LocalSpace state directory. Use
 `LOCALSPACE_AUDIT_LOG=0` to disable it and
 `LOCALSPACE_AUDIT_MAX_MEMORY_EVENTS` to tune in-memory retention.
 
-Workflow helper tools are read-only. `next_steps` recommends the next action,
+Workflow helper tools are exposed only in the legacy `minimal` and `full`
+surfaces. They are read-only. `next_steps` recommends the next action,
 `validate_plan` recommends validation commands from package scripts without
 running them, `review_checklist` summarizes pre-summary or pre-commit checks
 from Git state and detected validation scripts, `validation_summary` summarizes
@@ -186,7 +190,9 @@ recent validation-related command activity, and `task_summary` summarizes change
 paths, Git state, audit activity, validation recommendations, warnings, and
 final-response guidance. `final_report` turns that state into a standard final
 task report, and `handoff_summary` generates Markdown context for continuing a
-long task in a new chat or window.
+long task in a new chat or window. The default `hybrid` and experimental `codex`
+surfaces instead use `session_summary`, core Git/process tools, and progressively
+loaded Skills; their server instructions do not reference unavailable helpers.
 
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and

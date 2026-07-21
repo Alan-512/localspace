@@ -144,6 +144,9 @@ the Codex-style editing and process tools with dedicated `project_map`, `grep`,
 Compatibility modes remain available, but they are not the primary product
 surface.
 
+The exact generated lists for every mode and Widget overlay are in
+[`tool-surfaces.md`](tool-surfaces.md).
+
 Minimal mode exposes:
 
 - `open_workspace`
@@ -229,13 +232,13 @@ status entries, and stat output. `git_status`, `git_diff`, `git_log`, `git_add`,
 and `git_commit` preserve text output while also exposing normalized fields such
 as clean state, commits, staged paths, and truncation status.
 
-Use `next_steps` when you are unsure what to do next, `validate_plan` before
-running verification commands, `validation_summary` after validation,
-`review_checklist` before summarizing changes or committing, and `task_summary`
-or `final_report` before final task summaries. Use `handoff_summary` when a long
-conversation needs to continue in a new chat or window. These tools are
-read-only; they recommend workflow actions and summarize state but do not run
-commands or modify files.
+The legacy `minimal` and `full` surfaces also expose `next_steps`,
+`validate_plan`, `validation_summary`, `review_checklist`, `task_summary`,
+`final_report`, and `handoff_summary`. These compatibility helpers are read-only.
+The default `hybrid` and experimental `codex` surfaces do not expose them; use
+`session_summary`, the dedicated core tools, and the matching built-in Skill
+instead. Server instructions are generated from the active tool catalog and do
+not direct the model to unavailable tools.
 
 High-risk shell commands are blocked before execution. When `exec_command`
 returns `blocked: true` and an `approvalToken`, ask the user to explicitly

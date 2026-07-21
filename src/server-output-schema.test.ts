@@ -11,7 +11,7 @@ const expectedSchemas = new Map([
   ["toolNames.symbols", "symbolsStructuredOutputSchema"],
   ["toolNames.imports", "importsStructuredOutputSchema"],
   ["toolNames.references", "referencesStructuredOutputSchema"],
-  ["\"show_changes\"", "resultOutputSchema"],
+  ["toolNames.showChanges", "resultOutputSchema"],
   ["toolNames.changes", "changesStructuredOutputSchema"],
   ["toolNames.gitStatus", "gitStatusStructuredOutputSchema"],
   ["toolNames.gitDiff", "gitDiffStructuredOutputSchema"],
@@ -24,11 +24,11 @@ for (const [toolRef, expectedSchema] of expectedSchemas) {
   assert.equal(outputSchemaNameForTool(toolRef), expectedSchema, `${toolRef} outputSchema`);
 }
 
-assert.equal(toolWidgetKindForTool('"open_workspace"'), '"open_workspace"');
+assert.equal(toolWidgetKindForTool("toolNames.openWorkspace"), '"open_workspace"');
 assert.equal(toolWidgetKindForTool("toolNames.doctor"), '"workspace"');
-assert.equal(toolWidgetKindForTool('"exec_command"'), '"shell"');
-assert.equal(toolWidgetKindForTool('"write_stdin"'), '"shell"');
-assert.equal(toolWidgetKindForTool('"show_changes"'), '"show_changes"');
+assert.equal(toolWidgetKindForTool("toolNames.execCommand"), '"shell"');
+assert.equal(toolWidgetKindForTool("toolNames.writeStdin"), '"shell"');
+assert.equal(toolWidgetKindForTool("toolNames.showChanges"), '"show_changes"');
 assert.match(source, /case "changes":\s*return kind === "open_workspace" \|\| kind === "show_changes";/);
 
 function outputSchemaNameForTool(toolRef: string): string {

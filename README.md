@@ -51,9 +51,9 @@ and inspectable.
   `write_stdin`, `changes`, and dedicated `git_*` tools.
 - **Fast code orientation**: use `project_map`, `entrypoints`, `symbols`,
   `imports`, `references`, and `code_map` before changing unfamiliar code.
-- **Workflow guidance**: use `doctor`, `workspace_info`, `next_steps`,
-  `validate_plan`, `review_checklist`, `validation_summary`, `task_summary`,
-  `final_report`, and `handoff_summary` to keep long sessions grounded.
+- **Workflow guidance**: use `doctor`, `workspace_info`, `session_summary`, and
+  progressively loaded Skills to keep default `hybrid` sessions grounded.
+  Legacy `minimal` and `full` modes also expose read-only workflow helper tools.
 - **Safety rails**: use filesystem allowlists, OAuth owner approval, Host header
   checks, sensitive-path protection, command risk warnings, danger-command
   approval tokens, and audit logs.
@@ -193,14 +193,14 @@ If you are running from a local checkout, replace `localspace` with
 
 LocalSpace is designed around the default `hybrid` tool surface. It combines
 safe workspace inspection, Codex-style patching, process tools, code navigation,
-Git helpers, and workflow summaries for ChatGPT coding sessions.
+Git helpers, and bounded activity summaries for ChatGPT coding sessions.
 
 `LOCALSPACE_TOOL_MODE` still exists for compatibility and advanced experiments,
 but normal users should keep the default `hybrid` mode.
 
 | Mode | Status | Best for |
 | --- | --- | --- |
-| `hybrid` | Default and recommended | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and workflow summaries. |
+| `hybrid` | Default and recommended | ChatGPT coding sessions with Codex-style edits, process tools, code navigation, Git helpers, and `session_summary`. |
 | `codex` | Experimental compatibility | A smaller Codex-like surface: workspace, read, patch, command, process, changes, and Git tools. |
 | `full` | Legacy compatibility | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
 | `minimal` | Legacy compatibility | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |
@@ -211,7 +211,8 @@ Example:
 LOCALSPACE_TOOL_MODE="hybrid" node dist/cli.js serve
 ```
 
-See [`docs/configuration.md`](docs/configuration.md) for the complete reference.
+See [`docs/tool-surfaces.md`](docs/tool-surfaces.md) for the exact generated
+tool lists and [`docs/configuration.md`](docs/configuration.md) for configuration.
 
 LocalSpace also ships built-in workflow skills. `open_workspace` advertises only
 their names, descriptions, and `SKILL.md` paths; the model should read the
@@ -237,11 +238,11 @@ In the default `hybrid` mode, ChatGPT can:
 - review changes with `changes`, `git_status`, `git_diff`, and `git_log`
 - stage and commit explicit files with `git_add` and `git_commit` when the user
   asks for it
-- summarize progress with `session_summary`, `validation_summary`,
-  `task_summary`, `final_report`, and `handoff_summary`
+- summarize recent audited activity with `session_summary`
 
-The workflow tools are intentionally read-only unless their names clearly imply
-mutation, such as `apply_patch`, `exec_command`, `git_add`, or `git_commit`.
+Longer validation, review, release, and handoff guidance is progressively loaded
+from the built-in Skills. The legacy `minimal` and `full` surfaces retain the
+read-only workflow helper tools for compatibility.
 
 ---
 

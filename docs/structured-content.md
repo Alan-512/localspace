@@ -22,6 +22,12 @@ Every structured tool keeps this compatibility field:
 
 ## Workspace, diagnostics, and Git review
 
+Availability is controlled by the active tool surface. In particular,
+`next_steps`, `validate_plan`, `review_checklist`, `task_summary`,
+`validation_summary`, `final_report`, and `handoff_summary` are compatibility
+helpers exposed by `minimal` and `full`, not by the default `hybrid` or
+experimental `codex` surfaces. See [`tool-surfaces.md`](tool-surfaces.md).
+
 | Tool | Structured fields |
 | --- | --- |
 | `doctor` | `configuration`, `runtime`, `workspace`, `checks[]`, `overall` |

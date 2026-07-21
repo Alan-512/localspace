@@ -1,0 +1,107 @@
+# LocalSpace Tool Surfaces
+
+> Generated from `src/tool-catalog.ts`. Update the catalog, then regenerate this file; do not maintain a second handwritten tool list.
+
+Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are listed separately.
+
+## `hybrid` (23)
+
+- `open_workspace`
+- `read`
+- `doctor`
+- `workspace_info`
+- `session_summary`
+- `entrypoints`
+- `code_map`
+- `project_map`
+- `symbols`
+- `imports`
+- `references`
+- `grep`
+- `glob`
+- `ls`
+- `apply_patch`
+- `exec_command`
+- `write_stdin`
+- `changes`
+- `git_status`
+- `git_diff`
+- `git_add`
+- `git_commit`
+- `git_log`
+
+## `codex` (15)
+
+- `open_workspace`
+- `read`
+- `doctor`
+- `workspace_info`
+- `session_summary`
+- `entrypoints`
+- `apply_patch`
+- `exec_command`
+- `write_stdin`
+- `changes`
+- `git_status`
+- `git_diff`
+- `git_add`
+- `git_commit`
+- `git_log`
+
+## `full` (30)
+
+- `open_workspace`
+- `read`
+- `doctor`
+- `workspace_info`
+- `session_summary`
+- `entrypoints`
+- `code_map`
+- `project_map`
+- `symbols`
+- `imports`
+- `references`
+- `grep`
+- `glob`
+- `ls`
+- `write`
+- `edit`
+- `bash`
+- `validate_plan`
+- `review_checklist`
+- `next_steps`
+- `task_summary`
+- `validation_summary`
+- `final_report`
+- `handoff_summary`
+- `changes`
+- `git_status`
+- `git_diff`
+- `git_add`
+- `git_commit`
+- `git_log`
+
+## `minimal` (16)
+
+- `open_workspace`
+- `read`
+- `doctor`
+- `workspace_info`
+- `session_summary`
+- `entrypoints`
+- `write`
+- `edit`
+- `bash`
+- `validate_plan`
+- `review_checklist`
+- `next_steps`
+- `task_summary`
+- `validation_summary`
+- `final_report`
+- `handoff_summary`
+
+## Widget overlays
+
+- `LOCALSPACE_WIDGETS=changes` adds `show_changes` to every tool mode.
+- `LOCALSPACE_WIDGETS=full` changes UI attachment only and does not add tools.
+- `LOCALSPACE_WIDGETS=off` exposes no widget-only tools.

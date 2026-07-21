@@ -8,6 +8,7 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerConfig } from "./config.js";
 import { SqliteOAuthClientsStore, SqliteOAuthStore } from "./oauth-store.js";
 import { createServer } from "./server.js";
+import { toolCatalogEntry, type ToolName } from "./tool-catalog.js";
 
 const root = await mkdtemp(join(tmpdir(), "localspace-mcp-restart-test-"));
 const accessToken = "restart-test-access-token";
@@ -524,9 +525,16 @@ async function listToolNames(config: ServerConfig, token: string): Promise<strin
     const response = await mcpRequest(server.baseUrl, token, toolsListRequest());
     assert.equal(response.status, 200);
     const result = await jsonRpcResult(response);
-    return arrayValue(result.tools)
-      .map((tool) => String(recordValue(tool, "name")))
-      .sort();
+    const tools = arrayValue(result.tools);
+    for (const tool of tools) {
+      const name = String(recordValue(tool, "name")) as ToolName;
+      assert.equal(
+        recordValue(tool, "description"),
+        toolCatalogEntry(name).summary,
+        `${config.toolMode}/${config.widgets} description drifted for ${name}`,
+      );
+    }
+    return tools.map((tool) => String(recordValue(tool, "name"))).sort();
   } finally {
     await server.close();
   }
