@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { loadConfig } from "./config.js";
@@ -123,6 +123,20 @@ try {
       "# Hidden Skill",
     ].join("\n"),
   );
+  if (platform() !== "win32") {
+    const outsideSkill = join(root, "outside-skill");
+    await mkdir(outsideSkill);
+    await writeFile(
+      join(outsideSkill, "SKILL.md"),
+      [
+        "---",
+        "name: escaped-skill",
+        "description: Must not load through a source-root symlink.",
+        "---",
+      ].join("\n"),
+    );
+    await symlink(outsideSkill, join(explicitSkills, "escaped-link"), "dir");
+  }
 
   const disabledConfig = loadConfig({
     LOCALSPACE_ALLOWED_ROOTS: projectRoot,
@@ -175,6 +189,7 @@ try {
   assert.equal(loaded.skills.some((skill) => skill.name === "project-skill"), false);
   assert.equal(loaded.skills.filter((skill) => skill.name === "duplicate-skill").length, 1);
   assert.equal(loaded.skills.some((skill) => skill.name === "hidden-skill"), true);
+  assert.equal(loaded.skills.some((skill) => skill.name === "escaped-skill"), false);
   assert.equal(loaded.diagnostics.some((diagnostic) => diagnostic.type === "collision"), true);
 
   const duplicateConfig = loadConfig({

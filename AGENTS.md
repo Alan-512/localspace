@@ -9,10 +9,11 @@ should call tools that read files, edit files, search code, apply patches, run
 validation commands, and review Git state directly against approved local
 project roots.
 
-Pi's SDK is currently used as the backend adapter for mature local coding
-primitives such as read, edit, write, grep, find, ls, and bash. LocalSpace wraps
-those primitives behind a remote Streamable HTTP MCP interface, suitable for use
-through a user-controlled tunnel or HTTPS reverse proxy.
+LocalSpace implements its local coding primitives directly with bounded Node.js
+filesystem, Git, search, and process helpers. The MCP server wraps those native
+primitives with workspace allowlists, concurrency control, policy enforcement,
+approval, activity metrics, and durable audit records. It does not embed a
+separate local coding agent or model-provider runtime.
 
 The model-facing workflow is workspace based. MCP clients should call
 `open_workspace` once per local project directory or worktree, then reuse the

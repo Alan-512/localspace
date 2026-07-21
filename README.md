@@ -45,6 +45,9 @@ and inspectable.
 
 - **Local-first coding**: work with your actual projects, package manager, Git
   repository, scripts, and terminal.
+- **Native local runtime**: file reads/writes, exact edits, search, Skills,
+  project instructions, and shell selection are implemented directly by
+  LocalSpace without embedding a second coding agent or model-provider SDK.
 - **Workspace-based access**: open one approved folder or managed worktree, then
   reuse the returned `workspaceId` for all later operations.
 - **Codex-style editing**: use `read`, `read_many`, `apply_patch`, `exec_command`,

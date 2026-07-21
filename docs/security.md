@@ -90,6 +90,25 @@ client must be trusted and the Owner password must stay private.
 High-risk `danger` commands are blocked before execution and require a one-time
 approval token after explicit user confirmation.
 
+## Native Runtime And Supply Chain
+
+LocalSpace implements its file, exact-edit, search, directory, legacy shell,
+Skill discovery, project-instruction discovery, and shell-selection primitives
+directly. It does not embed Pi's coding-agent runtime, Pi model-provider modules,
+or Google AI SDKs.
+
+The native adapters keep the same Workspace allowlist, realpath containment,
+bounded output, mutation serialization, policy, approval, Activity, and Audit
+layers used by the rest of LocalSpace. Existing Skill paths remain compatible,
+including an explicitly configured legacy `.pi/skills` path, but that path name
+does not install or execute Pi.
+
+Removing the aggregate coding-agent package also removes unused provider and UI
+subtrees from the production dependency graph. Dependency-boundary tests reject
+future package-lock or source reintroduction of `pi-coding-agent`, `pi-agent-core`,
+`pi-ai`, `@google/genai`, or `protobufjs` unless the architecture decision is
+explicitly revisited.
+
 ## Workspace Policy
 
 Projects can add `.localspace/policy.json` to reduce the permissions available

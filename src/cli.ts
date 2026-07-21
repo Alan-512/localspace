@@ -3,7 +3,6 @@ import { createRequire } from "node:module";
 import { stdin as input, stdout as output } from "node:process";
 import { resolve } from "node:path";
 import * as prompts from "@clack/prompts";
-import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { satisfies } from "semver";
 import { loadConfig } from "./config.js";
 import { shutdownHttpServer } from "./server-shutdown.js";
@@ -15,6 +14,7 @@ import {
   type LocalspaceUserConfig,
 } from "./user-config.js";
 import { expandHomePath } from "./roots.js";
+import { resolveShellCommand } from "./process-platform.js";
 
 type Command = "serve" | "init" | "doctor" | "config" | "help" | "version";
 const require = createRequire(import.meta.url);
@@ -395,8 +395,8 @@ function checkGitAvailable(): string {
 
 function checkBashShell(): string {
   try {
-    const { shell, args } = getShellConfig();
-    return `${shell} ${args.join(" ")}`;
+    const { executable, args } = resolveShellCommand("<command>");
+    return `${executable} ${args.join(" ")}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return `unavailable (${message})`;

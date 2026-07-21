@@ -2,10 +2,9 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import type { Stats } from "node:fs";
 import type { WorkspaceMode, WorkspaceStore } from "./workspace-store.js";
-import { mkdir, opendir, readFile, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, opendir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import type { ServerConfig } from "./config.js";
 import { createManagedWorktree } from "./git-worktrees.js";
 import { assertAllowedPath, isPathInsideRoot, resolveAllowedPath } from "./roots.js";
@@ -253,18 +252,24 @@ export class WorkspaceRegistry {
     const resolvedAgentDir = (await tryRealpath(agentDir)) ?? agentDir;
     const loadedFiles: LoadedAgentsFile[] = [];
 
-    for (const file of loadProjectContextFiles({ cwd: root, agentDir })) {
-      const path = resolve(file.path);
+    const seen = new Set<string>();
+    for (const directory of [agentDir, root]) {
+      const candidatePath = await firstContextFilePath(directory);
+      if (!candidatePath) continue;
+      const path = resolve(candidatePath);
       if (!isInitialAgentsFilePath(path, root, agentDir)) continue;
 
       const content = await readResolvedContextFile(
         path,
-        file.content,
         resolvedRoot,
         resolvedAgentDir,
       );
       if (content === undefined) continue;
 
+      const resolvedPath = (await tryRealpath(path)) ?? path;
+      const key = process.platform === "win32" ? resolvedPath.toLowerCase() : resolvedPath;
+      if (seen.has(key)) continue;
+      seen.add(key);
       loadedFiles.push({ path, content });
     }
 
@@ -317,6 +322,7 @@ export async function ensureCheckoutWorkspaceRoot(
 }
 
 const CONTEXT_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
+const CONTEXT_FILE_CANDIDATES = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"] as const;
 const SKIPPED_CONTEXT_DIRS = new Set([
   ".git",
   ".hg",
@@ -360,7 +366,6 @@ function isInitialAgentsFilePath(path: string, root: string, agentDir: string): 
 
 async function readResolvedContextFile(
   path: string,
-  fallbackContent: string,
   root: string,
   agentDir: string,
 ): Promise<string | undefined> {
@@ -369,8 +374,23 @@ async function readResolvedContextFile(
     if (!isInitialAgentsFilePath(resolvedPath, root, agentDir)) return undefined;
     return await readFile(resolvedPath, "utf8");
   } catch {
-    return fallbackContent;
+    return undefined;
   }
+}
+
+async function firstContextFilePath(
+  directory: string,
+): Promise<string | undefined> {
+  for (const name of CONTEXT_FILE_CANDIDATES) {
+    const path = join(directory, name);
+    try {
+      const info = await lstat(path);
+      if (info.isFile() || info.isSymbolicLink()) return path;
+    } catch (error) {
+      if (isErrnoException(error) && error.code === "ENOENT") continue;
+    }
+  }
+  return undefined;
 }
 
 async function tryRealpath(path: string): Promise<string | undefined> {

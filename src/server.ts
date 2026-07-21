@@ -38,7 +38,7 @@ import {
   readFileTool,
   runShellTool,
   writeFileTool,
-} from "./pi-tools.js";
+} from "./local-tools.js";
 import { SingleUserOAuthProvider } from "./oauth-provider.js";
 import { ProcessSessionManager, type ProcessSnapshot } from "./process-sessions.js";
 import { getGitChangesData } from "./git-changes.js";
