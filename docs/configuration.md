@@ -335,6 +335,9 @@ advertised by `open_workspace` alongside user/project skills:
 
 - `localspace-code-editing`
 - `localspace-code-navigation`
+- `localspace-debugging`
+- `localspace-code-review`
+- `localspace-refactoring`
 - `localspace-validation`
 - `localspace-git-review`
 - `localspace-release`
@@ -344,6 +347,10 @@ Built-in skills provide progressive disclosure for workflow guidance. The MCP
 tool surface remains `hybrid`; skills do not hide or reveal tools dynamically.
 They tell the model which existing tools to combine for a task and when to run
 validation, review changes, or produce a handoff.
+
+The debugging, code-review, and refactoring skills are task-specific workflow
+guides. They reuse the existing `hybrid` tools and do not add a hidden agent,
+background execution loop, or dynamic tool registration.
 
 LocalSpace discovers standard Agent Skills from:
 

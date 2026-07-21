@@ -209,6 +209,19 @@ try {
     const openWorkspaceResult = await jsonRpcResult(openWorkspace);
     const workspaceId = recordValue(openWorkspaceResult.structuredContent, "workspaceId");
     assert.equal(typeof workspaceId, "string");
+    const advertisedSkills = arrayValue(
+      recordValue(openWorkspaceResult.structuredContent, "skills"),
+    );
+    const advertisedSkillNames = new Set(
+      advertisedSkills.map((skill) => String(recordValue(skill, "name"))),
+    );
+    for (const name of [
+      "localspace-debugging",
+      "localspace-code-review",
+      "localspace-refactoring",
+    ]) {
+      assert.equal(advertisedSkillNames.has(name), true, `open_workspace did not advertise ${name}`);
+    }
 
     const readActivity = await mcpRequest(
       stateless.baseUrl,
@@ -541,7 +554,7 @@ function testConfig(root: string): ServerConfig {
     mcpTransportMode: "stateful",
     stateDir,
     worktreeRoot: join(root, "worktrees"),
-    skillsEnabled: false,
+    skillsEnabled: true,
     skillPaths: [],
     agentDir: join(root, ".codex"),
     logging: {

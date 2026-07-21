@@ -104,6 +104,9 @@ LocalSpace ships built-in workflow skills for progressive disclosure:
 
 - `localspace-code-editing`
 - `localspace-code-navigation`
+- `localspace-debugging`
+- `localspace-code-review`
+- `localspace-refactoring`
 - `localspace-validation`
 - `localspace-git-review`
 - `localspace-release`
@@ -112,6 +115,10 @@ LocalSpace ships built-in workflow skills for progressive disclosure:
 These skills do not dynamically hide or reveal MCP tools. LocalSpace keeps the
 default `hybrid` tool surface available, while skills defer the longer workflow
 guidance until the current task needs it.
+
+The task-specific skills keep their roles separate: debugging establishes and
+fixes a root cause, code review produces evidence-backed findings, and
+refactoring preserves an explicit behavior contract while changing structure.
 
 LocalSpace discovers standard Agent Skills from:
 

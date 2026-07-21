@@ -143,12 +143,31 @@ try {
   });
   const loaded = loadWorkspaceSkills(config, projectRoot);
   assert.equal(builtInSkillPaths().length >= 1, true);
-  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-code-editing"), true);
-  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-code-navigation"), true);
-  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-validation"), true);
-  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-git-review"), true);
-  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-release"), true);
-  assert.equal(loaded.skills.some((skill) => skill.name === "localspace-handoff"), true);
+  const expectedBuiltInSkills = [
+    "localspace-code-editing",
+    "localspace-code-navigation",
+    "localspace-debugging",
+    "localspace-code-review",
+    "localspace-refactoring",
+    "localspace-validation",
+    "localspace-git-review",
+    "localspace-release",
+    "localspace-handoff",
+  ];
+  for (const name of expectedBuiltInSkills) {
+    const skill = loaded.skills.find((candidate) => candidate.name === name);
+    assert.ok(skill, `missing built-in skill: ${name}`);
+    assert.match(skill.description, /^Use when /, `${name} needs an explicit trigger description`);
+  }
+  assert.equal(
+    new Set(
+      loaded.skills
+        .filter((skill) => expectedBuiltInSkills.includes(skill.name))
+        .map((skill) => skill.description),
+    ).size,
+    expectedBuiltInSkills.length,
+    "built-in skill descriptions should remain distinct",
+  );
   assert.equal(loaded.skills.some((skill) => skill.name === "agent-global-skill"), true);
   assert.equal(loaded.skills.some((skill) => skill.name === "agent-project-skill"), true);
   assert.equal(loaded.skills.some((skill) => skill.name === "claude-global-skill"), true);
