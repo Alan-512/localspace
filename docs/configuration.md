@@ -96,6 +96,25 @@ Git, and process-session behavior.
 | `LOCALSPACE_MAX_WORKSPACE_PROCESSES` | `2` |
 | `LOCALSPACE_TOOL_QUEUE_TIMEOUT_MS` | `120000` |
 
+LocalSpace injects the effective values into the MCP server instructions that
+the client model receives during initialization. The instructions group the
+currently exposed tools by concurrency behavior instead of repeating the same
+guidance in every tool description:
+
+- independent shared-read tools may be called in parallel;
+- heavy code scans may run concurrently up to the configured scan limit;
+- workspace mutations and Git writes should not be intentionally parallelized;
+- process-start tools may run concurrently only when their side effects do not
+  share generated files, databases, caches, or ports;
+- calls targeting the same process session remain sequential;
+- `read_many` and `run_checks` are preferred for bounded batch work when those
+  tools are available in the configured tool mode.
+
+The tool names in this guidance are generated from the current Tool Catalog and
+Tool Mode, and the numeric limits come from the active configuration. This keeps
+the model-facing instructions aligned with custom concurrency settings without
+inflating every individual tool schema.
+
 The scheduler uses the concurrency class stored in `src/tool-catalog.ts`:
 
 - shared reads may run together for the same workspace;

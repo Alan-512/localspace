@@ -117,6 +117,42 @@ for (const name of [
   assert.equal(containsToolName(codeIntelligenceInstructions, name), true);
 }
 
+const concurrencyInstructions = buildServerInstructions({
+  toolMode: "hybrid",
+  toolPacks: ["code-intelligence"],
+  widgets: "changes",
+  skillsEnabled: true,
+  concurrency: {
+    maxConcurrentToolCalls: 11,
+    maxConcurrentScans: 3,
+    maxConcurrentProcesses: 5,
+    maxWorkspaceProcesses: 2,
+    queueTimeoutMs: 9_000,
+  },
+});
+assert.match(concurrencyInstructions, /up to 11 tool calls globally/);
+assert.match(concurrencyInstructions, /queue for at most 9000 ms/);
+assert.match(concurrencyInstructions, /capped at 3 scans/);
+assert.match(concurrencyInstructions, /limited to 5 globally and 2 per workspace/);
+for (const name of [
+  toolNames.read,
+  toolNames.grep,
+  toolNames.gitStatus,
+  toolNames.symbols,
+  toolNames.diagnostics,
+  toolNames.applyPatch,
+  toolNames.gitCommit,
+  toolNames.execCommand,
+  toolNames.runChecks,
+  toolNames.writeStdin,
+]) {
+  assert.equal(containsToolName(concurrencyInstructions, name), true, `concurrency guidance omits ${name}`);
+}
+assert.match(concurrencyInstructions, /Prefer `read_many` for multiple known files/);
+assert.match(concurrencyInstructions, /Prefer `run_checks` for independent declared package scripts/);
+assert.match(concurrencyInstructions, /same process session must be sequential/);
+assert.match(concurrencyInstructions, /mode=worktree/);
+
 function containsToolName(text: string, name: string): boolean {
   return text.includes(`\`${name}\``);
 }

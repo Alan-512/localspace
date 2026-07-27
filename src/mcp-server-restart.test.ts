@@ -325,6 +325,14 @@ try {
     const initializeResult = await jsonRpcResult(statelessInitialize);
     assert.equal(initializeResult.protocolVersion, LATEST_PROTOCOL_VERSION);
     assert.equal(recordValue(initializeResult.serverInfo, "name"), "localspace");
+    const serverInstructions = recordValue(initializeResult, "instructions");
+    assert.equal(typeof serverInstructions, "string");
+    assert.match(String(serverInstructions), /up to 8 tool calls globally/);
+    assert.match(String(serverInstructions), /capped at 2 scans/);
+    assert.match(String(serverInstructions), /limited to 4 globally and 2 per workspace/);
+    assert.match(String(serverInstructions), /Prefer `read_many` for multiple known files/);
+    assert.match(String(serverInstructions), /Prefer `run_checks` for independent declared package scripts/);
+    assert.match(String(serverInstructions), /same process session must be sequential/);
 
     const initialized = await mcpRequest(
       stateless.baseUrl,

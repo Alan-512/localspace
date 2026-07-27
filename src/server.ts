@@ -22,7 +22,13 @@ import * as z from "zod/v4";
 import { applyPatch, parsePatch } from "./apply-patch.js";
 import { AuditLogManager } from "./audit-log.js";
 import { CommandApprovalManager } from "./command-approval.js";
-import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
+import {
+  DEFAULT_TOOL_CONCURRENCY,
+  loadConfig,
+  type ServerConfig,
+  type ToolConcurrencyConfig,
+  type WidgetMode,
+} from "./config.js";
 import {
   logEvent,
   requestIp,
@@ -93,9 +99,11 @@ import {
   readManyFiles,
 } from "./read-many.js";
 import {
+  toolCatalog,
   toolAvailable,
   toolNames,
   toolSummary,
+  type ToolConcurrencyClass,
   type ToolName,
 } from "./tool-catalog.js";
 import { ToolConcurrencyScheduler } from "./tool-concurrency.js";
@@ -238,7 +246,9 @@ interface ToolInvocationContext {
 const toolInvocationContext = new AsyncLocalStorage<ToolInvocationContext>();
 
 export function buildServerInstructions(
-  config: Pick<ServerConfig, "toolMode" | "toolPacks" | "widgets" | "skillsEnabled">,
+  config: Pick<ServerConfig, "toolMode" | "toolPacks" | "widgets" | "skillsEnabled"> & {
+    concurrency?: ToolConcurrencyConfig;
+  },
 ): string {
   const has = (name: ToolName): boolean => toolAvailable(
     name,
@@ -276,6 +286,8 @@ export function buildServerInstructions(
     toolNames.ls,
   ]);
   sections.push(`Use ${formatToolList(navigation)} for project inspection before editing.`);
+
+  sections.push(...concurrencyInstructionSections(config));
 
   const codeIntelligence = availableNames(config, [
     toolNames.diagnostics,
@@ -328,6 +340,68 @@ export function buildServerInstructions(
   }
 
   return sections.join(" ");
+}
+
+function concurrencyInstructionSections(
+  config: Pick<ServerConfig, "toolMode" | "toolPacks" | "widgets"> & {
+    concurrency?: ToolConcurrencyConfig;
+  },
+): string[] {
+  const concurrency = config.concurrency ?? DEFAULT_TOOL_CONCURRENCY;
+  const sections = [
+    `When the client supports parallel tool calls, issue independent calls concurrently. LocalSpace currently permits up to ${concurrency.maxConcurrentToolCalls} tool calls globally; excess calls queue for at most ${concurrency.queueTimeoutMs} ms.`,
+  ];
+
+  const sharedReads = availableConcurrencyNames(config, ["shared-read"])
+    .filter((name) => name !== toolNames.openWorkspace);
+  if (sharedReads.length > 0) {
+    sections.push(`Independent shared-read tools may run in parallel: ${formatToolList(sharedReads)}.`);
+  }
+
+  const heavyReads = availableConcurrencyNames(config, ["heavy-read"]);
+  if (heavyReads.length > 0) {
+    sections.push(`Heavy read tools may run concurrently but are capped at ${concurrency.maxConcurrentScans} scans: ${formatToolList(heavyReads)}.`);
+  }
+
+  const workspaceWrites = availableConcurrencyNames(config, ["workspace-write"]);
+  const gitWrites = availableConcurrencyNames(config, ["git-write"]);
+  const serializedWrites = [...workspaceWrites, ...gitWrites];
+  if (serializedWrites.length > 0) {
+    sections.push(`Do not intentionally parallelize workspace or Git mutations; LocalSpace serializes ${formatToolList(serializedWrites)} and read calls may wait while they run.`);
+  }
+
+  const processStarts = availableConcurrencyNames(config, ["process-start"]);
+  if (processStarts.length > 0) {
+    sections.push(`Process-start tools are limited to ${concurrency.maxConcurrentProcesses} globally and ${concurrency.maxWorkspaceProcesses} per workspace: ${formatToolList(processStarts)}. Run them concurrently only when their side effects are independent, including generated files, databases, caches, and ports.`);
+  }
+
+  if (toolAvailable(toolNames.readMany, config.toolMode, config.widgets, config.toolPacks)) {
+    sections.push(`Prefer ${toolLabel(toolNames.readMany)} for multiple known files instead of separate read calls.`);
+  }
+  if (toolAvailable(toolNames.runChecks, config.toolMode, config.widgets, config.toolPacks)) {
+    sections.push(`Prefer ${toolLabel(toolNames.runChecks)} for independent declared package scripts instead of manually coordinating multiple commands.`);
+  }
+
+  const processSessions = availableConcurrencyNames(config, ["process-session"]);
+  if (processSessions.length > 0) {
+    sections.push(`Calls targeting the same process session must be sequential; different sessions may be polled concurrently with ${formatToolList(processSessions)}.`);
+  }
+
+  if (toolAvailable(toolNames.openWorkspace, config.toolMode, config.widgets, config.toolPacks)) {
+    sections.push(`Do not create multiple managed worktrees concurrently with ${toolLabel(toolNames.openWorkspace)} mode=worktree; that operation is globally exclusive and should not overlap Git writes.`);
+  }
+
+  return sections;
+}
+
+function availableConcurrencyNames(
+  config: Pick<ServerConfig, "toolMode" | "toolPacks" | "widgets">,
+  classes: readonly ToolConcurrencyClass[],
+): ToolName[] {
+  return toolCatalog
+    .filter((tool) => classes.includes(tool.concurrencyClass))
+    .map((tool) => tool.name)
+    .filter((name) => toolAvailable(name, config.toolMode, config.widgets, config.toolPacks));
 }
 
 function serverInstructions(config: ServerConfig): string {
