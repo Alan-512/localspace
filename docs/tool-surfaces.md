@@ -4,7 +4,7 @@
 
 Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are listed separately.
 
-## `hybrid` (25)
+## `hybrid` (29)
 
 - `open_workspace`
 - `read`
@@ -21,6 +21,10 @@ Tool lists below use `LOCALSPACE_WIDGETS=off`. Widget-dependent additions are li
 - `grep`
 - `glob`
 - `ls`
+- `next_steps`
+- `validation_summary`
+- `final_report`
+- `handoff_summary`
 - `apply_patch`
 - `exec_command`
 - `run_checks`

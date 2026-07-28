@@ -16,7 +16,13 @@ assert.equal(activity.updateResult("activity_read", {
   outputBytes: 140,
   structuredOutputBytes: 80,
   truncated: true,
+  success: false,
+  error: "output schema mismatch",
 }), true);
+const updatedSummary = activity.summarize({ workspaceId: "ws_test", limit: 10 });
+assert.equal(updatedSummary.failedEvents, 1);
+assert.equal(updatedSummary.recentEvents[0]?.success, false);
+assert.equal(updatedSummary.recentEvents[0]?.error, "output schema mismatch");
 activity.record({
   tool: "grep",
   workspaceId: "ws_test",

@@ -94,6 +94,8 @@ export class ToolActivityLogManager {
       outputBytes?: number;
       structuredOutputBytes?: number;
       truncated?: boolean;
+      success?: boolean;
+      error?: string;
     },
   ): boolean {
     const event = [...this.events].reverse().find((candidate) => candidate.id === activityId);
@@ -103,6 +105,8 @@ export class ToolActivityLogManager {
       event.structuredOutputBytes = result.structuredOutputBytes;
     }
     if (result.truncated) event.truncated = true;
+    if (result.success !== undefined) event.success = result.success;
+    if (result.error !== undefined) event.error = result.error;
     return true;
   }
 

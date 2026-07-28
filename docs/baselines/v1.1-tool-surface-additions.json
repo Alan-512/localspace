@@ -11,7 +11,11 @@
     ],
     "hybrid": [
       "read_many",
-      "run_checks"
+      "run_checks",
+      "next_steps",
+      "validation_summary",
+      "final_report",
+      "handoff_summary"
     ]
   },
   "toolPackAdds": {

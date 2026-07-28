@@ -43,6 +43,14 @@ try {
   assert.equal(infoData.workspace.id, "ws_test");
   assert.equal(infoData.git.isRepository, true);
   assert.equal(infoData.git.clean, true);
+  assert.equal(infoData.git.statusTotal, 0);
+  assert.equal(infoData.git.statusReturned, 0);
+  assert.equal(infoData.git.statusTruncated, false);
+  assert.equal(infoData.git.statusOmitted, 0);
+  assert.equal(infoData.git.recentCommitsTotal, 1);
+  assert.equal(infoData.git.recentCommitsReturned, 1);
+  assert.equal(infoData.git.recentCommitsTruncated, false);
+  assert.equal(infoData.git.recentCommitsOmitted, 0);
   assert.equal(infoData.package?.name, "diagnostics-fixture");
   assert.equal(infoData.package?.scripts.test, "echo test");
 
@@ -50,6 +58,17 @@ try {
   const dirtyInfo = await generateWorkspaceInfo(workspace);
   assert.match(dirtyInfo, /status: dirty/);
   assert.match(dirtyInfo, /README\.md/);
+
+  for (let index = 0; index < 25; index += 1) {
+    await writeFile(join(root, `untracked-${index}.txt`), `${index}\n`);
+  }
+  const boundedInfo = await generateWorkspaceInfoData(workspace);
+  assert.equal(boundedInfo.git.statusTotal, 26);
+  assert.equal(boundedInfo.git.statusReturned, 20);
+  assert.equal(boundedInfo.git.statusTruncated, true);
+  assert.equal(boundedInfo.git.statusOmitted, 6);
+  assert.equal(boundedInfo.git.statusLines.length, 20);
+  assert.match(boundedInfo.text, /\.\.\. \(6 more\)/);
 
   const config = testConfig(root);
   const doctor = await generateDoctorReport(config, { workspace });

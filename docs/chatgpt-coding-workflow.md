@@ -260,13 +260,12 @@ status entries, and stat output. `git_status`, `git_diff`, `git_log`, `git_add`,
 and `git_commit` preserve text output while also exposing normalized fields such
 as clean state, commits, staged paths, and truncation status.
 
-The legacy `minimal` and `full` surfaces also expose `next_steps`,
-`validate_plan`, `validation_summary`, `review_checklist`, `task_summary`,
-`final_report`, and `handoff_summary`. These compatibility helpers are read-only.
-The default `hybrid` and experimental `codex` surfaces do not expose them; use
-`session_summary`, the dedicated core tools, and the matching built-in Skill
-instead. Server instructions are generated from the active tool catalog and do
-not direct the model to unavailable tools.
+Workflow helpers are read-only. The default `hybrid` surface exposes the focused
+completion set `next_steps`, `validation_summary`, `final_report`, and
+`handoff_summary`. The legacy `minimal` and `full` surfaces additionally expose
+`validate_plan`, `review_checklist`, and `task_summary`; the experimental
+`codex` surface exposes none of them. Server instructions are generated from the
+active tool catalog and do not direct the model to unavailable tools.
 
 High-risk shell commands are blocked before execution. When `exec_command`
 returns `blocked: true` and an `approvalToken`, ask the user to explicitly
@@ -286,7 +285,9 @@ Use `doctor` to inspect the LocalSpace server environment. It reports:
 
 Use `workspace_info` after `open_workspace` to quickly inspect project state. It
 reports workspace root/mode, Git repository status, branch, short HEAD, dirty
-files, recent commits, and `package.json` name/version/engines/scripts.
+files, recent commits, and `package.json` name/version/engines/scripts. Bounded
+Git lists include total/returned/truncated/omitted metadata so the model can tell
+whether the compact view is complete.
 
 Use `entrypoints` to understand where execution begins. It reports package
 entrypoint fields, scripts, suggested verification commands, likely source entry

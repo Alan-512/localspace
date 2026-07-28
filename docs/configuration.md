@@ -292,7 +292,7 @@ experiments, but most users should leave it unset.
 
 | Value | Behavior |
 | --- | --- |
-| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `run_checks`, `write_stdin`, `changes`, `git_*`, plus dedicated `grep`, `glob`, and `ls`. |
+| `hybrid` | Default. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `apply_patch`, `exec_command`, `run_checks`, `write_stdin`, `changes`, `git_*`, dedicated `grep`/`glob`/`ls`, and the focused completion helpers `next_steps`, `validation_summary`, `final_report`, and `handoff_summary`. |
 | `codex` | Experimental compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `read_many`, `apply_patch`, `exec_command`, `run_checks`, `write_stdin`, `changes`, and `git_*` tools. Existing mutation and shell tools are hidden. |
 | `full` | Legacy compatibility. Exposes the minimal tools plus dedicated `doctor`, `workspace_info`, `entrypoints`, `code_map`, `project_map`, `symbols`, `imports`, `references`, `grep`, `glob`, `ls`, `changes`, and `git_*` tools. |
 | `minimal` | Legacy compatibility. Exposes `open_workspace`, `doctor`, `workspace_info`, `entrypoints`, `read`, `write`, `edit`, and `bash`. Clients use `bash` with tools such as `rg`, `find`, and `ls` for inspection. |
@@ -449,18 +449,14 @@ under the LocalSpace state directory. `LOCALSPACE_AUDIT_LOG=0` disables durable
 JSONL audit persistence; the bounded in-memory activity summary remains
 available.
 
-Workflow helper tools are exposed only in the legacy `minimal` and `full`
-surfaces. They are read-only. `next_steps` recommends the next action,
-`validate_plan` recommends validation commands from package scripts without
-running them, `review_checklist` summarizes pre-summary or pre-commit checks
-from Git state and detected validation scripts, `validation_summary` summarizes
-recent validation-related command activity, and `task_summary` summarizes changed
-paths, Git state, audit activity, validation recommendations, warnings, and
-final-response guidance. `final_report` turns that state into a standard final
-task report, and `handoff_summary` generates Markdown context for continuing a
-long task in a new chat or window. The default `hybrid` and experimental `codex`
-surfaces instead use `session_summary`, core Git/process tools, and progressively
-loaded Skills; their server instructions do not reference unavailable helpers.
+Workflow helper tools are read-only. The default `hybrid` surface exposes the
+focused completion set: `next_steps`, `validation_summary`, `final_report`, and
+`handoff_summary`. The legacy `minimal` and `full` surfaces additionally expose
+`validate_plan`, `review_checklist`, and `task_summary` for compatibility. The
+experimental `codex` surface exposes none of these helpers and instead relies on
+`session_summary`, core Git/process tools, and progressively loaded Skills.
+Server instructions are generated from the active tool catalog and do not
+reference unavailable helpers.
 
 `changes` renders current Git changes as plain text. It supports `summary`,
 `stat`, and `patch` modes, can inspect staged changes with `staged: true`, and
@@ -526,6 +522,13 @@ advertised by `open_workspace` alongside user/project skills:
 - `localspace-git-review`
 - `localspace-release`
 - `localspace-handoff`
+
+To keep the initial workspace response bounded, `open_workspace` returns full
+name/description/path records for project skills and the most relevant
+LocalSpace skills, then returns remaining entries in a compact `skillIndex`.
+The structured response includes `skillsTotal`, `skillsReturned`,
+`skillsTruncated`, and `recommendedSkills` so clients can distinguish the full
+set from the detailed subset.
 
 Built-in skills provide progressive disclosure for workflow guidance. The MCP
 tool surface remains `hybrid`; skills do not hide or reveal tools dynamically.

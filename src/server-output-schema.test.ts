@@ -11,6 +11,7 @@ const expectedSchemas = new Map([
   ["toolNames.renamePreview", "renamePreviewStructuredOutputSchema"],
   ["toolNames.doctor", "doctorStructuredOutputSchema"],
   ["toolNames.workspaceInfo", "workspaceInfoStructuredOutputSchema"],
+  ["toolNames.codeMap", "codeMapStructuredOutputSchema"],
   ["toolNames.projectMap", "resultOutputSchema"],
   ["toolNames.symbols", "symbolsStructuredOutputSchema"],
   ["toolNames.imports", "importsStructuredOutputSchema"],

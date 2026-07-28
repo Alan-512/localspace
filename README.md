@@ -57,9 +57,10 @@ and inspectable.
 - **Optional code intelligence**: enable `LOCALSPACE_TOOL_PACKS=code-intelligence`
   for bounded TypeScript/JavaScript diagnostics, definitions, implementations,
   and read-only rename previews without changing the default tool surface.
-- **Workflow guidance**: use `doctor`, `workspace_info`, `session_summary`, and
-  progressively loaded Skills to keep default `hybrid` sessions grounded.
-  Legacy `minimal` and `full` modes also expose read-only workflow helper tools.
+- **Workflow guidance**: use `doctor`, `workspace_info`, `session_summary`,
+  progressively loaded Skills, and the Hybrid completion helpers `next_steps`,
+  `validation_summary`, `final_report`, and `handoff_summary`. Legacy `minimal`
+  and `full` retain the broader compatibility helper set.
 - **Safety rails**: use filesystem allowlists, OAuth owner approval, Host header
   checks, sensitive-path protection, command risk warnings, danger-command
   approval tokens, bounded tool/process concurrency, audit logs, and optional
@@ -210,7 +211,7 @@ but normal users should keep the default `hybrid` mode.
 
 | Mode | Status | Best for |
 | --- | --- | --- |
-| `hybrid` | Default and recommended | ChatGPT coding sessions with bounded batch reads, Codex-style edits, process tools, code navigation, Git helpers, and `session_summary`. |
+| `hybrid` | Default and recommended | ChatGPT coding sessions with bounded batch reads, Codex-style edits, process tools, code navigation, Git helpers, activity summaries, and focused completion reports. |
 | `codex` | Experimental compatibility | A smaller Codex-like surface: workspace, single/batch read, patch, command, process, changes, and Git tools. |
 | `full` | Legacy compatibility | Broader dedicated inspection/search/edit tools plus Git and workflow helpers. |
 | `minimal` | Legacy compatibility | A small compatibility surface for hosts that prefer simple read/write/bash-style tools. |
@@ -224,11 +225,12 @@ LOCALSPACE_TOOL_MODE="hybrid" node dist/cli.js serve
 See [`docs/tool-surfaces.md`](docs/tool-surfaces.md) for the exact generated
 tool lists and [`docs/configuration.md`](docs/configuration.md) for configuration.
 
-LocalSpace also ships built-in workflow skills. `open_workspace` advertises only
-their names, descriptions, and `SKILL.md` paths; the model should read the
-matching skill only when the current task needs that workflow. This keeps
-workflow guidance progressively loaded while the `hybrid` tool surface remains
-the single recommended default.
+LocalSpace also ships built-in workflow skills. `open_workspace` returns full
+descriptions for project and most relevant LocalSpace skills, then places any
+remaining entries in a compact `skillIndex`. The model should read the matching
+`SKILL.md` only when the current task needs that workflow. This keeps workflow
+guidance progressively loaded while the `hybrid` tool surface remains the single
+recommended default.
 
 ---
 
@@ -251,6 +253,9 @@ In the default `hybrid` mode, ChatGPT can:
   asks for it
 - summarize recent in-memory tool activity and durable security audit events with
   `session_summary`
+- inspect likely next actions with `next_steps`, summarize validation evidence
+  with `validation_summary`, and produce consistent completion or continuation
+  reports with `final_report` and `handoff_summary`
 
 When the optional `code-intelligence` pack is enabled, all tool modes also gain
 `diagnostics`, `definition`, `implementations`, and `rename_preview` for
@@ -258,8 +263,9 @@ TypeScript and JavaScript. `rename_preview` returns proposed edits but never
 modifies files; apply accepted changes separately with the normal editing tools.
 
 Longer validation, review, release, and handoff guidance is progressively loaded
-from the built-in Skills. The legacy `minimal` and `full` surfaces retain the
-read-only workflow helper tools for compatibility.
+from the built-in Skills. The default `hybrid` surface exposes only the focused
+completion helpers listed above; `validate_plan`, `review_checklist`, and
+`task_summary` remain on the legacy `minimal` and `full` compatibility surfaces.
 
 ---
 

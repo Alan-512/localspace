@@ -25,6 +25,7 @@ export interface StartCommandInput {
   workspaceId: string;
   command: string;
   cwd: string;
+  workingDirectory?: string;
   tty?: boolean;
   columns?: number;
   rows?: number;
@@ -46,13 +47,17 @@ export interface ProcessSnapshot {
   sessionId?: number;
   command?: string;
   cwd?: string;
+  workingDirectory?: string;
   output: string;
+  outputCharacters: number;
   outputTruncated: boolean;
   running: boolean;
   exitCode?: number;
   signal?: string;
   wallTimeMs: number;
   queuedMs: number;
+  startedAt: string;
+  completedAt?: string;
 }
 
 interface ManagedProcess {
@@ -66,8 +71,10 @@ interface ProcessSession {
   workspaceId: string;
   command: string;
   cwd: string;
+  workingDirectory: string;
   process?: ManagedProcess;
   startedAt: number;
+  completedAt?: number;
   columns: number;
   rows: number;
   buffer: HeadTailBuffer;
@@ -364,6 +371,7 @@ export class ProcessSessionManager {
       workspaceId: input.workspaceId,
       command: input.command,
       cwd: input.cwd,
+      workingDirectory: input.workingDirectory ?? ".",
       startedAt: Date.now(),
       columns: terminalSize(input.columns, DEFAULT_COLUMNS),
       rows: terminalSize(input.rows, DEFAULT_ROWS),
@@ -443,6 +451,7 @@ export class ProcessSessionManager {
     session.running = false;
     session.exitCode = exitCode;
     session.signal = signal;
+    session.completedAt = Date.now();
     this.releaseProcessPermits(session);
     session.resolveExit();
     session.cleanupTimer = setTimeout(
@@ -469,13 +478,19 @@ export class ProcessSessionManager {
       sessionId: session.running ? session.id : undefined,
       command: session.command,
       cwd: session.cwd,
+      workingDirectory: session.workingDirectory,
       output: buffered.output,
+      outputCharacters: codePointLength(buffered.output),
       outputTruncated: buffered.truncated,
       running: session.running,
       exitCode: session.exitCode,
       signal: session.signal,
       wallTimeMs: Date.now() - session.startedAt,
       queuedMs,
+      startedAt: new Date(session.startedAt).toISOString(),
+      completedAt: session.completedAt === undefined
+        ? undefined
+        : new Date(session.completedAt).toISOString(),
     };
   }
 

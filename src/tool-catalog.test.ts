@@ -82,24 +82,44 @@ for (const mode of ["minimal", "full", "codex", "hybrid"] as const) {
   }
 }
 
-for (const mode of ["codex", "hybrid"] as const) {
-  const instructions = buildServerInstructions({
-    toolMode: mode,
-    toolPacks: [],
-    widgets: "off",
-    skillsEnabled: true,
-  });
-  for (const unavailable of [
-    toolNames.nextSteps,
-    toolNames.validatePlan,
-    toolNames.validationSummary,
-    toolNames.reviewChecklist,
-    toolNames.taskSummary,
-    toolNames.finalReport,
-    toolNames.handoffSummary,
-  ]) {
-    assert.equal(containsToolName(instructions, unavailable), false, `${mode} instructions mention ${unavailable}`);
-  }
+const codexInstructions = buildServerInstructions({
+  toolMode: "codex",
+  toolPacks: [],
+  widgets: "off",
+  skillsEnabled: true,
+});
+for (const unavailable of [
+  toolNames.nextSteps,
+  toolNames.validatePlan,
+  toolNames.validationSummary,
+  toolNames.reviewChecklist,
+  toolNames.taskSummary,
+  toolNames.finalReport,
+  toolNames.handoffSummary,
+]) {
+  assert.equal(containsToolName(codexInstructions, unavailable), false, `codex instructions mention ${unavailable}`);
+}
+
+const hybridInstructions = buildServerInstructions({
+  toolMode: "hybrid",
+  toolPacks: [],
+  widgets: "off",
+  skillsEnabled: true,
+});
+for (const available of [
+  toolNames.nextSteps,
+  toolNames.validationSummary,
+  toolNames.finalReport,
+  toolNames.handoffSummary,
+]) {
+  assert.equal(containsToolName(hybridInstructions, available), true, `hybrid instructions omit ${available}`);
+}
+for (const unavailable of [
+  toolNames.validatePlan,
+  toolNames.reviewChecklist,
+  toolNames.taskSummary,
+]) {
+  assert.equal(containsToolName(hybridInstructions, unavailable), false, `hybrid instructions mention ${unavailable}`);
 }
 
 const codeIntelligenceInstructions = buildServerInstructions({

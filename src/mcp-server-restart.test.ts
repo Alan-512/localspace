@@ -355,6 +355,14 @@ try {
     assert.ok(toolNames.includes("open_workspace"));
     assert.ok(toolNames.includes("exec_command"));
     assert.ok(toolNames.includes("write_stdin"));
+    for (const workflowTool of [
+      "next_steps",
+      "validation_summary",
+      "final_report",
+      "handoff_summary",
+    ]) {
+      assert.ok(toolNames.includes(workflowTool), `hybrid tools/list omitted ${workflowTool}`);
+    }
 
     const concurrentLists = await Promise.all(
       Array.from({ length: 8 }, (_, index) =>
@@ -402,6 +410,13 @@ try {
     const advertisedSkills = arrayValue(
       recordValue(openWorkspaceResult.structuredContent, "skills"),
     );
+    const skillsTotal = Number(recordValue(openWorkspaceResult.structuredContent, "skillsTotal"));
+    const skillsReturned = Number(recordValue(openWorkspaceResult.structuredContent, "skillsReturned"));
+    const skillIndex = arrayValue(recordValue(openWorkspaceResult.structuredContent, "skillIndex"));
+    assert.equal(skillsTotal, skillsReturned + skillIndex.length);
+    assert.equal(recordValue(openWorkspaceResult.structuredContent, "skillsTruncated"), skillIndex.length > 0);
+    assert.ok(skillsReturned <= skillsTotal);
+    assert.ok(arrayValue(recordValue(openWorkspaceResult.structuredContent, "recommendedSkills")).length > 0);
     const advertisedSkillNames = new Set(
       advertisedSkills.map((skill) => String(recordValue(skill, "name"))),
     );
@@ -413,6 +428,32 @@ try {
       assert.equal(advertisedSkillNames.has(name), true, `open_workspace did not advertise ${name}`);
     }
 
+    const codeMap = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(201, "code_map", {
+        workspaceId,
+        path: ".",
+        depth: 1,
+        maxEntries: 40,
+        maxSymbols: 20,
+        maxImports: 20,
+      }),
+      sessionId,
+    );
+    assert.equal(codeMap.status, 200);
+    const codeMapResult = await jsonRpcResult(codeMap);
+    const codeMapStructured = recordValue(codeMapResult, "structuredContent");
+    assert.equal(recordValue(codeMapStructured, "scope"), ".");
+    assert.equal(recordValue(codeMapStructured, "text"), undefined);
+    assert.equal(recordValue(recordValue(codeMapStructured, "entrypoints"), "packageInfo") !== undefined, true);
+    assert.equal(recordValue(recordValue(codeMapStructured, "entrypoints"), "text"), undefined);
+    assert.ok(arrayValue(recordValue(recordValue(codeMapStructured, "symbols"), "symbols")).length > 0);
+    assert.equal(recordValue(recordValue(codeMapStructured, "symbols"), "text"), undefined);
+    assert.ok(arrayValue(recordValue(recordValue(codeMapStructured, "imports"), "entries")).length > 0);
+    assert.equal(recordValue(recordValue(codeMapStructured, "imports"), "text"), undefined);
+    assert.equal(recordValue(recordValue(recordValue(codeMapResult, "_meta"), "card"), "payload"), undefined);
+
     const readActivity = await mcpRequest(
       stateless.baseUrl,
       accessToken,
@@ -423,7 +464,8 @@ try {
       sessionId,
     );
     assert.equal(readActivity.status, 200);
-    await jsonRpcResult(readActivity);
+    const readActivityResult = await jsonRpcResult(readActivity);
+    assert.equal(recordValue(recordValue(recordValue(readActivityResult, "_meta"), "card"), "payload"), undefined);
 
     const sessionSummary = await mcpRequest(
       stateless.baseUrl,
@@ -437,18 +479,43 @@ try {
     assert.equal(sessionSummary.status, 200);
     const sessionSummaryResult = await jsonRpcResult(sessionSummary);
     const sessionSummaryStructured = recordValue(sessionSummaryResult, "structuredContent");
-    assert.equal(recordValue(sessionSummaryStructured, "totalEvents"), 2);
+    assert.equal(recordValue(sessionSummaryStructured, "totalEvents"), 3);
+    assert.equal(recordValue(recordValue(sessionSummaryStructured, "tools"), "code_map"), 1);
     assert.equal(recordValue(recordValue(sessionSummaryStructured, "tools"), "read"), 1);
     const readStats = recordValue(recordValue(sessionSummaryStructured, "toolStats"), "read");
     assert.ok(Number(recordValue(readStats, "averageOutputBytes")) > 0);
     assert.ok(Number(recordValue(readStats, "averageStructuredOutputBytes")) > 0);
     assert.equal(recordValue(sessionSummaryStructured, "durableAuditEvents"), 2);
     const requestMetrics = recordValue(sessionSummaryStructured, "requestMetrics");
-    assert.equal(recordValue(requestMetrics, "totalRequests"), 1);
+    assert.equal(recordValue(requestMetrics, "totalRequests"), 2);
+    assert.equal(recordValue(recordValue(requestMetrics, "tools"), "code_map"), 1);
     assert.equal(recordValue(recordValue(requestMetrics, "tools"), "read"), 1);
-    assert.equal(recordValue(requestMetrics, "statelessRequests"), 1);
+    assert.equal(recordValue(requestMetrics, "statelessRequests"), 2);
     const durableAudit = await readFile(config.audit.path, "utf8");
     assert.doesNotMatch(durableAudit, /"tool":"read"/);
+
+    const missingRead = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(241, "read", {
+        workspaceId,
+        path: "missing-direct-read.txt",
+      }),
+      sessionId,
+    );
+    assert.equal(missingRead.status, 200);
+    const missingReadResult = await jsonRpcResult(missingRead);
+    assert.equal(recordValue(missingReadResult, "isError"), true);
+    assert.match(toolResultText(missingReadResult), /Tool error \[TOOL_RESULT_ERROR\]/);
+    const missingReadError = recordValue(recordValue(missingReadResult, "_meta"), "error");
+    assert.equal(recordValue(missingReadError, "code"), "TOOL_RESULT_ERROR");
+    assert.equal(recordValue(missingReadError, "recoverable"), true);
+    const missingReadStructuredError = recordValue(
+      recordValue(missingReadResult, "structuredContent"),
+      "error",
+    );
+    assert.equal(recordValue(missingReadStructuredError, "code"), "TOOL_RESULT_ERROR");
+    assert.equal(recordValue(missingReadStructuredError, "recoverable"), true);
 
     const readMany = await mcpRequest(
       stateless.baseUrl,
@@ -574,6 +641,8 @@ try {
     assert.equal(blockedCommand.status, 200);
     const blockedCommandResult = await jsonRpcResult(blockedCommand);
     assert.equal(recordValue(blockedCommandResult.structuredContent, "approvalRequired"), true);
+    assert.equal(recordValue(blockedCommandResult.structuredContent, "command"), dangerousCommand);
+    assert.equal(recordValue(blockedCommandResult.structuredContent, "workingDirectory"), ".");
     const approvalToken = recordValue(blockedCommandResult.structuredContent, "approvalToken");
     assert.equal(typeof approvalToken, "string");
 
@@ -607,6 +676,11 @@ try {
     const processSessionId = recordValue(execCommandResult.structuredContent, "sessionId");
     assert.equal(typeof processSessionId, "number");
     assert.equal(recordValue(execCommandResult.structuredContent, "running"), true);
+    assert.match(String(recordValue(execCommandResult.structuredContent, "command")), /stateless-process-done/);
+    assert.equal(recordValue(execCommandResult.structuredContent, "workingDirectory"), ".");
+    assert.equal(typeof recordValue(execCommandResult.structuredContent, "startedAt"), "string");
+    assert.equal(recordValue(execCommandResult.structuredContent, "completedAt"), undefined);
+    assert.equal(typeof recordValue(execCommandResult.structuredContent, "outputCharacters"), "number");
 
     const writeStdin = await mcpRequest(
       stateless.baseUrl,
@@ -622,6 +696,11 @@ try {
     const writeStdinResult = await jsonRpcResult(writeStdin);
     assert.equal(recordValue(writeStdinResult.structuredContent, "running"), false);
     assert.equal(recordValue(writeStdinResult.structuredContent, "exitCode"), 0);
+    assert.match(String(recordValue(writeStdinResult.structuredContent, "command")), /stateless-process-done/);
+    assert.equal(recordValue(writeStdinResult.structuredContent, "workingDirectory"), ".");
+    assert.equal(typeof recordValue(writeStdinResult.structuredContent, "startedAt"), "string");
+    assert.equal(typeof recordValue(writeStdinResult.structuredContent, "completedAt"), "string");
+    assert.ok(Number(recordValue(writeStdinResult.structuredContent, "outputCharacters")) > 0);
     assert.match(
       String(recordValue(writeStdinResult.structuredContent, "result")),
       /stateless-process-done/,

@@ -131,6 +131,7 @@ import {
 
 type Transport = StreamableHTTPServerTransport;
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
+const MAX_FULL_SKILL_ADVERTISEMENTS = 12;
 const WRITE_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: true,
@@ -438,11 +439,8 @@ function resultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
   };
 }
 
-function structuredTextOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
-  return resultOutputSchema({
-    text: z.string().describe("Same text as result for structured consumers."),
-    ...extra,
-  });
+function structuredResultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
+  return resultOutputSchema(extra);
 }
 
 const scanSummaryOutputSchema = z.object({
@@ -492,30 +490,38 @@ const entrypointPackageInfoOutputSchema = z.object({
   exports: z.array(z.string()),
 });
 
-const entrypointsStructuredOutputSchema = structuredTextOutputSchema({
+const entrypointsDataOutputSchema = {
   packageInfo: entrypointPackageInfoOutputSchema.optional(),
   scripts: z.array(z.object({ name: z.string(), command: z.string() })),
   suggestedVerification: z.array(z.string()),
   sourceEntrypoints: z.array(entrypointCandidateOutputSchema),
   configFiles: z.array(z.string()),
-});
+} satisfies z.ZodRawShape;
 
-const symbolsStructuredOutputSchema = structuredTextOutputSchema({
+const entrypointsStructuredOutputSchema = structuredResultOutputSchema(
+  entrypointsDataOutputSchema,
+);
+
+const symbolsDataOutputSchema = {
   summary: scanSummaryOutputSchema,
   symbols: z.array(symbolEntryOutputSchema),
-});
+} satisfies z.ZodRawShape;
 
-const importsStructuredOutputSchema = structuredTextOutputSchema({
+const symbolsStructuredOutputSchema = structuredResultOutputSchema(symbolsDataOutputSchema);
+
+const importsDataOutputSchema = {
   summary: scanSummaryOutputSchema,
   entries: z.array(importExportEntryOutputSchema),
-});
+} satisfies z.ZodRawShape;
 
-const referencesStructuredOutputSchema = structuredTextOutputSchema({
+const importsStructuredOutputSchema = structuredResultOutputSchema(importsDataOutputSchema);
+
+const referencesStructuredOutputSchema = structuredResultOutputSchema({
   summary: scanSummaryOutputSchema.extend({ query: z.string() }),
   references: z.array(referenceEntryOutputSchema),
 });
 
-const codeMapStructuredOutputSchema = structuredTextOutputSchema({
+const codeMapStructuredOutputSchema = structuredResultOutputSchema({
   scope: z.string(),
   options: z.object({
     depth: z.number(),
@@ -523,10 +529,10 @@ const codeMapStructuredOutputSchema = structuredTextOutputSchema({
     maxSymbols: z.number(),
     maxImports: z.number(),
   }),
-  entrypoints: z.object(entrypointsStructuredOutputSchema),
+  entrypoints: z.object(entrypointsDataOutputSchema),
   projectMap: z.string(),
-  symbols: z.object(symbolsStructuredOutputSchema),
-  imports: z.object(importsStructuredOutputSchema),
+  symbols: z.object(symbolsDataOutputSchema),
+  imports: z.object(importsDataOutputSchema),
 });
 
 const commandCheckOutputSchema = z.object({
@@ -550,7 +556,15 @@ const gitWorkspaceOutputSchema = z.object({
   head: z.string(),
   clean: z.boolean(),
   statusLines: z.array(z.string()),
+  statusTotal: z.number(),
+  statusReturned: z.number(),
+  statusTruncated: z.boolean(),
+  statusOmitted: z.number(),
   recentCommits: z.array(z.string()),
+  recentCommitsTotal: z.number(),
+  recentCommitsReturned: z.number(),
+  recentCommitsTruncated: z.boolean(),
+  recentCommitsOmitted: z.number(),
   error: z.string().optional(),
 });
 
@@ -562,7 +576,7 @@ const packageDataOutputSchema = z.object({
   packageManager: z.string().optional(),
 });
 
-const doctorStructuredOutputSchema = structuredTextOutputSchema({
+const doctorStructuredOutputSchema = structuredResultOutputSchema({
   configuration: z.object({
     toolMode: z.string(),
     toolPacks: z.array(z.string()),
@@ -616,7 +630,7 @@ const codeIntelligencePositionOutputSchema = z.object({
   endColumn: z.number().int().positive(),
 });
 
-const diagnosticsStructuredOutputSchema = structuredTextOutputSchema({
+const diagnosticsStructuredOutputSchema = structuredResultOutputSchema({
   supported: z.boolean(),
   reason: z.string().optional(),
   project: codeIntelligenceProjectOutputSchema.optional(),
@@ -643,7 +657,7 @@ const diagnosticsStructuredOutputSchema = structuredTextOutputSchema({
   })),
 });
 
-const locationsStructuredOutputSchema = structuredTextOutputSchema({
+const locationsStructuredOutputSchema = structuredResultOutputSchema({
   supported: z.boolean(),
   reason: z.string().optional(),
   project: codeIntelligenceProjectOutputSchema.optional(),
@@ -656,7 +670,7 @@ const locationsStructuredOutputSchema = structuredTextOutputSchema({
   truncated: z.boolean(),
 });
 
-const renamePreviewStructuredOutputSchema = structuredTextOutputSchema({
+const renamePreviewStructuredOutputSchema = structuredResultOutputSchema({
   supported: z.boolean(),
   canRename: z.boolean(),
   reason: z.string().optional(),
@@ -673,7 +687,7 @@ const renamePreviewStructuredOutputSchema = structuredTextOutputSchema({
   truncated: z.boolean(),
 });
 
-const workspaceInfoStructuredOutputSchema = structuredTextOutputSchema({
+const workspaceInfoStructuredOutputSchema = structuredResultOutputSchema({
   workspace: workspaceDataOutputSchema,
   git: gitWorkspaceOutputSchema,
   package: packageDataOutputSchema.optional(),
@@ -704,7 +718,7 @@ const readManyOutputSchema = resultOutputSchema({
   }),
 });
 
-const sessionSummaryOutputSchema = structuredTextOutputSchema({
+const sessionSummaryOutputSchema = structuredResultOutputSchema({
   totalEvents: z.number(),
   successfulEvents: z.number(),
   failedEvents: z.number(),
@@ -776,7 +790,7 @@ const workflowCommandOutputSchema = z.object({
   required: z.boolean(),
 });
 
-const validatePlanOutputSchema = structuredTextOutputSchema({
+const validatePlanOutputSchema = structuredResultOutputSchema({
   packageName: z.string().optional(),
   commands: z.array(workflowCommandOutputSchema),
   missingScripts: z.array(z.string()),
@@ -814,7 +828,7 @@ const deterministicAutomationOutputSchema = z.object({
   text: z.string(),
 });
 
-const reviewChecklistOutputSchema = structuredTextOutputSchema({
+const reviewChecklistOutputSchema = structuredResultOutputSchema({
   dirty: z.boolean(),
   staged: z.boolean(),
   unstaged: z.boolean(),
@@ -832,11 +846,11 @@ const nextStepOutputSchema = z.object({
   suggestedTool: z.string().optional(),
 });
 
-const nextStepsOutputSchema = structuredTextOutputSchema({
+const nextStepsOutputSchema = structuredResultOutputSchema({
   steps: z.array(nextStepOutputSchema),
 });
 
-const taskSummaryOutputSchema = structuredTextOutputSchema({
+const taskSummaryOutputSchema = structuredResultOutputSchema({
   changedPaths: z.array(z.string()),
   git: z.object({
     dirty: z.boolean(),
@@ -865,7 +879,7 @@ const validationDetectedResultOutputSchema = z.object({
   passed: z.boolean().optional(),
 });
 
-const validationSummaryOutputSchema = structuredTextOutputSchema({
+const validationSummaryOutputSchema = structuredResultOutputSchema({
   commandPreviewEnabled: z.boolean(),
   recommendedCommands: z.array(z.string()),
   recentExecCommands: z.number(),
@@ -896,7 +910,7 @@ const reportValidationOutputSchema = z.object({
   notes: z.array(z.string()),
 });
 
-const finalReportOutputSchema = structuredTextOutputSchema({
+const finalReportOutputSchema = structuredResultOutputSchema({
   taskTitle: z.string().optional(),
   summary: z.array(z.string()),
   changedFiles: z.array(z.string()),
@@ -910,7 +924,7 @@ const finalReportOutputSchema = structuredTextOutputSchema({
   nextRecommendedStep: z.string(),
 });
 
-const handoffSummaryOutputSchema = structuredTextOutputSchema({
+const handoffSummaryOutputSchema = structuredResultOutputSchema({
   project: z.object({
     root: z.string(),
     branch: z.string().optional(),
@@ -937,7 +951,7 @@ const statusEntryOutputSchema = z.object({
   path: z.string(),
 });
 
-const changesStructuredOutputSchema = structuredTextOutputSchema({
+const changesStructuredOutputSchema = structuredResultOutputSchema({
   isRepository: z.boolean(),
   clean: z.boolean(),
   mode: z.enum(["summary", "stat", "patch"]),
@@ -949,7 +963,7 @@ const changesStructuredOutputSchema = structuredTextOutputSchema({
   truncated: z.boolean(),
 });
 
-const gitStatusStructuredOutputSchema = structuredTextOutputSchema({
+const gitStatusStructuredOutputSchema = structuredResultOutputSchema({
   isRepository: z.boolean(),
   branch: z.string(),
   clean: z.boolean(),
@@ -957,7 +971,7 @@ const gitStatusStructuredOutputSchema = structuredTextOutputSchema({
   truncated: z.boolean(),
 });
 
-const gitDiffStructuredOutputSchema = structuredTextOutputSchema({
+const gitDiffStructuredOutputSchema = structuredResultOutputSchema({
   isRepository: z.boolean(),
   staged: z.boolean(),
   stat: z.boolean(),
@@ -965,14 +979,14 @@ const gitDiffStructuredOutputSchema = structuredTextOutputSchema({
   truncated: z.boolean(),
 });
 
-const gitAddStructuredOutputSchema = structuredTextOutputSchema({
+const gitAddStructuredOutputSchema = structuredResultOutputSchema({
   isRepository: z.boolean(),
   paths: z.array(z.string()),
   stagedCount: z.number(),
   truncated: z.boolean(),
 });
 
-const gitCommitStructuredOutputSchema = structuredTextOutputSchema({
+const gitCommitStructuredOutputSchema = structuredResultOutputSchema({
   isRepository: z.boolean(),
   message: z.string(),
   committed: z.boolean(),
@@ -993,7 +1007,7 @@ const gitCommitStructuredOutputSchema = structuredTextOutputSchema({
   automation: deterministicAutomationOutputSchema,
 });
 
-const gitLogStructuredOutputSchema = structuredTextOutputSchema({
+const gitLogStructuredOutputSchema = structuredResultOutputSchema({
   isRepository: z.boolean(),
   limit: z.number(),
   commits: z.array(z.string()),
@@ -1004,6 +1018,12 @@ const workspaceSkillOutputSchema = z.object({
   name: z.string(),
   description: z.string(),
   path: z.string(),
+});
+
+const workspaceSkillIndexOutputSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  scope: z.enum(["user", "project", "temporary"]),
 });
 
 const workspaceAgentsFileOutputSchema = z.object({
@@ -1112,6 +1132,194 @@ function toolErrorPreview(content: ToolContent[]): string | undefined {
   return text.length > 240 ? `${text.slice(0, 237)}...` : text;
 }
 
+interface NormalizedToolCallbackResult {
+  result: unknown;
+  failed: boolean;
+  error?: string;
+}
+
+function normalizeToolCallbackResult(
+  tool: string,
+  definition: unknown,
+  rawResult: unknown,
+): NormalizedToolCallbackResult {
+  const result = objectRecord(rawResult);
+  if (!result) {
+    const message = "Tool callback returned a non-object result.";
+    return {
+      result: standardToolError(tool, "INVALID_TOOL_RESULT", message, {
+        recoverable: false,
+        retryable: false,
+        nextAction: "Report this LocalSpace tool contract defect.",
+      }),
+      failed: true,
+      error: message,
+    };
+  }
+
+  stripDuplicateStructuredText(tool, result);
+  stripUnattachedCardPayload(result, toolDefinitionHasWidget(definition));
+
+  if (result.isError === true) {
+    const message = toolResultMessage(result) ?? "Tool returned an error without a message.";
+    return {
+      result: standardToolError(tool, "TOOL_RESULT_ERROR", message, {
+        recoverable: true,
+        retryable: false,
+        nextAction: "Correct the input or workspace state, then retry the tool.",
+        previousMeta: result._meta,
+      }),
+      failed: true,
+      error: message,
+    };
+  }
+
+  const outputIssues = toolOutputSchemaIssues(definition, result);
+  if (outputIssues.length > 0) {
+    const message = "Tool produced structured output that does not match its declared output schema.";
+    return {
+      result: standardToolError(tool, "OUTPUT_SCHEMA_MISMATCH", message, {
+        recoverable: true,
+        retryable: false,
+        nextAction: "Use narrower underlying tools and report this LocalSpace contract defect.",
+        details: outputIssues,
+        previousMeta: result._meta,
+      }),
+      failed: true,
+      error: `${message} ${outputIssues.join("; ")}`,
+    };
+  }
+
+  return { result, failed: false };
+}
+
+function standardToolError(
+  tool: string,
+  code: string,
+  message: string,
+  options: {
+    recoverable: boolean;
+    retryable: boolean;
+    nextAction: string;
+    details?: string[];
+    previousMeta?: unknown;
+  },
+): Record<string, unknown> {
+  const details = (options.details ?? []).slice(0, 8);
+  const text = [
+    `Tool error [${code}]`,
+    `Tool: ${tool}`,
+    `Message: ${message}`,
+    `Recoverable: ${options.recoverable ? "yes" : "no"}`,
+    `Retryable: ${options.retryable ? "yes" : "no"}`,
+    `Next action: ${options.nextAction}`,
+    ...details.map((detail) => `Detail: ${detail}`),
+  ].join("\n");
+  const previousMeta = objectRecord(options.previousMeta) ?? {};
+  const errorData = {
+    code,
+    message,
+    recoverable: options.recoverable,
+    retryable: options.retryable,
+    nextAction: options.nextAction,
+    details,
+  };
+  return {
+    content: [textBlock(text)],
+    isError: true,
+    structuredContent: {
+      result: text,
+      error: errorData,
+    },
+    _meta: {
+      ...previousMeta,
+      tool,
+      error: errorData,
+    },
+  };
+}
+
+function toolOutputSchemaIssues(
+  definition: unknown,
+  result: Record<string, unknown>,
+): string[] {
+  const definitionRecord = objectRecord(definition);
+  const outputSchema = definitionRecord?.outputSchema;
+  if (!outputSchema) return [];
+  if (result.structuredContent === undefined) return ["structuredContent: required output is missing"];
+
+  const schemaRecord = objectRecord(outputSchema);
+  const parser = schemaRecord && typeof schemaRecord.safeParse === "function"
+    ? schemaRecord as unknown as { safeParse(value: unknown): unknown }
+    : z.object(outputSchema as z.ZodRawShape);
+  const parsed = parser.safeParse(result.structuredContent) as {
+    success: boolean;
+    error?: { issues?: Array<{ path?: PropertyKey[]; message?: string }> };
+  };
+  if (parsed.success) return [];
+  return (parsed.error?.issues ?? []).slice(0, 8).map((issue) => {
+    const path = (issue.path ?? []).map(String).join(".") || "<root>";
+    return `${path}: ${issue.message ?? "invalid value"}`;
+  });
+}
+
+function toolDefinitionHasWidget(definition: unknown): boolean {
+  const meta = objectRecord(objectRecord(definition)?._meta);
+  const ui = objectRecord(meta?.ui);
+  return typeof ui?.resourceUri === "string" || typeof meta?.["ui/resourceUri"] === "string";
+}
+
+function stripUnattachedCardPayload(result: Record<string, unknown>, keepPayload: boolean): void {
+  if (keepPayload) return;
+  const card = objectRecord(objectRecord(result._meta)?.card);
+  if (card) delete card.payload;
+}
+
+function stripDuplicateStructuredText(tool: string, result: Record<string, unknown>): void {
+  const structured = objectRecord(result.structuredContent);
+  if (!structured) return;
+  if (
+    typeof structured.result === "string"
+    && typeof structured.text === "string"
+    && structured.result === structured.text
+  ) {
+    delete structured.text;
+  }
+  if (tool !== toolNames.codeMap) return;
+  for (const key of ["entrypoints", "symbols", "imports"]) {
+    const nested = objectRecord(structured[key]);
+    if (nested && typeof nested.text === "string") delete nested.text;
+  }
+}
+
+function toolResultMessage(result: Record<string, unknown>): string | undefined {
+  const content = result.content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .map((item) => objectRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== undefined)
+    .filter((item) => item.type === "text" && typeof item.text === "string")
+    .map((item) => String(item.text))
+    .join("\n")
+    .trim();
+  return text || undefined;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function skillAdvertisementRank(skill: {
+  name: string;
+  sourceInfo: { scope: "user" | "project" | "temporary" };
+}): number {
+  if (skill.sourceInfo.scope === "project") return 0;
+  if (skill.name.startsWith("localspace-")) return 1;
+  return 2;
+}
+
 function recordToolCall(
   config: ServerConfig,
   activityLog: ToolActivityLogManager,
@@ -1139,11 +1347,11 @@ function installMeasuredToolRegistration(
 
   mutableServer.registerTool = (
     name: unknown,
-    config: unknown,
+    definition: unknown,
     callback: unknown,
   ): unknown => {
     if (typeof name !== "string" || typeof callback !== "function") {
-      return originalRegisterTool(name, config, callback);
+      return originalRegisterTool(name, definition, callback);
     }
 
     const measuredCallback = async (...args: unknown[]): Promise<unknown> => {
@@ -1158,6 +1366,13 @@ function installMeasuredToolRegistration(
         });
         queuedMs = concurrencyPermit.queuedMs;
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const result = standardToolError(name, "TOOL_CONCURRENCY_FAILED", message, {
+          recoverable: true,
+          retryable: true,
+          nextAction: "Retry after other LocalSpace operations finish or reduce concurrent tool calls.",
+        });
+        const metrics = toolResultMetrics(result);
         activityLog.record({
           activityId,
           tool: name,
@@ -1165,31 +1380,49 @@ function installMeasuredToolRegistration(
           success: false,
           durationMs: Math.round(performance.now() - startedAt),
           queuedMs: Math.round((performance.now() - startedAt) * 100) / 100,
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
+          ...metrics,
         });
-        throw error;
+        return result;
       }
 
       try {
         return await toolInvocationContext.run({ activityId, queuedMs }, async () => {
         try {
-          const result = await (callback as (...callbackArgs: unknown[]) => unknown)(...args);
-          const metrics = toolResultMetrics(result);
-          const updated = activityLog.updateResult(activityId, metrics);
+          const rawResult = await (callback as (...callbackArgs: unknown[]) => unknown)(...args);
+          const normalized = normalizeToolCallbackResult(name, definition, rawResult);
+          const metrics = toolResultMetrics(normalized.result);
+          const updated = activityLog.updateResult(activityId, {
+            ...metrics,
+            success: !normalized.failed,
+            error: normalized.error,
+          });
           if (!updated) {
             activityLog.record({
               activityId,
               tool: name,
               workspaceId,
-              success: true,
+              success: !normalized.failed,
               durationMs: Math.round(performance.now() - startedAt - queuedMs),
               queuedMs,
+              error: normalized.error,
               ...metrics,
             });
           }
-          return result;
+          return normalized.result;
         } catch (error) {
-          const updated = activityLog.updateResult(activityId, {});
+          const message = error instanceof Error ? error.message : String(error);
+          const result = standardToolError(name, "TOOL_EXECUTION_FAILED", message, {
+            recoverable: true,
+            retryable: false,
+            nextAction: "Correct the input or workspace state, then retry the tool.",
+          });
+          const metrics = toolResultMetrics(result);
+          const updated = activityLog.updateResult(activityId, {
+            ...metrics,
+            success: false,
+            error: message,
+          });
           if (!updated) {
             activityLog.record({
               activityId,
@@ -1198,18 +1431,19 @@ function installMeasuredToolRegistration(
               success: false,
               durationMs: Math.round(performance.now() - startedAt - queuedMs),
               queuedMs,
-              error: error instanceof Error ? error.message : String(error),
+              error: message,
+              ...metrics,
             });
           }
-          throw error;
+          return result;
         }
       });
       } finally {
-        concurrencyPermit.release();
+        concurrencyPermit?.release();
       }
     };
 
-    return originalRegisterTool(name, config, measuredCallback);
+    return originalRegisterTool(name, definition, measuredCallback);
   };
 }
 
@@ -1506,11 +1740,16 @@ const checkSummaryOutputSchema = z.object({
 function processOutputSchema(): z.ZodRawShape {
   return resultOutputSchema({
     sessionId: z.number().optional(),
+    command: z.string().optional(),
+    workingDirectory: z.string().optional(),
     running: z.boolean(),
     exitCode: z.number().int().optional(),
     signal: z.string().optional(),
     wallTimeMs: z.number().nonnegative(),
     queuedMs: z.number().nonnegative(),
+    startedAt: z.string().optional(),
+    completedAt: z.string().optional(),
+    outputCharacters: z.number().nonnegative().optional(),
     outputTruncated: z.boolean(),
     blocked: z.boolean().optional(),
     approvalRequired: z.boolean().optional(),
@@ -1580,10 +1819,13 @@ function blockedCommandResult(
     },
     structuredContent: {
       result,
+      command,
+      workingDirectory,
       running: false,
       wallTimeMs: 0,
       queuedMs: 0,
       outputTruncated: false,
+      outputCharacters: 0,
       blocked: true,
       approvalRequired: true,
       approvalToken: approval.token,
@@ -1722,11 +1964,16 @@ function processToolResponse(
     structuredContent: {
       result,
       sessionId: snapshot.sessionId,
+      command: snapshot.command,
+      workingDirectory: snapshot.workingDirectory,
       running: snapshot.running,
       exitCode: snapshot.exitCode,
       signal: snapshot.signal,
       wallTimeMs: snapshot.wallTimeMs,
       queuedMs: snapshot.queuedMs,
+      startedAt: snapshot.startedAt,
+      completedAt: snapshot.completedAt,
+      outputCharacters: snapshot.outputCharacters,
       outputTruncated: snapshot.outputTruncated,
       commandApproved: typeof summary.commandApproved === "boolean" ? summary.commandApproved : undefined,
       commandRisk: safety?.level,
@@ -1989,6 +2236,7 @@ function registerCodexProcessTools(
         workspaceId,
         command: cmd,
         cwd,
+        workingDirectory: workingDirectory ?? ".",
         tty,
         columns,
         rows,
@@ -2892,6 +3140,11 @@ function createMcpServer(
         agentsFiles: z.array(workspaceAgentsFileOutputSchema),
         availableAgentsFiles: z.array(workspaceAvailableAgentsFileOutputSchema),
         skills: z.array(workspaceSkillOutputSchema),
+        skillsTotal: z.number(),
+        skillsReturned: z.number(),
+        skillsTruncated: z.boolean(),
+        skillIndex: z.array(workspaceSkillIndexOutputSchema),
+        recommendedSkills: z.array(z.string()),
         skillDiagnostics: z.array(z.unknown()),
         policy: z.object({
           status: z.enum(["absent", "active", "anchored", "invalid"]),
@@ -2925,13 +3178,28 @@ function createMcpServer(
           root: workspace.root,
         });
       }
-      const visibleSkills = workspace.skills
+      const modelVisibleSkills = workspace.skills
         .filter((skill) => !skill.disableModelInvocation)
-        .map((skill) => ({
-          name: skill.name,
-          description: skill.description,
-          path: formatPathForPrompt(skill.filePath),
-        }));
+        .sort((left, right) => skillAdvertisementRank(left) - skillAdvertisementRank(right));
+      const fullSkillCount = Math.max(
+        modelVisibleSkills.filter((skill) => skill.sourceInfo.scope === "project").length,
+        Math.min(MAX_FULL_SKILL_ADVERTISEMENTS, modelVisibleSkills.length),
+      );
+      const fullSkills = modelVisibleSkills.slice(0, fullSkillCount);
+      const indexedSkills = modelVisibleSkills.slice(fullSkillCount);
+      const visibleSkills = fullSkills.map((skill) => ({
+        name: skill.name,
+        description: skill.description,
+        path: formatPathForPrompt(skill.filePath),
+      }));
+      const skillIndex = indexedSkills.map((skill) => ({
+        name: skill.name,
+        path: formatPathForPrompt(skill.filePath),
+        scope: skill.sourceInfo.scope,
+      }));
+      const recommendedSkills = fullSkills
+        .filter((skill) => skill.sourceInfo.scope === "project" || skill.name.startsWith("localspace-"))
+        .map((skill) => skill.name);
       const loadedAgentsFiles = agentsFiles.map((file) => ({
         path: formatAgentsPath(file.path, workspace.root),
         content: file.content,
@@ -2940,7 +3208,7 @@ function createMcpServer(
         path: formatAgentsPath(file.path, workspace.root),
       }));
       const baseInstruction = config.skillsEnabled
-        ? "Use this workspaceId in all subsequent tool calls for this project. Do not call open_workspace again for this same folder unless this workspaceId stops working, the user asks to reopen, or you switch to a different folder/worktree. Follow loaded agentsFiles instructions. Before working under a path listed in availableAgentsFiles, read that instruction file. When a task matches an available skill in skills, read its path before proceeding."
+        ? "Use this workspaceId in all subsequent tool calls for this project. Do not call open_workspace again for this same folder unless this workspaceId stops working, the user asks to reopen, or you switch to a different folder/worktree. Follow loaded agentsFiles instructions. Before working under a path listed in availableAgentsFiles, read that instruction file. When a task matches an available skill in skills or skillIndex, read its path before proceeding."
         : "Use this workspaceId in all subsequent tool calls for this project. Do not call open_workspace again for this same folder unless this workspaceId stops working, the user asks to reopen, or you switch to a different folder/worktree. Follow loaded agentsFiles instructions. Before working under a path listed in availableAgentsFiles, read that instruction file.";
       const instruction = policy.status === "absent"
         ? baseInstruction
@@ -2960,6 +3228,9 @@ function createMcpServer(
               : undefined,
             visibleSkills.length > 0
               ? `Available skills: ${visibleSkills.map((skill) => skill.name).join(", ")}`
+              : undefined,
+            skillIndex.length > 0
+              ? `Additional skill index: ${skillIndex.map((skill) => skill.name).join(", ")}`
               : undefined,
             `Workspace policy: ${policyData.status}${policyData.failClosed ? " (fail-closed)" : ""}`,
             ...policyData.diagnostics.map((diagnostic) => `Policy diagnostic: ${diagnostic}`),
@@ -3004,6 +3275,9 @@ function createMcpServer(
               agentsFiles: loadedAgentsFiles.length,
               availableAgentsFiles: availableAgentsFileOutputs.length,
               skills: visibleSkills.length,
+              skillsTotal: modelVisibleSkills.length,
+              skillsReturned: visibleSkills.length,
+              skillsTruncated: skillIndex.length > 0,
               skillDiagnostics: workspace.skillDiagnostics.length,
               policyStatus: policyData.status,
               policyFailClosed: policyData.failClosed,
@@ -3019,6 +3293,11 @@ function createMcpServer(
           agentsFiles: loadedAgentsFiles,
           availableAgentsFiles: availableAgentsFileOutputs,
           skills: visibleSkills,
+          skillsTotal: modelVisibleSkills.length,
+          skillsReturned: visibleSkills.length,
+          skillsTruncated: skillIndex.length > 0,
+          skillIndex,
+          recommendedSkills,
           skillDiagnostics: workspace.skillDiagnostics,
           policy: policyData,
           instruction,
@@ -3777,7 +4056,7 @@ function createMcpServer(
     );
   }
 
-  if (config.toolMode !== "codex" && config.toolMode !== "hybrid") {
+  if (toolAvailable(toolNames.write, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.write,
@@ -3874,7 +4153,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.validatePlan, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.validatePlan,
@@ -3956,7 +4237,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.nextSteps, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.nextSteps,
@@ -3998,7 +4281,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.taskSummary, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.taskSummary,
@@ -4040,7 +4325,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.validationSummary, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.validationSummary,
@@ -4082,7 +4369,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.finalReport, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.finalReport,
@@ -4127,7 +4416,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.handoffSummary, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.handoffSummary,
@@ -4186,7 +4477,9 @@ function createMcpServer(
       };
     },
   );
+  }
 
+  if (toolAvailable(toolNames.edit, config.toolMode, config.widgets, config.toolPacks)) {
   registerAppTool(
     server,
     toolNames.edit,

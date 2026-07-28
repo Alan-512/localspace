@@ -75,6 +75,7 @@ export interface ToolCatalogEntry {
 
 const allModes = ["minimal", "full", "codex", "hybrid"] as const satisfies readonly ToolMode[];
 const legacyModes = ["minimal", "full"] as const satisfies readonly ToolMode[];
+const hybridWorkflowModes = ["minimal", "full", "hybrid"] as const satisfies readonly ToolMode[];
 const navigationModes = ["full", "hybrid"] as const satisfies readonly ToolMode[];
 const codexModes = ["codex", "hybrid"] as const satisfies readonly ToolMode[];
 const gitModes = ["full", "codex", "hybrid"] as const satisfies readonly ToolMode[];
@@ -107,11 +108,11 @@ export const toolCatalog: readonly ToolCatalogEntry[] = [
   entry(toolNames.shell, legacyModes, "process", "process-start", "Run one workspace shell command with bounded execution and output."),
   entry(toolNames.validatePlan, legacyModes, "workflow", "shared-read", "Recommend validation commands from detected package scripts without running them."),
   entry(toolNames.reviewChecklist, legacyModes, "workflow", "shared-read", "Build a pre-summary or pre-commit checklist from Git state and validation scripts."),
-  entry(toolNames.nextSteps, legacyModes, "workflow", "shared-read", "Recommend next workflow actions from workspace state and recent audit activity."),
+  entry(toolNames.nextSteps, hybridWorkflowModes, "workflow", "shared-read", "Recommend next workflow actions from workspace state and recent audit activity."),
   entry(toolNames.taskSummary, legacyModes, "workflow", "shared-read", "Summarize changed paths, Git state, audit activity, validation guidance, and warnings."),
-  entry(toolNames.validationSummary, legacyModes, "workflow", "shared-read", "Summarize recent validation command activity and recommended checks."),
-  entry(toolNames.finalReport, legacyModes, "workflow", "shared-read", "Generate a standard task-final report from workspace and validation state."),
-  entry(toolNames.handoffSummary, legacyModes, "workflow", "shared-read", "Generate a Markdown handoff for continuing work in a new chat or window."),
+  entry(toolNames.validationSummary, hybridWorkflowModes, "workflow", "shared-read", "Summarize recent validation command activity and recommended checks."),
+  entry(toolNames.finalReport, hybridWorkflowModes, "workflow", "shared-read", "Generate a standard task-final report from workspace and validation state."),
+  entry(toolNames.handoffSummary, hybridWorkflowModes, "workflow", "shared-read", "Generate a Markdown handoff for continuing work in a new chat or window."),
 
   entry(toolNames.applyPatch, codexModes, "mutation", "workspace-write", "Apply one bounded Codex-style patch that can add, update, delete, or move workspace files."),
   entry(toolNames.execCommand, codexModes, "process", "process-start", "Run one workspace command and return output or a process session for later interaction."),

@@ -8,6 +8,8 @@ import { resolveShellCommand } from "./process-platform.js";
 import type { Workspace } from "./workspaces.js";
 
 const execFileAsync = promisify(execFile);
+const WORKSPACE_STATUS_LIMIT = 20;
+const RECENT_COMMIT_LIMIT = 5;
 
 export interface DoctorOptions {
   workspace?: Workspace;
@@ -72,7 +74,15 @@ export interface GitWorkspaceData {
   head: string;
   clean: boolean;
   statusLines: string[];
+  statusTotal: number;
+  statusReturned: number;
+  statusTruncated: boolean;
+  statusOmitted: number;
   recentCommits: string[];
+  recentCommitsTotal: number;
+  recentCommitsReturned: number;
+  recentCommitsTruncated: boolean;
+  recentCommitsOmitted: number;
   error?: string;
 }
 
@@ -241,8 +251,8 @@ function formatWorkspaceInfo(data: WorkspaceInfoData): string {
     lines.push(`- status: ${git.clean ? "clean" : "dirty"}`);
     if (git.statusLines.length > 0) {
       lines.push("- changes:");
-      for (const line of git.statusLines.slice(0, 20)) lines.push(`  - ${line}`);
-      if (git.statusLines.length > 20) lines.push(`  - ... (${git.statusLines.length - 20} more)`);
+      for (const line of git.statusLines) lines.push(`  - ${line}`);
+      if (git.statusTruncated) lines.push(`  - ... (${git.statusOmitted} more)`);
     }
     if (git.recentCommits.length > 0) {
       lines.push("- recent commits:");
@@ -382,44 +392,78 @@ async function gitWorkspaceInfo(root: string): Promise<{
   head: string;
   clean: boolean;
   statusLines: string[];
+  statusTotal: number;
+  statusReturned: number;
+  statusTruncated: boolean;
+  statusOmitted: number;
   recentCommits: string[];
+  recentCommitsTotal: number;
+  recentCommitsReturned: number;
+  recentCommitsTruncated: boolean;
+  recentCommitsOmitted: number;
   error?: string;
 }> {
   try {
     const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root });
     if (inside.stdout.trim() !== "true") {
-      return { isRepository: false, branch: "", head: "", clean: false, statusLines: [], recentCommits: [] };
+      return emptyGitWorkspaceData();
     }
-    const [branch, head, status, log] = await Promise.all([
+    const [branch, head, status, log, commitCount] = await Promise.all([
       execFileAsync("git", ["branch", "--show-current"], { cwd: root }),
       execFileAsync("git", ["rev-parse", "--short", "HEAD"], { cwd: root }),
       execFileAsync("git", ["status", "--short"], { cwd: root }),
-      execFileAsync("git", ["log", "--oneline", "-5"], { cwd: root }),
+      execFileAsync("git", ["log", "--oneline", `-${RECENT_COMMIT_LIMIT}`], { cwd: root }),
+      execFileAsync("git", ["rev-list", "--count", "HEAD"], { cwd: root }),
     ]);
-    const statusLines = status.stdout
+    const allStatusLines = status.stdout
       .trim()
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
+    const statusLines = allStatusLines.slice(0, WORKSPACE_STATUS_LIMIT);
+    const recentCommitsTotal = Number.parseInt(commitCount.stdout.trim(), 10) || 0;
+    const recentCommits = log.stdout.trim().split(/\r?\n/).filter(Boolean);
     return {
       isRepository: true,
       branch: branch.stdout.trim(),
       head: head.stdout.trim(),
-      clean: statusLines.length === 0,
+      clean: allStatusLines.length === 0,
       statusLines,
-      recentCommits: log.stdout.trim().split(/\r?\n/).filter(Boolean),
+      statusTotal: allStatusLines.length,
+      statusReturned: statusLines.length,
+      statusTruncated: allStatusLines.length > statusLines.length,
+      statusOmitted: Math.max(0, allStatusLines.length - statusLines.length),
+      recentCommits,
+      recentCommitsTotal,
+      recentCommitsReturned: recentCommits.length,
+      recentCommitsTruncated: recentCommitsTotal > recentCommits.length,
+      recentCommitsOmitted: Math.max(0, recentCommitsTotal - recentCommits.length),
     };
   } catch (error) {
     return {
-      isRepository: false,
-      branch: "",
-      head: "",
-      clean: false,
-      statusLines: [],
-      recentCommits: [],
+      ...emptyGitWorkspaceData(),
       error: errorMessage(error),
     };
   }
+}
+
+function emptyGitWorkspaceData(): GitWorkspaceData {
+  return {
+    isRepository: false,
+    branch: "",
+    head: "",
+    clean: false,
+    statusLines: [],
+    statusTotal: 0,
+    statusReturned: 0,
+    statusTruncated: false,
+    statusOmitted: 0,
+    recentCommits: [],
+    recentCommitsTotal: 0,
+    recentCommitsReturned: 0,
+    recentCommitsTruncated: false,
+    recentCommitsOmitted: 0,
+  };
 }
 
 async function readPackageJson(root: string): Promise<PackageJson | undefined> {
