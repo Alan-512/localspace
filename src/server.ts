@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createRequire } from "node:module";
 import { relative } from "node:path";
 import { readFileSync } from "node:fs";
 import { access, lstat, realpath } from "node:fs/promises";
@@ -9,7 +10,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { isInitializeRequest, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { checkResourceAllowed, resourceUrlFromServerUrl } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 import {
   registerAppResource,
@@ -64,7 +65,7 @@ import { findSymbolsData } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { shutdownHttpServer } from "./server-shutdown.js";
 import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
-import { formatPathForPrompt } from "./skills.js";
+import { formatPathForPrompt, type Skill } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { workspaceContentRevision, workspaceRevision } from "./workspace-revision.js";
 import { formatAgentsPath, WorkspaceRegistry, type Workspace } from "./workspaces.js";
@@ -130,8 +131,21 @@ import {
 } from "./workspace-policy.js";
 
 type Transport = StreamableHTTPServerTransport;
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json") as { version?: unknown };
+if (typeof packageJson.version !== "string") {
+  throw new Error("LocalSpace package version is missing or invalid.");
+}
+const LOCALSPACE_VERSION = packageJson.version;
 const WORKSPACE_APP_MANIFEST_ENTRY = "workspace-app.html";
 const MAX_FULL_SKILL_ADVERTISEMENTS = 12;
+const MAX_PROJECT_SKILL_ADVERTISEMENTS = 8;
+const CORE_LOCALSPACE_SKILLS = [
+  "localspace-code-editing",
+  "localspace-code-review",
+  "localspace-debugging",
+  "localspace-validation",
+] as const;
 const WRITE_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: true,
@@ -1193,7 +1207,7 @@ function normalizeToolCallbackResult(
   return { result, failed: false };
 }
 
-function standardToolError(
+export function standardToolError(
   tool: string,
   code: string,
   message: string,
@@ -1204,7 +1218,7 @@ function standardToolError(
     details?: string[];
     previousMeta?: unknown;
   },
-): Record<string, unknown> {
+): CallToolResult {
   const details = (options.details ?? []).slice(0, 8);
   const text = [
     `Tool error [${code}]`,
@@ -1227,10 +1241,6 @@ function standardToolError(
   return {
     content: [textBlock(text)],
     isError: true,
-    structuredContent: {
-      result: text,
-      error: errorData,
-    },
     _meta: {
       ...previousMeta,
       tool,
@@ -1311,13 +1321,53 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function skillAdvertisementRank(skill: {
-  name: string;
-  sourceInfo: { scope: "user" | "project" | "temporary" };
-}): number {
+function skillAdvertisementRank(skill: Skill): number {
   if (skill.sourceInfo.scope === "project") return 0;
   if (skill.name.startsWith("localspace-")) return 1;
   return 2;
+}
+
+function compareSkillAdvertisements(left: Skill, right: Skill): number {
+  return skillAdvertisementRank(left) - skillAdvertisementRank(right)
+    || left.name.localeCompare(right.name)
+    || left.filePath.localeCompare(right.filePath);
+}
+
+function selectAdvertisedSkills(skills: Skill[]): {
+  fullSkills: Skill[];
+  indexedSkills: Skill[];
+} {
+  const modelVisibleSkills = skills
+    .filter((skill) => !skill.disableModelInvocation)
+    .sort(compareSkillAdvertisements);
+  const selected: Skill[] = [];
+  const selectedPaths = new Set<string>();
+  const addSkill = (skill: Skill | undefined): void => {
+    if (!skill || selected.length >= MAX_FULL_SKILL_ADVERTISEMENTS) return;
+    if (selectedPaths.has(skill.filePath)) return;
+    selected.push(skill);
+    selectedPaths.add(skill.filePath);
+  };
+
+  for (const skill of modelVisibleSkills
+    .filter((candidate) => candidate.sourceInfo.scope === "project")
+    .slice(0, MAX_PROJECT_SKILL_ADVERTISEMENTS)) {
+    addSkill(skill);
+  }
+
+  for (const name of CORE_LOCALSPACE_SKILLS) {
+    addSkill(modelVisibleSkills.find((skill) => skill.name === name));
+  }
+
+  for (const skill of modelVisibleSkills) {
+    if (skill.sourceInfo.scope === "project") continue;
+    addSkill(skill);
+  }
+
+  return {
+    fullSkills: selected,
+    indexedSkills: modelVisibleSkills.filter((skill) => !selectedPaths.has(skill.filePath)),
+  };
 }
 
 function recordToolCall(
@@ -3058,7 +3108,7 @@ function createMcpServer(
     {
       name: "localspace",
       title: "LocalSpace",
-      version: "0.1.0",
+      version: LOCALSPACE_VERSION,
       description:
         "Secure local coding workspace for MCP clients. Provides workspace-scoped file, search, edit, write, and shell tools.",
     },
@@ -3178,15 +3228,8 @@ function createMcpServer(
           root: workspace.root,
         });
       }
-      const modelVisibleSkills = workspace.skills
-        .filter((skill) => !skill.disableModelInvocation)
-        .sort((left, right) => skillAdvertisementRank(left) - skillAdvertisementRank(right));
-      const fullSkillCount = Math.max(
-        modelVisibleSkills.filter((skill) => skill.sourceInfo.scope === "project").length,
-        Math.min(MAX_FULL_SKILL_ADVERTISEMENTS, modelVisibleSkills.length),
-      );
-      const fullSkills = modelVisibleSkills.slice(0, fullSkillCount);
-      const indexedSkills = modelVisibleSkills.slice(fullSkillCount);
+      const modelVisibleSkills = workspace.skills.filter((skill) => !skill.disableModelInvocation);
+      const { fullSkills, indexedSkills } = selectAdvertisedSkills(workspace.skills);
       const visibleSkills = fullSkills.map((skill) => ({
         name: skill.name,
         description: skill.description,
@@ -3198,7 +3241,10 @@ function createMcpServer(
         scope: skill.sourceInfo.scope,
       }));
       const recommendedSkills = fullSkills
-        .filter((skill) => skill.sourceInfo.scope === "project" || skill.name.startsWith("localspace-"))
+        .filter((skill) => (
+          skill.sourceInfo.scope === "project"
+          || CORE_LOCALSPACE_SKILLS.includes(skill.name as typeof CORE_LOCALSPACE_SKILLS[number])
+        ))
         .map((skill) => skill.name);
       const loadedAgentsFiles = agentsFiles.map((file) => ({
         path: formatAgentsPath(file.path, workspace.root),

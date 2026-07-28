@@ -226,11 +226,16 @@ See [`docs/tool-surfaces.md`](docs/tool-surfaces.md) for the exact generated
 tool lists and [`docs/configuration.md`](docs/configuration.md) for configuration.
 
 LocalSpace also ships built-in workflow skills. `open_workspace` returns full
-descriptions for project and most relevant LocalSpace skills, then places any
-remaining entries in a compact `skillIndex`. The model should read the matching
+descriptions for at most 12 skills: up to 8 project skills plus four core
+LocalSpace workflow skills when available. It places all remaining entries in a
+compact `skillIndex`. The model should read the matching
 `SKILL.md` only when the current task needs that workflow. This keeps workflow
 guidance progressively loaded while the `hybrid` tool surface remains the single
 recommended default.
+
+LocalSpace 2.0 also removes duplicate public `structuredContent.text` fields
+and makes tool errors unstructured so official MCP clients do not validate
+errors against success schemas. See [`docs/v2-migration.md`](docs/v2-migration.md).
 
 ---
 

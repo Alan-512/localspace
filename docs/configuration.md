@@ -523,9 +523,11 @@ advertised by `open_workspace` alongside user/project skills:
 - `localspace-release`
 - `localspace-handoff`
 
-To keep the initial workspace response bounded, `open_workspace` returns full
-name/description/path records for project skills and the most relevant
-LocalSpace skills, then returns remaining entries in a compact `skillIndex`.
+To keep the initial workspace response bounded, `open_workspace` returns at
+most 12 full name/description/path records: up to 8 project skills plus four
+core LocalSpace workflow skills when available. Unused detailed slots may be
+filled by other non-project skills. All remaining entries are returned in a
+compact `skillIndex`.
 The structured response includes `skillsTotal`, `skillsReturned`,
 `skillsTruncated`, and `recommendedSkills` so clients can distinguish the full
 set from the detailed subset.

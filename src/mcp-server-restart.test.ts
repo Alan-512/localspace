@@ -14,6 +14,9 @@ import { toolCatalogEntry, type ToolName } from "./tool-catalog.js";
 const root = await mkdtemp(join(tmpdir(), "localspace-mcp-restart-test-"));
 const accessToken = "restart-test-access-token";
 const refreshToken = "restart-test-refresh-token";
+const localspacePackage = JSON.parse(
+  await readFile(new URL("../package.json", import.meta.url), "utf8"),
+) as { version: string };
 
 try {
   await writeFile(join(root, "activity.txt"), "activity baseline\n", "utf8");
@@ -63,6 +66,24 @@ try {
       "check:danger": "node -e \"console.log('git reset --hard HEAD')\""
     }
   }, null, 2), "utf8");
+  for (let index = 1; index <= 16; index += 1) {
+    const name = `project-skill-${String(index).padStart(2, "0")}`;
+    const skillDirectory = join(root, ".agents", "skills", name);
+    await mkdir(skillDirectory, { recursive: true });
+    await writeFile(
+      join(skillDirectory, "SKILL.md"),
+      [
+        "---",
+        `name: ${name}`,
+        `description: Project skill ${index}.`,
+        "---",
+        "",
+        `# Project skill ${index}`,
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+  }
   const policyRoot = join(root, "policy-workspace");
   await mkdir(join(policyRoot, ".localspace"), { recursive: true });
   await writeFile(join(policyRoot, "locked.txt"), "locked\n", "utf8");
@@ -325,6 +346,7 @@ try {
     const initializeResult = await jsonRpcResult(statelessInitialize);
     assert.equal(initializeResult.protocolVersion, LATEST_PROTOCOL_VERSION);
     assert.equal(recordValue(initializeResult.serverInfo, "name"), "localspace");
+    assert.equal(recordValue(initializeResult.serverInfo, "version"), localspacePackage.version);
     const serverInstructions = recordValue(initializeResult, "instructions");
     assert.equal(typeof serverInstructions, "string");
     assert.match(String(serverInstructions), /up to 8 tool calls globally/);
@@ -415,18 +437,35 @@ try {
     const skillIndex = arrayValue(recordValue(openWorkspaceResult.structuredContent, "skillIndex"));
     assert.equal(skillsTotal, skillsReturned + skillIndex.length);
     assert.equal(recordValue(openWorkspaceResult.structuredContent, "skillsTruncated"), skillIndex.length > 0);
+    assert.equal(skillsReturned, 12);
     assert.ok(skillsReturned <= skillsTotal);
-    assert.ok(arrayValue(recordValue(openWorkspaceResult.structuredContent, "recommendedSkills")).length > 0);
+    const recommendedSkills = arrayValue(
+      recordValue(openWorkspaceResult.structuredContent, "recommendedSkills"),
+    ).map(String);
     const advertisedSkillNames = new Set(
       advertisedSkills.map((skill) => String(recordValue(skill, "name"))),
     );
     for (const name of [
+      "localspace-code-editing",
       "localspace-debugging",
       "localspace-code-review",
-      "localspace-refactoring",
+      "localspace-validation",
     ]) {
       assert.equal(advertisedSkillNames.has(name), true, `open_workspace did not advertise ${name}`);
+      assert.equal(recommendedSkills.includes(name), true, `open_workspace did not recommend ${name}`);
     }
+    assert.equal(
+      advertisedSkills.filter((skill) => String(recordValue(skill, "name")).startsWith("project-skill-")).length,
+      8,
+    );
+    assert.equal(
+      skillIndex.some((skill) => String(recordValue(skill, "name")) === "project-skill-09"),
+      true,
+    );
+    assert.equal(
+      skillIndex.some((skill) => String(recordValue(skill, "name")) === "localspace-refactoring"),
+      true,
+    );
 
     const codeMap = await mcpRequest(
       stateless.baseUrl,
@@ -510,12 +549,7 @@ try {
     const missingReadError = recordValue(recordValue(missingReadResult, "_meta"), "error");
     assert.equal(recordValue(missingReadError, "code"), "TOOL_RESULT_ERROR");
     assert.equal(recordValue(missingReadError, "recoverable"), true);
-    const missingReadStructuredError = recordValue(
-      recordValue(missingReadResult, "structuredContent"),
-      "error",
-    );
-    assert.equal(recordValue(missingReadStructuredError, "code"), "TOOL_RESULT_ERROR");
-    assert.equal(recordValue(missingReadStructuredError, "recoverable"), true);
+    assert.equal(recordValue(missingReadResult, "structuredContent"), undefined);
 
     const readMany = await mcpRequest(
       stateless.baseUrl,

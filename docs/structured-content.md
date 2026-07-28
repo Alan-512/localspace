@@ -11,7 +11,8 @@ Every structured tool keeps this compatibility field:
 
 Typed producer objects may use an internal `text` property while formatting a
 response, but LocalSpace does not duplicate that property into public
-`structuredContent`; consumers should use `result`.
+`structuredContent`; consumers should use `result`. This is a LocalSpace 2.0
+contract change; see [`v2-migration.md`](v2-migration.md).
 
 ## Code navigation and project orientation
 
@@ -40,7 +41,7 @@ not. See [`tool-surfaces.md`](tool-surfaces.md).
 
 | Tool | Structured fields |
 | --- | --- |
-| `open_workspace` | `workspaceId`, `root`, `mode`, optional worktree fields, `agentsFiles[]`, `availableAgentsFiles[]`, detailed `skills[]`, `skillsTotal`, `skillsReturned`, `skillsTruncated`, compact `skillIndex[]`, `recommendedSkills[]`, `skillDiagnostics[]`, `policy`, `instruction` |
+| `open_workspace` | `workspaceId`, `root`, `mode`, optional worktree fields, `agentsFiles[]`, `availableAgentsFiles[]`, at most 12 detailed `skills[]` entries, `skillsTotal`, `skillsReturned`, `skillsTruncated`, compact `skillIndex[]`, `recommendedSkills[]`, `skillDiagnostics[]`, `policy`, `instruction` |
 | `doctor` | `configuration`, `runtime`, `workspace`, `checks[]`, `overall` |
 | `workspace_info` | `workspace`, `git`, `package`; bounded Git data includes `statusTotal`, `statusReturned`, `statusTruncated`, `statusOmitted`, and equivalent recent-commit fields |
 | `session_summary` | `totalEvents`, `successfulEvents`, `failedEvents`, `runningEvents`, `truncatedEvents`, `processPolls`, `averageDurationMs`, `maxDurationMs`, `averageQueuedMs`, `maxQueuedMs`, `blockedEvents`, `approvedEvents`, `durableAuditEvents`, `tools`, `categories`, `concurrencyClasses`, `toolStats`, `paths`, `commands`, `risks`, `recentEvents`, `recentAuditEvents`, `requestMetrics` |
@@ -65,10 +66,11 @@ not. See [`tool-surfaces.md`](tool-surfaces.md).
 - Text-first compatibility remains mandatory: do not remove `result`.
 - Tool callbacks are validated against their declared output schema before the
   MCP SDK serializes them. Contract mismatches and callback failures are
-  returned as tool-level errors with a stable code, recoverable/retryable flags,
-  bounded details, and a suggested next action in `structuredContent.error`
-  (mirrored in `_meta.error`) instead of being discarded as a generic
-  output-validation failure.
+  returned as tool-level errors with `content`, `isError: true`, and a stable
+  `_meta.error` object containing code, recoverable/retryable flags, bounded
+  details, and a suggested next action. Error results intentionally omit
+  `structuredContent` because official MCP clients validate any present
+  structured object against the tool's success schema.
 - `_meta.card.payload` is retained only when a Widget is attached to that tool;
   non-Widget responses do not duplicate their full text there.
 - New structured tools should expose concise arrays and summaries rather than

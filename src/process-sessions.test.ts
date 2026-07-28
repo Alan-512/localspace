@@ -1,5 +1,39 @@
 import assert from "node:assert/strict";
-import { HeadTailBuffer, ProcessSessionManager } from "./process-sessions.js";
+import {
+  HeadTailBuffer,
+  ProcessSessionManager,
+  type ProcessSnapshot,
+} from "./process-sessions.js";
+
+async function waitForProcessExit(
+  manager: ProcessSessionManager,
+  workspaceId: string,
+  sessionId: number,
+  initial: ProcessSnapshot,
+  timeoutMs = 3_000,
+): Promise<ProcessSnapshot> {
+  const deadline = Date.now() + timeoutMs;
+  let snapshot = initial;
+  let output = snapshot.output;
+  let outputTruncated = snapshot.outputTruncated;
+
+  while (snapshot.running && Date.now() < deadline) {
+    snapshot = await manager.write({
+      workspaceId,
+      sessionId,
+      yieldTimeMs: 250,
+    });
+    output += snapshot.output;
+    outputTruncated ||= snapshot.outputTruncated;
+  }
+
+  return {
+    ...snapshot,
+    output,
+    outputCharacters: [...output].length,
+    outputTruncated,
+  };
+}
 
 const smallBuffer = new HeadTailBuffer(100);
 smallBuffer.append("hello\n");
@@ -119,11 +153,17 @@ const defaultInteractive = await manager.start({
 assert.equal(defaultInteractive.running, true);
 assert.ok(defaultInteractive.sessionId);
 
-const defaultInputResult = await manager.write({
+const initialDefaultInputResult = await manager.write({
   workspaceId: "workspace-a",
   sessionId: defaultInteractive.sessionId,
   chars: "hello\n",
 });
+const defaultInputResult = await waitForProcessExit(
+  manager,
+  "workspace-a",
+  defaultInteractive.sessionId,
+  initialDefaultInputResult,
+);
 assert.equal(defaultInputResult.running, false);
 assert.match(defaultInputResult.output, /default-input:hello/);
 
