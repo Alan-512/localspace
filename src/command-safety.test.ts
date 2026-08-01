@@ -31,12 +31,30 @@ assert.equal(combined.findings.length, 2);
 assert.equal(analyzeCommandSafety("Get-ChildItem | Format-Table -AutoSize").level, "none");
 assert.equal(analyzeCommandSafety("Get-Process | Format-List").level, "none");
 assert.equal(analyzeCommandSafety("format C:").level, "danger");
+assert.equal(analyzeCommandSafety("Remove-Item fixture -Recurse -Force").level, "danger");
+assert.equal(analyzeCommandSafety("Remove-Item fixture -Force -Recurse").level, "danger");
+assert.equal(
+  analyzeCommandSafety(
+    'powershell -NoProfile -Command "Remove-Item -LiteralPath \'D:\\project\\fixture\' -Recurse -Force"',
+  ).level,
+  "danger",
+);
+assert.equal(
+  analyzeCommandSafety('powershell -NoProfile -Command "Get-ChildItem | Format-Table -AutoSize"').level,
+  "none",
+);
+assert.equal(
+  analyzeCommandSafety('echo ok && powershell -NoProfile -Command "Remove-Item fixture -Recurse"').level,
+  "danger",
+);
 
 assert.equal(analyzeCommandSafety("git clean -nd").level, "none");
 assert.equal(analyzeCommandSafety("git clean --dry-run -d").level, "none");
 assert.equal(analyzeCommandSafety("git clean -nfd").level, "none");
 assert.equal(analyzeCommandSafety("git clean -fd").level, "danger");
 assert.equal(analyzeCommandSafety("git -C ./repo clean --force -d").level, "danger");
+assert.equal(analyzeCommandSafety('cmd /c "git clean -fd"').level, "danger");
+assert.equal(analyzeCommandSafety('powershell -Command "git clean -nd"').level, "none");
 
 assert.equal(commandInvokesGitCommit("git commit -m test"), true);
 assert.equal(commandInvokesGitCommit("git -C ./repo commit -m test"), true);

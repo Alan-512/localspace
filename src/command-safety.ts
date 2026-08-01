@@ -22,7 +22,7 @@ const RULES: Rule[] = [
   {
     level: "danger",
     category: "filesystem",
-    pattern: /(^|[;&|\n])\s*(rm\s+(-[^\n;|&]*[rf][^\n;|&]*|-[^\n;|&]*[fr][^\n;|&]*)|rimraf|rd\s+\/s|rmdir\s+\/s|del\s+\/s|remove-item\b[^\n;|&]*\b-recurse\b[^\n;|&]*\b-force\b)/i,
+    pattern: /(^|[;&|\n])\s*(rm\s+(-[^\n;|&]*[rf][^\n;|&]*|-[^\n;|&]*[fr][^\n;|&]*)|rimraf|rd\s+\/s|rmdir\s+\/s|del\s+\/s|remove-item\b[^\n;|&]*(?:-recurse\b|-force\b))/i,
     message: "Deletes files recursively or forcefully. Verify the target path is scoped to the workspace.",
   },
   {
@@ -101,8 +101,8 @@ function segmentInvokesGitCommit(segment: string): boolean {
     .trim();
   if (!normalized) return false;
 
-  const shellWrapper = /^(?:sh|bash|zsh|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh)\b[\s\S]*?(?:-c|\/c|-command)\s+["']?([\s\S]+)$/i.exec(normalized);
-  if (shellWrapper?.[1]) return commandInvokesGitCommit(shellWrapper[1]);
+  const unwrapped = unwrapShellCommand(normalized);
+  if (unwrapped) return commandInvokesGitCommit(unwrapped);
 
   normalized = normalized.replace(/^(?:command|sudo|npx)\s+/i, "");
   normalized = normalized.replace(/^env(?:\s+[A-Za-z_][A-Za-z0-9_]*=\S+)*\s+/i, "");
@@ -115,15 +115,18 @@ export function analyzeCommandSafety(command: string): CommandSafetyAnalysis {
 
   const findings: CommandSafetyFinding[] = [];
   const seen = new Set<string>();
-  for (const rule of RULES) {
-    if (!rule.pattern.test(normalized)) continue;
-    const key = `${rule.level}:${rule.category}:${rule.message}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    findings.push({ level: rule.level, category: rule.category, message: rule.message });
+  const commandsToAnalyze = unwrapShellCommands(normalized);
+  for (const commandToAnalyze of commandsToAnalyze) {
+    for (const rule of RULES) {
+      if (!rule.pattern.test(commandToAnalyze)) continue;
+      const key = `${rule.level}:${rule.category}:${rule.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      findings.push({ level: rule.level, category: rule.category, message: rule.message });
+    }
   }
 
-  if (commandInvokesDestructiveGitClean(normalized)) {
+  if (commandsToAnalyze.some((commandToAnalyze) => commandInvokesDestructiveGitClean(commandToAnalyze))) {
     const finding: CommandSafetyFinding = {
       level: "danger",
       category: "git",
@@ -140,6 +143,43 @@ export function analyzeCommandSafety(command: string): CommandSafetyAnalysis {
     ),
     findings,
   };
+}
+
+function unwrapShellCommands(command: string): string[] {
+  const commands: string[] = [];
+  const seen = new Set<string>();
+  const segments = [command, ...command.split(/&&|\|\||[;|\n]/)];
+
+  for (const segment of segments) {
+    let current = segment.trim();
+    for (let depth = 0; current && depth < 4; depth += 1) {
+      if (!seen.has(current)) {
+        seen.add(current);
+        commands.push(current);
+      }
+
+      const unwrapped = unwrapShellCommand(current);
+      if (!unwrapped || unwrapped === current) break;
+      current = unwrapped;
+    }
+  }
+
+  return commands;
+}
+
+function unwrapShellCommand(command: string): string | undefined {
+  const shellWrapper = /^(?:sh|bash|zsh|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh)\b[\s\S]*?(?:-c|\/c|-command)\s+([\s\S]+)$/i.exec(command);
+  const wrapped = shellWrapper?.[1]?.trim();
+  return wrapped ? stripMatchingOuterQuotes(wrapped) : undefined;
+}
+
+function stripMatchingOuterQuotes(value: string): string {
+  if (value.length < 2) return value;
+  const first = value[0];
+  const last = value[value.length - 1];
+  return (first === '"' && last === '"') || (first === "'" && last === "'")
+    ? value.slice(1, -1).trim()
+    : value;
 }
 
 function commandInvokesDestructiveGitClean(command: string): boolean {
