@@ -109,7 +109,11 @@ try {
   assert.equal(docsOnly.validationFreshness, "not-required");
   assert.equal(docsOnly.commitReviewRequired, false);
 
-  const sensitive = await createDeterministicAutomation(root, [".env.example"]);
+  const envTemplate = await createDeterministicAutomation(root, [".env.example"]);
+  assert.equal(envTemplate.commitReviewRequired, false);
+  assert.ok(!envTemplate.recommendations.some((item) => item.id === "sensitive-change-review"));
+
+  const sensitive = await createDeterministicAutomation(root, [".env.local"]);
   assert.equal(sensitive.commitReviewRequired, true);
   assert.ok(sensitive.recommendations.some((item) => item.id === "sensitive-change-review"));
 

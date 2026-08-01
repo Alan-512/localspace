@@ -2,7 +2,12 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { analyzeSensitivePath, assertWritablePath, SensitivePathError } from "./sensitive-paths.js";
+import {
+  analyzeSensitivePath,
+  assertUnprotectedPath,
+  assertWritablePath,
+  SensitivePathError,
+} from "./sensitive-paths.js";
 
 const root = await mkdtemp(join(tmpdir(), "localspace-sensitive-paths-test-"));
 const config = {
@@ -13,19 +18,29 @@ const config = {
 const context = { workspaceRoot: root, config };
 
 assert.equal(analyzeSensitivePath(join(root, "src", "server.ts"), context).level, "none");
-assert.equal(analyzeSensitivePath(join(root, ".env"), context).level, "protected");
-assert.equal(analyzeSensitivePath(join(root, ".env.local"), context).level, "protected");
-assert.equal(analyzeSensitivePath(join(root, ".git", "config"), context).level, "protected");
-assert.equal(analyzeSensitivePath(join(root, ".git", "hooks", "pre-commit"), context).level, "protected");
+assert.equal(analyzeSensitivePath(join(root, ".env"), context).level, "sensitive");
+assert.equal(analyzeSensitivePath(join(root, ".env.local"), context).level, "sensitive");
+assert.equal(analyzeSensitivePath(join(root, ".env.example"), context).level, "none");
+assert.equal(analyzeSensitivePath(join(root, ".env.production.sample"), context).level, "none");
+assert.equal(analyzeSensitivePath(join(root, ".git", "config"), context).level, "sensitive");
+assert.equal(analyzeSensitivePath(join(root, ".git", "hooks", "pre-commit"), context).level, "sensitive");
 assert.equal(analyzeSensitivePath(join(root, ".localspace", "policy.json"), context).level, "protected");
-assert.equal(analyzeSensitivePath(join(root, "auth.json"), context).level, "protected");
-assert.equal(analyzeSensitivePath(join(root, "service-token.txt"), context).level, "protected");
-assert.equal(analyzeSensitivePath(join(root, "private-key.pem"), context).level, "protected");
+assert.equal(analyzeSensitivePath(join(root, "auth.json"), context).level, "sensitive");
+assert.equal(analyzeSensitivePath(join(root, "service-token.txt"), context).level, "sensitive");
+assert.equal(analyzeSensitivePath(join(root, "private-key.pem"), context).level, "sensitive");
+assert.equal(analyzeSensitivePath(join(root, "src", "tokenizer.ts"), context).level, "none");
+assert.equal(analyzeSensitivePath(join(root, "config", "credentials-schema.json"), context).level, "none");
+assert.equal(analyzeSensitivePath(join(root, "src", "private-key-validator.ts"), context).level, "none");
 assert.equal(analyzeSensitivePath(join(root, ".codex", "config.toml"), context).level, "protected");
 
 assert.doesNotThrow(() => assertWritablePath(join(root, "src", "server.ts"), context));
 assert.throws(
   () => assertWritablePath(join(root, ".env"), context),
+  (error) => error instanceof SensitivePathError && /Sensitive path blocked/.test(error.message),
+);
+assert.doesNotThrow(() => assertUnprotectedPath(join(root, ".env"), context));
+assert.throws(
+  () => assertUnprotectedPath(join(root, ".localspace", "policy.json"), context),
   (error) => error instanceof SensitivePathError && /Sensitive path blocked/.test(error.message),
 );
 

@@ -126,6 +126,15 @@ try {
   execFileSync("git", ["config", "user.name", "LocalSpace Automation Test"], { cwd: automationRoot });
   execFileSync("git", ["add", "--", "."], { cwd: automationRoot });
   execFileSync("git", ["commit", "-m", "initial automation fixture"], { cwd: automationRoot, stdio: "ignore" });
+  const sensitiveRoot = join(root, "sensitive-workspace");
+  await mkdir(join(sensitiveRoot, ".localspace"), { recursive: true });
+  await writeFile(join(sensitiveRoot, ".env.example"), "PUBLIC_VALUE=example\n", "utf8");
+  await writeFile(join(sensitiveRoot, "README.md"), "sensitive fixture\n", "utf8");
+  execFileSync("git", ["init"], { cwd: sensitiveRoot, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "sensitive@localspace.invalid"], { cwd: sensitiveRoot });
+  execFileSync("git", ["config", "user.name", "LocalSpace Sensitive Test"], { cwd: sensitiveRoot });
+  execFileSync("git", ["add", "--", "."], { cwd: sensitiveRoot });
+  execFileSync("git", ["commit", "-m", "initial sensitive fixture"], { cwd: sensitiveRoot, stdio: "ignore" });
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
 
@@ -924,6 +933,122 @@ try {
         String(recordValue(event, "action")).startsWith("policy_block:")
       ),
     );
+
+    const sensitiveOpen = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(611, "open_workspace", { path: sensitiveRoot }),
+      sessionId,
+    );
+    const sensitiveOpenResult = await jsonRpcResult(sensitiveOpen);
+    const sensitiveWorkspaceId = recordValue(sensitiveOpenResult.structuredContent, "workspaceId");
+    assert.equal(typeof sensitiveWorkspaceId, "string");
+
+    const envTemplatePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(612, "apply_patch", {
+        workspaceId: sensitiveWorkspaceId,
+        patch: "*** Begin Patch\n*** Update File: .env.example\n@@\n-PUBLIC_VALUE=example\n+PUBLIC_VALUE=documented\n*** End Patch",
+      }),
+      sessionId,
+    );
+    const envTemplatePatchResult = await jsonRpcResult(envTemplatePatch);
+    assert.equal(recordValue(envTemplatePatchResult, "isError"), undefined);
+    assert.equal(recordValue(envTemplatePatchResult.structuredContent, "approvalRequired"), undefined);
+    assert.equal(await readFile(join(sensitiveRoot, ".env.example"), "utf8"), "PUBLIC_VALUE=documented\n");
+
+    const sensitivePatchText = "*** Begin Patch\n*** Add File: .env.local\n+SECRET_VALUE=approved\n*** End Patch";
+    const blockedSensitivePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(613, "apply_patch", {
+        workspaceId: sensitiveWorkspaceId,
+        patch: sensitivePatchText,
+      }),
+      sessionId,
+    );
+    const blockedSensitivePatchResult = await jsonRpcResult(blockedSensitivePatch);
+    const blockedSensitivePatchStructured = recordValue(blockedSensitivePatchResult, "structuredContent");
+    assert.equal(recordValue(blockedSensitivePatchStructured, "blocked"), true);
+    assert.equal(recordValue(blockedSensitivePatchStructured, "approvalRequired"), true);
+    assert.deepEqual(recordValue(blockedSensitivePatchStructured, "sensitivePaths"), [".env.local"]);
+    const sensitivePatchToken = recordValue(blockedSensitivePatchStructured, "approvalToken");
+    assert.equal(typeof sensitivePatchToken, "string");
+    await assert.rejects(readFile(join(sensitiveRoot, ".env.local"), "utf8"));
+
+    const mismatchedSensitivePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(614, "apply_patch", {
+        workspaceId: sensitiveWorkspaceId,
+        patch: "*** Begin Patch\n*** Add File: .env.local\n+SECRET_VALUE=different\n*** End Patch",
+        approvalToken: sensitivePatchToken,
+      }),
+      sessionId,
+    );
+    const mismatchedSensitivePatchResult = await jsonRpcResult(mismatchedSensitivePatch);
+    assert.equal(
+      recordValue(mismatchedSensitivePatchResult.structuredContent, "approvalFailureReason"),
+      "mismatch",
+    );
+    await assert.rejects(readFile(join(sensitiveRoot, ".env.local"), "utf8"));
+
+    const approvedSensitivePatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(615, "apply_patch", {
+        workspaceId: sensitiveWorkspaceId,
+        patch: sensitivePatchText,
+        approvalToken: sensitivePatchToken,
+      }),
+      sessionId,
+    );
+    const approvedSensitivePatchResult = await jsonRpcResult(approvedSensitivePatch);
+    assert.equal(recordValue(approvedSensitivePatchResult.structuredContent, "operationApproved"), true);
+    assert.equal(await readFile(join(sensitiveRoot, ".env.local"), "utf8"), "SECRET_VALUE=approved\n");
+
+    const blockedSensitiveStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(616, "git_add", {
+        workspaceId: sensitiveWorkspaceId,
+        paths: [".env.local"],
+      }),
+      sessionId,
+    );
+    const blockedSensitiveStageResult = await jsonRpcResult(blockedSensitiveStage);
+    assert.equal(recordValue(blockedSensitiveStageResult.structuredContent, "approvalRequired"), true);
+    const sensitiveStageToken = recordValue(blockedSensitiveStageResult.structuredContent, "approvalToken");
+    assert.equal(typeof sensitiveStageToken, "string");
+
+    const approvedSensitiveStage = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(617, "git_add", {
+        workspaceId: sensitiveWorkspaceId,
+        paths: [".env.local"],
+        approvalToken: sensitiveStageToken,
+      }),
+      sessionId,
+    );
+    const approvedSensitiveStageResult = await jsonRpcResult(approvedSensitiveStage);
+    assert.equal(recordValue(approvedSensitiveStageResult.structuredContent, "operationApproved"), true);
+    assert.equal(recordValue(approvedSensitiveStageResult.structuredContent, "stagedCount"), 1);
+
+    const protectedPolicyPatch = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(618, "apply_patch", {
+        workspaceId: sensitiveWorkspaceId,
+        patch: "*** Begin Patch\n*** Add File: .localspace/policy.json\n+{\"version\":1}\n*** End Patch",
+      }),
+      sessionId,
+    );
+    const protectedPolicyPatchResult = await jsonRpcResult(protectedPolicyPatch);
+    assert.equal(recordValue(protectedPolicyPatchResult, "isError"), true);
+    assert.match(toolResultText(protectedPolicyPatchResult), /sensitive path blocked/i);
+    assert.doesNotMatch(toolResultText(protectedPolicyPatchResult), /approval token/i);
 
     const automationOpen = await mcpRequest(
       stateless.baseUrl,

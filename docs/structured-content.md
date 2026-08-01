@@ -55,7 +55,8 @@ not. See [`tool-surfaces.md`](tool-surfaces.md).
 | `changes` | `isRepository`, `clean`, `mode`, `staged`, `branch`, `statusEntries[]`, `groups[]`, `stat`, `truncated` |
 | `git_status` | `isRepository`, `branch`, `clean`, `statusLines[]`, `truncated` |
 | `git_diff` | `isRepository`, `staged`, `stat`, `empty`, `truncated` |
-| `git_add` | `isRepository`, `paths[]`, `stagedCount`, `truncated` |
+| `write`, `edit`, `apply_patch` | Normal success fields plus optional sensitive-path approval fields: `blocked`, `approvalRequired`, `approvalToken`, `approvalTokenExpiresAt`, `approvalFailureReason`, `operationApproved`, `workspaceRevision`, `sensitivePaths[]`, `pathSafetyFindings[]` |
+| `git_add` | `isRepository`, `paths[]`, `stagedCount`, `truncated`, plus the same optional sensitive-path approval fields |
 | `git_commit` | `isRepository`, `message`, `committed`, `truncated`, optional approval/block fields, `workspaceRevision`, `commandRisk`, `commandSafetyFindings[]`, `automation` |
 | `git_log` | `isRepository`, `limit`, `commits[]`, `truncated` |
 | `exec_command` | `command`, `workingDirectory`, `running`, `exitCode`, `wallTimeMs`, `queuedMs`, `startedAt`, optional `completedAt`, `outputCharacters`, `outputTruncated`, `commandRisk`, `commandSafetyFindings[]`, `blocked`, `approvalRequired`, `approvalToken`, `approvalTokenExpiresAt`, `commandApproved` |

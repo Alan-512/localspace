@@ -28,13 +28,13 @@ const RULES: Rule[] = [
   {
     level: "danger",
     category: "filesystem",
-    pattern: /(^|[;&|\n])\s*(format\b|mkfs\b|diskpart\b)/i,
+    pattern: /(^|[;&|\n])\s*(format(?:\.com)?(?=\s|$)|mkfs\b|diskpart\b)/i,
     message: "Can modify disks or filesystems outside the workspace.",
   },
   {
     level: "danger",
     category: "git",
-    pattern: /\bgit\s+(reset\s+--hard|clean\s+-[^\n;|&]*[fd]|push\b[^\n;|&]*(--force|-f)\b|branch\s+-D\b)/i,
+    pattern: /\bgit\s+(reset\s+--hard|push\b[^\n;|&]*(--force|-f)\b|branch\s+-D\b)/i,
     message: "Can discard history, delete untracked files, or force-update a remote branch.",
   },
   {
@@ -123,6 +123,16 @@ export function analyzeCommandSafety(command: string): CommandSafetyAnalysis {
     findings.push({ level: rule.level, category: rule.category, message: rule.message });
   }
 
+  if (commandInvokesDestructiveGitClean(normalized)) {
+    const finding: CommandSafetyFinding = {
+      level: "danger",
+      category: "git",
+      message: "Can discard history, delete untracked files, or force-update a remote branch.",
+    };
+    const key = `${finding.level}:${finding.category}:${finding.message}`;
+    if (!seen.has(key)) findings.push(finding);
+  }
+
   return {
     level: findings.reduce<CommandRiskLevel>(
       (current, finding) => (LEVEL_SCORE[finding.level] > LEVEL_SCORE[current] ? finding.level : current),
@@ -130,6 +140,19 @@ export function analyzeCommandSafety(command: string): CommandSafetyAnalysis {
     ),
     findings,
   };
+}
+
+function commandInvokesDestructiveGitClean(command: string): boolean {
+  return command
+    .split(/&&|\|\||[;|\n]/)
+    .some((segment) => {
+      const match = /\bgit(?:\s+(?:-C\s+(?:"[^"]+"|'[^']+'|\S+)|-c\s+\S+|--(?:git-dir|work-tree|namespace)(?:=\S+|\s+\S+)|--(?:no-pager|paginate|literal-pathspecs|glob-pathspecs|noglob-pathspecs|icase-pathspecs)))*\s+clean\b([\s\S]*)/i.exec(segment);
+      if (!match) return false;
+      const args = match[1]?.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+      const dryRun = args.some((arg) => arg === "--dry-run" || /^-[^-]*n/i.test(arg));
+      if (dryRun) return false;
+      return args.some((arg) => arg === "--force" || /^-[^-]*f/i.test(arg));
+    });
 }
 
 export function formatCommandSafetyWarning(analysis: CommandSafetyAnalysis): string | undefined {

@@ -284,7 +284,7 @@ development access.
 | Filesystem allowlist | Only configured roots can be opened as workspaces. |
 | OAuth owner approval | A connecting MCP client must be approved with your Owner password. |
 | Host allowlist | LocalSpace derives allowed hosts from local and public configuration. |
-| Sensitive path protection | Write-like tools block `.env`, Git config/hooks, secret-like files, LocalSpace state paths, home roots, and system directories. |
+| Sensitive path protection | Workspace credential/configuration files require one-time user approval; LocalSpace trust anchors, home roots, and system directories remain permanently protected. Environment templates and source filenames are not blocked by keyword alone. |
 | Command warnings | Risky shell patterns are surfaced before or with command execution. |
 | Danger-command approval | High-risk commands require an explicit one-time approval token. |
 | Audit log | Important coding actions are recorded for review and session summaries. |

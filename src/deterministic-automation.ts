@@ -1,6 +1,7 @@
 import { lstat } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { AuditEvent, AuditSummary } from "./audit-log.js";
+import { isSensitiveFileName } from "./sensitive-paths.js";
 import { workspaceContentRevision } from "./workspace-revision.js";
 
 export type AutomationSeverity = "info" | "warning" | "required";
@@ -340,16 +341,7 @@ function isSensitiveLikePath(path: string): boolean {
   const lower = path.toLowerCase();
   const name = basename(lower);
   return lower === ".localspace/policy.json"
-    || name === ".npmrc"
-    || name === ".pypirc"
-    || name === "auth.json"
-    || name === ".env"
-    || name.startsWith(".env.")
-    || lower.includes("secret")
-    || lower.includes("token")
-    || lower.includes("credential")
-    || lower.includes("private") && lower.includes("key")
-    || [".pem", ".key", ".p12", ".pfx"].includes(extname(lower));
+    || isSensitiveFileName(name);
 }
 
 function normalizeRelativePath(path: string): string {

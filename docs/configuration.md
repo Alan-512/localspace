@@ -416,11 +416,15 @@ when the Git-visible workspace changed during execution. The revision includes
 HEAD, staged and unstaged changes, and untracked file contents; Git-ignored
 cache or build output is intentionally outside that stale-result check.
 
-Write-like tools also protect sensitive paths using generic rules rather than
-hard-coded personal paths. Protected paths include workspace Git configuration
-and hooks, `.env` files, secret/token/private-key-like filenames, LocalSpace
-state/agent/worktree directories, home-directory roots, and platform system
-directories.
+Write-like tools also classify sensitive paths using generic rules rather than
+hard-coded personal paths. Workspace-local Git configuration/hooks, real `.env`
+files, authentication files, and secret/token/private-key-like data files return
+a one-time approval token before mutation or staging. The token is bound to the
+exact operation and unchanged Workspace revision. `.env.example`/sample/template
+files and source names such as `tokenizer.ts` are not treated as credentials.
+`.localspace/policy.json`, LocalSpace state/agent/worktree directories,
+home-directory roots, and platform system directories remain permanently
+protected and cannot be opened by an approval token.
 
 LocalSpace keeps bounded in-memory activity and MCP request metric rings for
 `session_summary`. They record recent read, search, navigation, process,

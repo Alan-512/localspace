@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createRequire } from "node:module";
 import { relative } from "node:path";
@@ -64,7 +64,10 @@ import { generateProjectMap } from "./project-map.js";
 import { findSymbolsData } from "./symbols.js";
 import { createReviewCheckpointManager } from "./review-checkpoints.js";
 import { shutdownHttpServer } from "./server-shutdown.js";
-import { assertWritablePath, assertWritablePaths } from "./sensitive-paths.js";
+import {
+  analyzeSensitivePath,
+  assertUnprotectedPaths,
+} from "./sensitive-paths.js";
 import { formatPathForPrompt, type Skill } from "./skills.js";
 import { createWorkspaceStore } from "./workspace-store.js";
 import { workspaceContentRevision, workspaceRevision } from "./workspace-revision.js";
@@ -455,6 +458,28 @@ function resultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
 
 function structuredResultOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
   return resultOutputSchema(extra);
+}
+
+const approvalFailureReasonOutputSchema = z.enum(["missing", "not_found", "expired", "mismatch"]);
+const sensitivePathFindingOutputSchema = z.object({
+  level: z.enum(["sensitive", "protected"]),
+  category: z.string(),
+  message: z.string(),
+});
+
+function mutationApprovalOutputSchema(extra: z.ZodRawShape = {}): z.ZodRawShape {
+  return resultOutputSchema({
+    ...extra,
+    blocked: z.boolean().optional(),
+    approvalRequired: z.boolean().optional(),
+    approvalToken: z.string().optional(),
+    approvalTokenExpiresAt: z.string().optional(),
+    approvalFailureReason: approvalFailureReasonOutputSchema.optional(),
+    operationApproved: z.boolean().optional(),
+    workspaceRevision: z.string().optional(),
+    sensitivePaths: z.array(z.string()).optional(),
+    pathSafetyFindings: z.array(sensitivePathFindingOutputSchema).optional(),
+  });
 }
 
 const scanSummaryOutputSchema = z.object({
@@ -993,7 +1018,7 @@ const gitDiffStructuredOutputSchema = structuredResultOutputSchema({
   truncated: z.boolean(),
 });
 
-const gitAddStructuredOutputSchema = structuredResultOutputSchema({
+const gitAddStructuredOutputSchema = mutationApprovalOutputSchema({
   isRepository: z.boolean(),
   paths: z.array(z.string()),
   stagedCount: z.number(),
@@ -1884,6 +1909,131 @@ function blockedCommandResult(
       commandApproved: false,
       commandRisk: safety.level,
       commandSafetyFindings: safety.findings,
+    },
+  };
+}
+
+type SensitiveMutationApproval =
+  | {
+    approved: true;
+    approvedByToken: boolean;
+    sensitivePaths: string[];
+    workspaceRevision?: string;
+  }
+  | {
+    approved: false;
+    approvedByToken: false;
+    sensitivePaths: string[];
+    workspaceRevision?: string;
+    blockedResult: CallToolResult;
+  };
+
+async function authorizeSensitiveMutation(input: {
+  tool: ToolName;
+  workspace: Workspace;
+  absolutePaths: string[];
+  relativePaths: string[];
+  payload: unknown;
+  approvalToken: string | undefined;
+  config: ServerConfig;
+  approvals: CommandApprovalManager;
+  blockedStructured?: Record<string, unknown>;
+}): Promise<SensitiveMutationApproval> {
+  const context = { workspaceRoot: input.workspace.root, config: input.config };
+  assertUnprotectedPaths(input.absolutePaths, context);
+
+  const analyses = input.absolutePaths.map((path) => analyzeSensitivePath(path, context));
+  const sensitiveEntries = analyses
+    .map((analysis, index) => ({ analysis, path: input.relativePaths[index] ?? input.absolutePaths[index] ?? "" }))
+    .filter((entry) => entry.analysis.level === "sensitive");
+  if (sensitiveEntries.length === 0) {
+    return { approved: true, approvedByToken: false, sensitivePaths: [] };
+  }
+
+  const sensitivePaths = [...new Set(sensitiveEntries.map((entry) => entry.path))].sort();
+  const pathSafetyFindings = sensitiveEntries.flatMap((entry) =>
+    entry.analysis.findings
+      .filter((finding) => finding.level === "sensitive")
+      .map((finding) => ({ ...finding, message: `${entry.path}: ${finding.message}` }))
+  );
+  const safety: CommandSafetyAnalysis = {
+    level: "danger",
+    findings: pathSafetyFindings.map((finding) => ({
+      level: "danger" as const,
+      category: `sensitive-path/${finding.category}`,
+      message: finding.message,
+    })),
+  };
+  const revision = await workspaceContentRevision(input.workspace.root);
+  const approvalCommand = `sensitive_mutation:${JSON.stringify({
+    tool: input.tool,
+    workspaceRevision: revision,
+    paths: [...input.relativePaths].sort(),
+    payloadHash: createHash("sha256").update(JSON.stringify(input.payload)).digest("hex"),
+  })}`;
+  const approvalContext = {
+    workspaceId: input.workspace.id,
+    cwd: input.workspace.root,
+    command: approvalCommand,
+    safety,
+  };
+  const approvalResult = input.approvals.consume(input.approvalToken, approvalContext);
+  if (approvalResult.approved) {
+    return {
+      approved: true,
+      approvedByToken: true,
+      sensitivePaths,
+      workspaceRevision: revision,
+    };
+  }
+
+  const request = input.approvals.create(approvalContext);
+  const result = [
+    `${input.tool} blocked: sensitive workspace paths require explicit approval.`,
+    "",
+    ...pathSafetyFindings.map((finding) => `- ${finding.message}`),
+    "",
+    `Approval token: ${request.token}`,
+    `Expires at: ${request.expiresAt}`,
+    "",
+    "Retry the exact same operation against the unchanged workspace with this approvalToken only after the user explicitly confirms.",
+  ].join("\n");
+  const content = [textBlock(result)];
+  return {
+    approved: false,
+    approvedByToken: false,
+    sensitivePaths,
+    workspaceRevision: revision,
+    blockedResult: {
+      content,
+      _meta: {
+        tool: input.tool,
+        card: {
+          workspaceId: input.workspace.id,
+          path: sensitivePaths.length === 1 ? sensitivePaths[0] : `${sensitivePaths.length} sensitive paths`,
+          summary: {
+            blocked: true,
+            approvalRequired: true,
+            approvalFailureReason: approvalResult.reason,
+            sensitivePaths: sensitivePaths.length,
+            ...textSummary(content),
+          },
+          payload: { content },
+        },
+      },
+      structuredContent: {
+        ...input.blockedStructured,
+        result,
+        blocked: true,
+        approvalRequired: true,
+        approvalToken: request.token,
+        approvalTokenExpiresAt: request.expiresAt,
+        approvalFailureReason: approvalResult.reason,
+        operationApproved: false,
+        workspaceRevision: revision,
+        sensitivePaths,
+        pathSafetyFindings,
+      },
     },
   };
 }
@@ -4117,12 +4267,16 @@ function createMcpServer(
           .string()
           .describe("File path to write, relative to the workspace root."),
         content: z.string().describe("Complete new file content."),
+        approvalToken: z
+          .string()
+          .optional()
+          .describe("One-time approval token returned by a blocked sensitive-path write."),
       },
-      outputSchema: resultOutputSchema(),
+      outputSchema: mutationApprovalOutputSchema(),
       ...toolWidgetDescriptorMeta(config, "write"),
       annotations: WRITE_TOOL_ANNOTATIONS,
     },
-    async ({ workspaceId, ...input }) => {
+    async ({ workspaceId, approvalToken, ...input }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const targetPath = workspaces.resolvePath(workspace, input.path);
@@ -4140,7 +4294,39 @@ function createMcpServer(
           enforce: (policy) => assertPolicyWritablePaths(policy, workspace.root, [targetPath]),
         },
       );
-      assertWritablePath(targetPath, { workspaceRoot: workspace.root, config });
+      const relativeTargetPath = workspaceRelativePath(workspace.root, targetPath);
+      const authorization = await authorizeSensitiveMutation({
+        tool: toolNames.write,
+        workspace,
+        absolutePaths: [targetPath],
+        relativePaths: [relativeTargetPath],
+        payload: { path: relativeTargetPath, content: input.content },
+        approvalToken,
+        config,
+        approvals: commandApprovals,
+      });
+      if (!authorization.approved) {
+        auditLog.record({
+          tool: toolNames.write,
+          workspaceId,
+          action: "sensitive_path_approval",
+          success: false,
+          blocked: true,
+          risk: "danger",
+          paths: authorization.sensitivePaths,
+          workspaceRevision: authorization.workspaceRevision,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        recordToolCall(config, activityLog, {
+          tool: toolNames.write,
+          workspaceId,
+          path: input.path,
+          success: false,
+          durationMs: Math.round(performance.now() - startedAt),
+          error: "Sensitive path write requires approval.",
+        });
+        return authorization.blockedResult;
+      }
       const response = await writeFileTool(input, {
         cwd: workspace.root,
         root: workspace.root,
@@ -4173,7 +4359,9 @@ function createMcpServer(
         tool: toolNames.write,
         workspaceId,
         success: true,
-        paths: [workspaceRelativePath(workspace.root, targetPath)],
+        paths: [relativeTargetPath],
+        approved: authorization.approvedByToken || undefined,
+        risk: authorization.approvedByToken ? "danger" : undefined,
         additions: stats.additions,
         removals: stats.removals,
         durationMs: Math.round(performance.now() - startedAt),
@@ -4195,6 +4383,9 @@ function createMcpServer(
         },
         structuredContent: {
           result: contentText(response.content),
+          operationApproved: authorization.approvedByToken || undefined,
+          workspaceRevision: authorization.workspaceRevision,
+          sensitivePaths: authorization.sensitivePaths.length > 0 ? authorization.sensitivePaths : undefined,
         },
       };
     },
@@ -4551,14 +4742,18 @@ function createMcpServer(
             }),
           )
           .min(1),
+        approvalToken: z
+          .string()
+          .optional()
+          .describe("One-time approval token returned by a blocked sensitive-path edit."),
       },
-      outputSchema: resultOutputSchema({
-        status: z.literal("applied"),
+      outputSchema: mutationApprovalOutputSchema({
+        status: z.literal("applied").optional(),
       }),
       ...toolWidgetDescriptorMeta(config, "edit"),
       annotations: EDIT_TOOL_ANNOTATIONS,
     },
-    async ({ workspaceId, ...input }) => {
+    async ({ workspaceId, approvalToken, ...input }) => {
       const startedAt = performance.now();
       const workspace = workspaces.getWorkspace(workspaceId);
       const targetPath = workspaces.resolvePath(workspace, input.path);
@@ -4576,7 +4771,39 @@ function createMcpServer(
           enforce: (policy) => assertPolicyWritablePaths(policy, workspace.root, [targetPath]),
         },
       );
-      assertWritablePath(targetPath, { workspaceRoot: workspace.root, config });
+      const relativeTargetPath = workspaceRelativePath(workspace.root, targetPath);
+      const authorization = await authorizeSensitiveMutation({
+        tool: toolNames.edit,
+        workspace,
+        absolutePaths: [targetPath],
+        relativePaths: [relativeTargetPath],
+        payload: { path: relativeTargetPath, edits: input.edits },
+        approvalToken,
+        config,
+        approvals: commandApprovals,
+      });
+      if (!authorization.approved) {
+        auditLog.record({
+          tool: toolNames.edit,
+          workspaceId,
+          action: "sensitive_path_approval",
+          success: false,
+          blocked: true,
+          risk: "danger",
+          paths: authorization.sensitivePaths,
+          workspaceRevision: authorization.workspaceRevision,
+          durationMs: Math.round(performance.now() - startedAt),
+        });
+        recordToolCall(config, activityLog, {
+          tool: toolNames.edit,
+          workspaceId,
+          path: input.path,
+          success: false,
+          durationMs: Math.round(performance.now() - startedAt),
+          error: "Sensitive path edit requires approval.",
+        });
+        return authorization.blockedResult;
+      }
       const response = await editFileTool(input, {
         cwd: workspace.root,
         root: workspace.root,
@@ -4611,7 +4838,9 @@ function createMcpServer(
         tool: toolNames.edit,
         workspaceId,
         success: true,
-        paths: [workspaceRelativePath(workspace.root, targetPath)],
+        paths: [relativeTargetPath],
+        approved: authorization.approvedByToken || undefined,
+        risk: authorization.approvedByToken ? "danger" : undefined,
         additions: stats.additions,
         removals: stats.removals,
         durationMs: Math.round(performance.now() - startedAt),
@@ -4634,6 +4863,9 @@ function createMcpServer(
         structuredContent: {
           status: "applied",
           result: contentText(editContent),
+          operationApproved: authorization.approvedByToken || undefined,
+          workspaceRevision: authorization.workspaceRevision,
+          sensitivePaths: authorization.sensitivePaths.length > 0 ? authorization.sensitivePaths : undefined,
         },
       };
     },
@@ -4654,22 +4886,26 @@ function createMcpServer(
           patch: z
             .string()
             .describe("Patch text enclosed by *** Begin Patch and *** End Patch markers."),
+          approvalToken: z
+            .string()
+            .optional()
+            .describe("One-time approval token returned by a blocked sensitive-path patch."),
         },
-        outputSchema: resultOutputSchema({
-          additions: z.number(),
-          removals: z.number(),
+        outputSchema: mutationApprovalOutputSchema({
+          additions: z.number().optional(),
+          removals: z.number().optional(),
           files: z.array(
             z.object({
               path: z.string(),
               previousPath: z.string().optional(),
               operation: z.enum(["add", "update", "delete", "move"]),
             }),
-          ),
+          ).optional(),
         }),
         ...toolWidgetDescriptorMeta(config, "edit"),
         annotations: EDIT_TOOL_ANNOTATIONS,
       },
-      async ({ workspaceId, patch }) => {
+      async ({ workspaceId, patch, approvalToken }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
         const patchPaths = parsePatch(patch).flatMap((action) => {
@@ -4691,10 +4927,39 @@ function createMcpServer(
             enforce: (policy) => assertPolicyWritablePaths(policy, workspace.root, absolutePatchPaths),
           },
         );
-        assertWritablePaths(
-          absolutePatchPaths,
-          { workspaceRoot: workspace.root, config },
-        );
+        const relativePatchPaths = absolutePatchPaths.map((path) => workspaceRelativePath(workspace.root, path));
+        const authorization = await authorizeSensitiveMutation({
+          tool: toolNames.applyPatch,
+          workspace,
+          absolutePaths: absolutePatchPaths,
+          relativePaths: relativePatchPaths,
+          payload: { patch },
+          approvalToken,
+          config,
+          approvals: commandApprovals,
+        });
+        if (!authorization.approved) {
+          auditLog.record({
+            tool: toolNames.applyPatch,
+            workspaceId,
+            action: "sensitive_path_approval",
+            success: false,
+            blocked: true,
+            risk: "danger",
+            paths: authorization.sensitivePaths,
+            workspaceRevision: authorization.workspaceRevision,
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+          recordToolCall(config, activityLog, {
+            tool: toolNames.applyPatch,
+            workspaceId,
+            path: patchPaths.length === 1 ? patchPaths[0] : `${patchPaths.length} files`,
+            success: false,
+            durationMs: Math.round(performance.now() - startedAt),
+            error: "Sensitive path patch requires approval.",
+          });
+          return authorization.blockedResult;
+        }
         const applied = await applyPatch(workspace.root, patch);
         const paths = applied.files.map((file) => file.path).join(", ");
         const result = `Applied patch to ${applied.files.length} file(s): ${paths}`;
@@ -4716,6 +4981,8 @@ function createMcpServer(
           paths: applied.files.map((file) => file.path),
           additions: applied.additions,
           removals: applied.removals,
+          approved: authorization.approvedByToken || undefined,
+          risk: authorization.approvedByToken ? "danger" : undefined,
           durationMs: Math.round(performance.now() - startedAt),
         });
 
@@ -4739,6 +5006,9 @@ function createMcpServer(
             additions: applied.additions,
             removals: applied.removals,
             files: applied.files,
+            operationApproved: authorization.approvedByToken || undefined,
+            workspaceRevision: authorization.workspaceRevision,
+            sensitivePaths: authorization.sensitivePaths.length > 0 ? authorization.sensitivePaths : undefined,
           },
         };
       },
@@ -4979,6 +5249,10 @@ function createMcpServer(
             .max(100_000)
             .optional()
             .describe("Maximum output characters. Defaults to 20000, max 100000."),
+          approvalToken: z
+            .string()
+            .optional()
+            .describe("One-time approval token returned by a blocked sensitive-path stage operation."),
         },
         outputSchema: gitAddStructuredOutputSchema,
         _meta: {},
@@ -4989,7 +5263,7 @@ function createMcpServer(
           openWorldHint: false,
         },
       },
-      async ({ workspaceId, paths, maxOutputChars }) => {
+      async ({ workspaceId, paths, maxOutputChars, approvalToken }) => {
         const startedAt = performance.now();
         const workspace = workspaces.getWorkspace(workspaceId);
         const absolutePaths = paths.map((path) => workspaces.resolvePath(workspace, path));
@@ -5008,10 +5282,45 @@ function createMcpServer(
             enforce: (policy) => assertPolicyGitAddPaths(policy, workspace.root, absolutePaths),
           },
         );
-        assertWritablePaths(
+        const relativePaths = absolutePaths.map((path) => workspaceRelativePath(workspace.root, path));
+        const authorization = await authorizeSensitiveMutation({
+          tool: toolNames.gitAdd,
+          workspace,
           absolutePaths,
-          { workspaceRoot: workspace.root, config },
-        );
+          relativePaths,
+          payload: { paths: relativePaths },
+          approvalToken,
+          config,
+          approvals: commandApprovals,
+          blockedStructured: {
+            isRepository: true,
+            paths: relativePaths,
+            stagedCount: 0,
+            truncated: false,
+          },
+        });
+        if (!authorization.approved) {
+          auditLog.record({
+            tool: toolNames.gitAdd,
+            workspaceId,
+            action: "sensitive_path_approval",
+            success: false,
+            blocked: true,
+            risk: "danger",
+            paths: authorization.sensitivePaths,
+            workspaceRevision: authorization.workspaceRevision,
+            durationMs: Math.round(performance.now() - startedAt),
+          });
+          recordToolCall(config, activityLog, {
+            tool: toolNames.gitAdd,
+            workspaceId,
+            path: paths.join(", "),
+            success: false,
+            durationMs: Math.round(performance.now() - startedAt),
+            error: "Sensitive path stage operation requires approval.",
+          });
+          return authorization.blockedResult;
+        }
         const data = await gitAddData(workspace.root, paths, { maxOutputChars });
         const content = [textBlock(data.text)];
         logToolCall(config, {
@@ -5024,7 +5333,9 @@ function createMcpServer(
           tool: toolNames.gitAdd,
           workspaceId,
           success: true,
-          paths,
+          paths: relativePaths,
+          approved: authorization.approvedByToken || undefined,
+          risk: authorization.approvedByToken ? "danger" : undefined,
           durationMs: Math.round(performance.now() - startedAt),
         });
 
@@ -5041,7 +5352,13 @@ function createMcpServer(
               payload: { content },
             },
           },
-          structuredContent: { result: data.text, ...data },
+          structuredContent: {
+            result: data.text,
+            ...data,
+            operationApproved: authorization.approvedByToken || undefined,
+            workspaceRevision: authorization.workspaceRevision,
+            sensitivePaths: authorization.sensitivePaths.length > 0 ? authorization.sensitivePaths : undefined,
+          },
         };
       },
     );
@@ -5107,7 +5424,7 @@ function createMcpServer(
             },
           },
         );
-        assertWritablePaths(workspaceStagedPaths, { workspaceRoot: workspace.root, config });
+        assertUnprotectedPaths(workspaceStagedPaths, { workspaceRoot: workspace.root, config });
         const revision = await workspaceRevision(workspace.root);
         const automation = await createDeterministicAutomation(
           workspace.root,

@@ -1,5 +1,5 @@
 import { homedir, platform } from "node:os";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { ServerConfig } from "./config.js";
 
 export type SensitivePathLevel = "none" | "sensitive" | "protected";
@@ -45,9 +45,9 @@ export function analyzeSensitivePath(path: string, context: SensitivePathContext
 
   if (isWorkspaceGitSensitivePath(relativeToWorkspace)) {
     findings.push({
-      level: "protected",
+      level: "sensitive",
       category: "git",
-      message: "Protects Git configuration and hooks from tool-driven modification.",
+      message: "Git configuration and hooks can change repository behavior and require explicit approval.",
     });
   }
 
@@ -61,17 +61,17 @@ export function analyzeSensitivePath(path: string, context: SensitivePathContext
 
   if (isEnvFile(fileName)) {
     findings.push({
-      level: "protected",
+      level: "sensitive",
       category: "environment",
-      message: "Environment files often contain secrets or deployment credentials.",
+      message: "Environment files may contain secrets or deployment credentials and require explicit approval.",
     });
   }
 
   if (isSecretLikeFileName(fileName)) {
     findings.push({
-      level: "protected",
+      level: "sensitive",
       category: "secret",
-      message: "Filename looks like it may contain secrets, tokens, credentials, or private keys.",
+      message: "Filename looks like it may contain secrets, tokens, credentials, or private keys and requires explicit approval.",
     });
   }
 
@@ -119,6 +119,15 @@ export function assertWritablePaths(paths: string[], context: SensitivePathConte
   for (const path of paths) assertWritablePath(path, context);
 }
 
+export function assertUnprotectedPath(path: string, context: SensitivePathContext): void {
+  const analysis = analyzeSensitivePath(path, context);
+  if (analysis.level === "protected") throw new SensitivePathError(path, analysis);
+}
+
+export function assertUnprotectedPaths(paths: string[], context: SensitivePathContext): void {
+  for (const path of paths) assertUnprotectedPath(path, context);
+}
+
 export function formatSensitivePathBlock(path: string, analysis: SensitivePathAnalysis): string {
   const lines = [`Sensitive path blocked: ${path}`, `Sensitivity: ${analysis.level.toUpperCase()}`];
   for (const finding of analysis.findings) {
@@ -137,14 +146,30 @@ function isWorkspaceGitSensitivePath(relativePath: string): boolean {
 }
 
 function isEnvFile(fileName: string): boolean {
-  return fileName === ".env" || fileName.startsWith(".env.");
+  if (fileName === ".env") return true;
+  if (!fileName.startsWith(".env.")) return false;
+  return !/(?:^|\.)(example|sample|template|dist|default)$/i.test(fileName.slice(5));
+}
+
+export function isSensitiveFileName(fileName: string): boolean {
+  const normalized = basename(fileName).toLowerCase();
+  return isEnvFile(normalized) || isSecretLikeFileName(normalized);
 }
 
 function isSecretLikeFileName(fileName: string): boolean {
+  const extension = extname(fileName).toLowerCase();
+  const safeMarker = /(^|[-_.])(example|sample|template|schema|validator|types?|test|spec)([-_.]|$)/i;
+  const sourceExtension = /\.(?:[cm]?[jt]sx?|vue|svelte|css|scss|less|md|mdx)$/i;
+
   if (["auth.json", ".npmrc", ".pypirc", "id_rsa", "id_ed25519"].includes(fileName)) return true;
-  if (/\.(pem|key|p12|pfx)$/i.test(fileName)) return true;
-  if (fileName.includes("secret") || fileName.includes("token") || fileName.includes("credential")) return true;
-  return fileName.includes("private") && fileName.includes("key");
+  if ([".pem", ".key", ".p12", ".pfx"].includes(extension)) return true;
+  if (sourceExtension.test(fileName) || safeMarker.test(fileName)) return false;
+
+  const segments = fileName.split(/[-_.]+/).filter(Boolean);
+  if (segments.some((segment) => ["secret", "secrets", "token", "tokens", "credential", "credentials"].includes(segment))) {
+    return true;
+  }
+  return segments.includes("private") && segments.includes("key");
 }
 
 function configProtectedRoots(config: Pick<ServerConfig, "stateDir" | "agentDir" | "worktreeRoot">): string[] {

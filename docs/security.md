@@ -169,28 +169,40 @@ validation run or explicit approval.
 LocalSpace protects sensitive paths with generic cross-platform rules. It does
 not hard-code a user's personal absolute paths.
 
-Write-like tools block protected paths before modifying or staging files:
+Write-like tools classify paths before modifying or staging files:
 
 - `write`
 - `edit`
 - `apply_patch`
 - `git_add`
 
-Protected path detection is based on:
+The classifier has two enforcement levels:
 
-- the current workspace root, such as `.git/config` and `.git/hooks/**`
-- the workspace policy file at `.localspace/policy.json`
-- LocalSpace config roots, such as `stateDir`, `agentDir`, and `worktreeRoot`
-- the current user's home directory root from `os.homedir()`
-- operating system roots and system directories for the current platform
-- secret-like filenames such as `.env`, `.env.*`, `auth.json`, `.npmrc`,
-  `.pypirc`, private key extensions, and names containing `secret`, `token`, or
-  `credential`
+- `sensitive`: workspace-local Git configuration/hooks, real environment files,
+  authentication configuration, package-manager credentials, private-key files,
+  and secret/token/credential data filenames. These operations are blocked on
+  the first attempt and return a one-time approval token. The token is bound to
+  the exact tool, normalized paths, payload hash, and unchanged Workspace
+  revision. After explicit user confirmation, retrying the same operation with
+  that token is allowed once.
+- `protected`: `.localspace/policy.json`, LocalSpace state/agent/worktree roots,
+  the user's home-directory root, and operating-system roots or system
+  directories. These paths remain non-overridable through normal tool approval.
+
+Template and source-code names are not treated as secrets merely because they
+contain a keyword. For example, `.env.example`, `.env.production.sample`,
+`tokenizer.ts`, `credentials-schema.json`, and `private-key-validator.ts` remain
+normal project files.
 
 This protection is intentionally separate from the filesystem allowlist. The
 allowlist decides what a workspace may open; sensitive path protection decides
-which paths should not be modified or staged automatically inside an allowed
-workspace.
+which paths require human approval or remain permanently protected inside an
+allowed workspace.
+
+Arbitrary shell commands remain an open-world boundary: LocalSpace cannot
+statically prove every file a program may modify. Projects that must prevent
+shell-based writes should set `allowCommands: false` and use dedicated file/Git
+tools or allowlisted `run_checks` scripts.
 
 ## Worktrees
 
