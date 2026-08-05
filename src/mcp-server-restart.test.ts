@@ -22,6 +22,11 @@ try {
   await writeFile(join(root, "activity.txt"), "activity baseline\n", "utf8");
   await writeFile(join(root, "batch-a.txt"), "batch alpha\n", "utf8");
   await writeFile(join(root, "batch-b.txt"), "batch bravo\n", "utf8");
+  const pixelPng = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nWQAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await writeFile(join(root, "pixel.png"), pixelPng);
   const codeLib = [
     "export interface Runner {",
     "  run(): string;",
@@ -382,10 +387,23 @@ try {
     assert.equal(statelessToolsList.status, 200);
     assert.equal(statelessToolsList.headers.get("mcp-session-id"), null);
     const toolsListResult = await jsonRpcResult(statelessToolsList);
-    const toolNames = arrayValue(toolsListResult.tools).map((tool) => recordValue(tool, "name"));
+    const listedTools = arrayValue(toolsListResult.tools);
+    const toolNames = listedTools.map((tool) => recordValue(tool, "name"));
     assert.ok(toolNames.includes("open_workspace"));
     assert.ok(toolNames.includes("exec_command"));
     assert.ok(toolNames.includes("write_stdin"));
+    const readTool = listedTools.find((tool) => recordValue(tool, "name") === "read");
+    assert.ok(readTool);
+    assert.match(String(recordValue(readTool, "description")), /PNG, JPEG, GIF, and WebP up to 5 MB/);
+    const readProperties = recordValue(recordValue(readTool, "inputSchema"), "properties");
+    assert.match(
+      String(recordValue(recordValue(readProperties, "offset"), "description")),
+      /text files\. Ignored for images/,
+    );
+    assert.match(
+      String(recordValue(recordValue(readProperties, "limit"), "description")),
+      /text files\. Ignored for images/,
+    );
     for (const workflowTool of [
       "next_steps",
       "validation_summary",
@@ -541,6 +559,29 @@ try {
     assert.equal(recordValue(requestMetrics, "statelessRequests"), 2);
     const durableAudit = await readFile(config.audit.path, "utf8");
     assert.doesNotMatch(durableAudit, /"tool":"read"/);
+
+    const imageRead = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(240, "read", {
+        workspaceId,
+        path: "pixel.png",
+        offset: 7,
+        limit: 3,
+      }),
+      sessionId,
+    );
+    assert.equal(imageRead.status, 200);
+    const imageReadResult = await jsonRpcResult(imageRead);
+    const imageContent = arrayValue(recordValue(imageReadResult, "content"));
+    const imageBlock = imageContent.find((block) => recordValue(block, "type") === "image");
+    assert.ok(imageBlock);
+    assert.equal(recordValue(imageBlock, "mimeType"), "image/png");
+    assert.equal(recordValue(imageBlock, "data"), pixelPng.toString("base64"));
+    assert.equal(
+      recordValue(recordValue(imageReadResult, "structuredContent"), "result"),
+      "Read image file [image/png]",
+    );
 
     const missingRead = await mcpRequest(
       stateless.baseUrl,

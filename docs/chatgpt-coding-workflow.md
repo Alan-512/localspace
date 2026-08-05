@@ -202,8 +202,10 @@ a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
 
 Use `read_many` only after navigation has identified several concrete text
 files. It preserves input order, isolates per-file failures, and caps total
-returned text. Continue to use `read` for one file, image content, or the first
-read of an advertised Skill's `SKILL.md`.
+returned text. Continue to use `read` for one file or the first read of an
+advertised Skill's `SKILL.md`. For PNG, JPEG, GIF, and WebP files up to 5 MB,
+`read` returns MCP image content that a vision-capable host can inspect directly;
+`offset` and `limit` only affect text files.
 
 Use `run_checks` when two or more exact `package.json` scripts should be
 validated together. Keep concurrency conservative (default 2), use `failFast`

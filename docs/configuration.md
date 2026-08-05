@@ -372,6 +372,13 @@ files, suggested verification commands, and important config/orientation files.
 `code_map` aggregates entrypoints, a compact project tree, exported symbols, and
 import/export relationships for a bounded project overview.
 
+`read` reads one workspace file or an authorized Skill file. Text files are
+returned as bounded line ranges. PNG, JPEG, GIF, and WebP files identified from
+their file bytes—not merely their extension—are returned as MCP image content
+when they are no larger than 5 MB. `offset` and `limit` apply only to text files.
+SVG is not emitted as image content, and an oversized image returns a bounded
+text notice instead of an inline image payload.
+
 `read_many` reads 1–20 already-known text files in input order using bounded
 internal concurrency. It returns partial results when individual files fail,
 limits combined returned text to 50,000 characters by default (200,000 max),

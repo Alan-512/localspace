@@ -82,7 +82,7 @@ const gitModes = ["full", "codex", "hybrid"] as const satisfies readonly ToolMod
 
 export const toolCatalog: readonly ToolCatalogEntry[] = [
   entry(toolNames.openWorkspace, allModes, "workspace", "shared-read", "Open an approved project directory or managed Git worktree and return its workspace context."),
-  entry(toolNames.read, allModes, "navigation", "shared-read", "Read a bounded line range from a workspace file or an authorized Skill file."),
+  entry(toolNames.read, allModes, "navigation", "shared-read", "Read one workspace or authorized Skill file: text as bounded lines, or PNG, JPEG, GIF, and WebP up to 5 MB as MCP image content."),
   entry(toolNames.readMany, codexModes, "navigation", "shared-read", "Read multiple known text files in one bounded call with ordered partial results and limited internal concurrency."),
   entry(toolNames.doctor, allModes, "diagnostics", "shared-read", "Report LocalSpace configuration, runtime, command availability, and optional workspace health."),
   entry(toolNames.workspaceInfo, allModes, "workspace", "shared-read", "Show workspace identity, Git state, recent commits, and package scripts."),

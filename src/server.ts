@@ -3516,21 +3516,21 @@ function createMcpServer(
           .string()
           .describe(
             config.skillsEnabled
-              ? "File path to read, relative to the workspace root. May also be an advertised skill path from open_workspace skills."
-              : "File path to read, relative to the workspace root.",
+              ? "File path relative to the workspace root, or an advertised Skill path. Text is returned as bounded lines; PNG, JPEG, GIF, and WebP up to 5 MB are returned as MCP image content."
+              : "File path relative to the workspace root. Text is returned as bounded lines; PNG, JPEG, GIF, and WebP up to 5 MB are returned as MCP image content.",
           ),
         offset: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("1-indexed line number to start reading from."),
+          .describe("1-indexed line number to start reading from for text files. Ignored for images."),
         limit: z
           .number()
           .int()
           .positive()
           .optional()
-          .describe("Maximum number of lines to read."),
+          .describe("Maximum number of lines to read from text files. Ignored for images."),
       },
       outputSchema: resultOutputSchema(),
       ...toolWidgetDescriptorMeta(config, "read"),
