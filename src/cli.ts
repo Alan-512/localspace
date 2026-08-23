@@ -7,6 +7,14 @@ import { satisfies } from "semver";
 import { loadConfig } from "./config.js";
 import { shutdownHttpServer } from "./server-shutdown.js";
 import {
+  normalizePublicBaseUrl,
+  parseInitArgs,
+  portValidationError,
+  publicBaseUrlValidationError,
+  resolveNonInteractiveInit,
+  type ParsedInitArgs,
+} from "./init-options.js";
+import {
   generateOwnerToken,
   loadLocalspaceFiles,
   writeLocalspaceAuth,
@@ -32,10 +40,10 @@ async function main(argv: string[]): Promise<void> {
       await serve();
       return;
     case "init":
-      await runInit({ force: args.includes("--force") });
+      await runInit(args);
       return;
     case "doctor":
-      await runDoctor();
+      await runDoctor(args);
       return;
     case "config":
       runConfigCommand(args);
@@ -75,10 +83,49 @@ async function ensureConfigured(): Promise<void> {
     );
   }
 
-  await runInit({ force: false });
+  await runInit([]);
 }
 
-async function runInit({ force }: { force: boolean }): Promise<void> {
+async function runInit(args: string[]): Promise<void> {
+  const parsed = parseInitArgs(args);
+  if (parsed.nonInteractive) {
+    runNonInteractiveInit(parsed);
+    return;
+  }
+  await runInteractiveInit(parsed);
+}
+
+function runNonInteractiveInit(parsed: ParsedInitArgs): void {
+  const files = loadLocalspaceFiles();
+  if (!parsed.force && files.configExists && files.authExists) {
+    console.log(`LocalSpace is already configured at ${files.dir}`);
+    console.log("Run again with --force to update it.");
+    return;
+  }
+
+  const resolved = resolveNonInteractiveInit(parsed);
+  const config: LocalspaceUserConfig = {
+    host: files.config.host ?? "127.0.0.1",
+    port: resolved.port,
+    allowedRoots: resolved.allowedRoots,
+    publicBaseUrl: resolved.publicBaseUrl,
+  };
+  const auth = {
+    ownerToken: files.auth.ownerToken ?? generateOwnerToken(),
+  };
+
+  const configPath = writeLocalspaceConfig(config);
+  const authPath = writeLocalspaceAuth(auth);
+
+  console.log(`Config: ${configPath}`);
+  console.log(`Auth: ${authPath}`);
+  console.log(`Local MCP URL: http://${config.host}:${config.port}/mcp`);
+  console.log(`Public MCP URL: ${resolved.publicBaseUrl}/mcp`);
+  console.log(`Owner password: ${auth.ownerToken}`);
+}
+
+async function runInteractiveInit(parsed: ParsedInitArgs): Promise<void> {
+  const force = parsed.force;
   const files = loadLocalspaceFiles();
   if (!force && files.configExists && files.authExists) {
     prompts.log.info(`LocalSpace is already configured at ${files.dir}`);
@@ -106,7 +153,7 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
       message: `Which local port should LocalSpace use? Press Enter to use ${defaultPort}`,
       placeholder: defaultPort,
       defaultValue: defaultPort,
-      validate: validatePort,
+      validate: portValidationError,
     });
     const port = Number(portAnswer);
 
@@ -126,7 +173,7 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
         : "What is the public base URL?",
       placeholder: files.config.publicBaseUrl ?? "https://your-tunnel-host.example.com",
       defaultValue: files.config.publicBaseUrl ?? "",
-      validate: validateRequiredPublicBaseUrl,
+      validate: publicBaseUrlValidationError,
     }));
 
     const config: LocalspaceUserConfig = {
@@ -168,12 +215,12 @@ async function runInit({ force }: { force: boolean }): Promise<void> {
 }
 
 async function serve(): Promise<void> {
-  const sqliteStatus = checkSqliteNative();
-  if (sqliteStatus !== "ok") {
+  const sqliteCheck = checkSqliteNative();
+  if (!sqliteCheck.ok) {
     throw new Error(
       [
         "better-sqlite3 could not load for this Node runtime.",
-        sqliteStatus,
+        sqliteCheck.error ?? "unknown error",
         "",
         "Try reinstalling or rebuilding dependencies under the active Node version:",
         "  npm rebuild better-sqlite3",
@@ -214,27 +261,107 @@ async function serve(): Promise<void> {
   process.once("SIGTERM", handleShutdown);
 }
 
-async function runDoctor(): Promise<void> {
+interface DoctorPaths {
+  path: string;
+  exists: boolean;
+}
+
+interface DoctorReport {
+  configDir: string;
+  config: DoctorPaths;
+  auth: DoctorPaths;
+  runtime: {
+    node: string;
+    nodeAbi: string;
+    platform: string;
+    arch: string;
+    supportedRange: string;
+    nodeSupported: boolean;
+  };
+  git: { available: boolean; detail: string };
+  bashShell: { available: boolean; detail: string };
+  sqliteNative: { ok: boolean; error?: string };
+  server?: {
+    localMcpUrl: string;
+    publicMcpUrl: string;
+    allowedRoots: string[];
+    allowedHosts: string[];
+    mcpTransportMode: string;
+  };
+  configError?: string;
+}
+
+async function runDoctor(args: string[]): Promise<void> {
+  const report = buildDoctorReport();
+  if (args.includes("--json")) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  printDoctorText(report);
+}
+
+function buildDoctorReport(): DoctorReport {
   const files = loadLocalspaceFiles();
-  console.log(`Config dir: ${files.dir}`);
-  console.log(`Config file: ${files.configExists ? files.configPath : "missing"}`);
-  console.log(`Auth file: ${files.authExists ? files.authPath : "missing"}`);
-  console.log(`Node: ${process.version} (${nodeVersionStatus()})`);
-  console.log(`Node ABI: ${process.versions.modules}`);
-  console.log(`Platform: ${process.platform} ${process.arch}`);
-  console.log(`Git: ${checkGitAvailable()}`);
-  console.log(`Bash shell: ${checkBashShell()}`);
-  console.log(`SQLite native dependency: ${checkSqliteNative()}`);
+  const report: DoctorReport = {
+    configDir: files.dir,
+    config: { path: files.configPath, exists: files.configExists },
+    auth: { path: files.authPath, exists: files.authExists },
+    runtime: {
+      node: process.version,
+      nodeAbi: process.versions.modules,
+      platform: process.platform,
+      arch: process.arch,
+      supportedRange: SUPPORTED_NODE_RANGE,
+      nodeSupported: satisfies(process.versions.node, SUPPORTED_NODE_RANGE),
+    },
+    git: checkGitAvailable(),
+    bashShell: checkBashShell(),
+    sqliteNative: checkSqliteNative(),
+  };
 
   try {
     const config = loadConfig();
-    console.log(`Local MCP URL: http://${config.host}:${config.port}/mcp`);
-    console.log(`Public MCP URL: ${new URL("/mcp", config.publicBaseUrl).toString()}`);
-    console.log(`Allowed roots: ${config.allowedRoots.join(", ")}`);
-    console.log(`Allowed hosts: ${config.allowedHosts.join(", ")}`);
-    console.log(`MCP transport: ${config.mcpTransportMode}`);
+    report.server = {
+      localMcpUrl: `http://${config.host}:${config.port}/mcp`,
+      publicMcpUrl: new URL("/mcp", config.publicBaseUrl).toString(),
+      allowedRoots: [...config.allowedRoots],
+      allowedHosts: [...config.allowedHosts],
+      mcpTransportMode: config.mcpTransportMode,
+    };
   } catch (error) {
-    console.log(`Config status: ${error instanceof Error ? error.message : String(error)}`);
+    report.configError = error instanceof Error ? error.message : String(error);
+  }
+  return report;
+}
+
+function printDoctorText(report: DoctorReport): void {
+  const range = report.runtime.supportedRange;
+  console.log(`Config dir: ${report.configDir}`);
+  console.log(`Config file: ${report.config.exists ? report.config.path : "missing"}`);
+  console.log(`Auth file: ${report.auth.exists ? report.auth.path : "missing"}`);
+  console.log(
+    `Node: ${report.runtime.node} (${
+      report.runtime.nodeSupported ? `supported ${range}` : `unsupported, requires ${range}`
+    })`,
+  );
+  console.log(`Node ABI: ${report.runtime.nodeAbi}`);
+  console.log(`Platform: ${report.runtime.platform} ${report.runtime.arch}`);
+  console.log(`Git: ${report.git.available ? report.git.detail : `unavailable (${report.git.detail})`}`);
+  console.log(
+    `Bash shell: ${
+      report.bashShell.available ? report.bashShell.detail : `unavailable (${report.bashShell.detail})`
+    }`,
+  );
+  console.log(`SQLite native dependency: ${report.sqliteNative.ok ? "ok" : report.sqliteNative.error}`);
+
+  if (report.server) {
+    console.log(`Local MCP URL: ${report.server.localMcpUrl}`);
+    console.log(`Public MCP URL: ${report.server.publicMcpUrl}`);
+    console.log(`Allowed roots: ${report.server.allowedRoots.join(", ")}`);
+    console.log(`Allowed hosts: ${report.server.allowedHosts.join(", ")}`);
+    console.log(`MCP transport: ${report.server.mcpTransportMode}`);
+  } else if (report.configError) {
+    console.log(`Config status: ${report.configError}`);
   }
 }
 
@@ -275,7 +402,10 @@ function printHelp(): void {
       "  localspace                 Run first-time setup if needed, then start the server",
       "  localspace serve           Start the server",
       "  localspace init            Create or update ~/.localspace/config.json and auth.json",
+      "  localspace init --non-interactive --roots \"<path1>,<path2>\" --port 7676 --public-base-url <url>",
+      "                             Configure without prompts; add --force to overwrite an existing setup",
       "  localspace doctor          Show config, runtime, and native dependency status",
+      "  localspace doctor --json   Print the same doctor report as JSON",
       "  localspace config get      Print persisted config",
       "  localspace config set publicBaseUrl <url|null>",
       "  localspace -v, --version   Print the installed version",
@@ -302,15 +432,6 @@ function normalizeOptionalPublicBaseUrl(value: string): string | null {
   return normalizePublicBaseUrl(trimmed);
 }
 
-function normalizePublicBaseUrl(value: string): string {
-  const trimmed = value.trim();
-  const parsed = new URL(trimmed);
-  parsed.hash = "";
-  parsed.search = "";
-  parsed.pathname = parsed.pathname.replace(/\/+$/, "");
-  return parsed.toString().replace(/\/$/, "");
-}
-
 type TextPromptOptions = Omit<Parameters<typeof prompts.text>[0], "validate"> & {
   defaultValue: string;
   validate?: (value: string | undefined) => string | Error | undefined;
@@ -326,31 +447,6 @@ async function textPrompt(options: TextPromptOptions): Promise<string> {
   return value || options.defaultValue;
 }
 
-function validatePort(value: string | undefined): string | undefined {
-  const port = Number(value);
-  return Number.isInteger(port) && port >= 1 && port <= 65535
-    ? undefined
-    : "Enter a port between 1 and 65535.";
-}
-
-function validateRequiredPublicBaseUrl(value: string | undefined): string | undefined {
-  const trimmed = value?.trim() ?? "";
-  if (!trimmed) return "Enter the public URL from your tunnel or reverse proxy.";
-  if (trimmed.endsWith("/mcp")) return "Enter the base URL only, without /mcp.";
-  return validatePublicBaseUrl(trimmed);
-}
-
-function validatePublicBaseUrl(value: string): string | undefined {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:"
-      ? undefined
-      : "Use an http or https URL.";
-  } catch {
-    return "Enter a valid URL, for example https://your-tunnel-host.example.com.";
-  }
-}
-
 function assertSupportedNode(): void {
   if (satisfies(process.versions.node, SUPPORTED_NODE_RANGE)) return;
 
@@ -364,42 +460,34 @@ function assertSupportedNode(): void {
   );
 }
 
-function nodeVersionStatus(): string {
-  return satisfies(process.versions.node, SUPPORTED_NODE_RANGE)
-    ? `supported ${SUPPORTED_NODE_RANGE}`
-    : `unsupported, requires ${SUPPORTED_NODE_RANGE}`;
-}
-
 class SetupCancelledError extends Error {}
 
-function checkSqliteNative(): string {
+function checkSqliteNative(): { ok: boolean; error?: string } {
   try {
     const Database = require("better-sqlite3") as typeof import("better-sqlite3");
     const db = new Database(":memory:");
     db.close();
-    return "ok";
+    return { ok: true };
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-function checkGitAvailable(): string {
+function checkGitAvailable(): { available: boolean; detail: string } {
   try {
     const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
-    return execFileSync("git", ["--version"], { encoding: "utf8" }).trim();
+    return { available: true, detail: execFileSync("git", ["--version"], { encoding: "utf8" }).trim() };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `unavailable (${message})`;
+    return { available: false, detail: error instanceof Error ? error.message : String(error) };
   }
 }
 
-function checkBashShell(): string {
+function checkBashShell(): { available: boolean; detail: string } {
   try {
     const { executable, args } = resolveShellCommand("<command>");
-    return `${executable} ${args.join(" ")}`;
+    return { available: true, detail: `${executable} ${args.join(" ")}` };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `unavailable (${message})`;
+    return { available: false, detail: error instanceof Error ? error.message : String(error) };
   }
 }
 
