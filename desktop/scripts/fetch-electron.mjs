@@ -12,7 +12,7 @@
 // Env overrides:
 //   LOCALSPACE_ELECTRON_MIRROR  base mirror (default github releases)
 //   LOCALSPACE_ELECTRON_SEGMENTS  parallel segment count (default 4)
-import { createWriteStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { arch, platform } from "node:os";
@@ -133,12 +133,21 @@ if (preDownloaded) {
   }
 }
 
-const list = spawnSync("tar", ["-tf", archivePath], { encoding: "utf8" });
+// On Windows prefer the bundled bsdtar: GNU tar (e.g. from Git Bash on PATH)
+// misreads "D:\..." as a remote host specification.
+function tarExecutable() {
+  if (platform() === "win32") {
+    return join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+  }
+  return "tar";
+}
+
+const list = spawnSync(tarExecutable(), ["-tf", archivePath], { encoding: "utf8" });
 if (list.status !== 0) fail(`archive is corrupt (tar -tf failed): ${String(list.stderr ?? "")}`);
 
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
-const extract = spawnSync("tar", ["-xf", archivePath, "-C", distDir], { stdio: "pipe" });
+const extract = spawnSync(tarExecutable(), ["-xf", archivePath, "-C", distDir], { stdio: "pipe" });
 if (extract.status !== 0) fail(`extraction failed: ${String(extract.stderr ?? "")}`);
 writeFileSync(join(electronPackageDir, "path.txt"), asset.pathTxt);
 

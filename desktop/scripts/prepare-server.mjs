@@ -140,8 +140,11 @@ async function ensureNodeSidecar() {
   console.log(`downloading Node v${version} (${asset.fileName}) ...`);
   await downloadFile(`${mirror}/v${version}/${asset.fileName}`, archivePath);
 
-  // bsdtar (bundled with Windows 10+, macOS, most Linux) handles zip and tar.gz.
-  const extract = spawnSync("tar", ["-xf", archivePath, "-C", resourcesDir], { stdio: "pipe" });
+  // Windows ships bsdtar at System32; GNU tar from Git Bash misreads drive paths.
+  const tar = platform() === "win32"
+    ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+    : "tar";
+  const extract = spawnSync(tar, ["-xf", archivePath, "-C", resourcesDir], { stdio: "pipe" });
   if (extract.status !== 0) fail(`tar extraction failed: ${String(extract.stderr ?? "")}`);
 
   const extractedRoot = join(resourcesDir, asset.innerPath.split("/")[0] ?? "");
