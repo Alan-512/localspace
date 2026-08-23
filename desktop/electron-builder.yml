@@ -1,0 +1,47 @@
+appId: com.alan512.localspace.desktop
+productName: LocalSpace
+copyright: MIT License
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+
+# The MCP server runtime and its Node binary live outside app.asar so the
+# sidecar process can load native modules (better-sqlite3) from real files.
+extraResources:
+  - from: resources/server
+    to: server
+  - from: resources/bin
+    to: bin
+  - from: resources/icons
+    to: icons
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: LocalSpace
+
+mac:
+  target:
+    - dmg
+  icon: build/icon.png
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - AppImage
+  icon: build/icon.png
+  category: Development

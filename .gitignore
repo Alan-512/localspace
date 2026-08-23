@@ -3,3 +3,11 @@ dist/
 releases/
 .env
 *.log
+
+# desktop app build artifacts
+desktop/node_modules/
+desktop/dist/
+desktop/release/
+desktop/resources/server/
+desktop/resources/bin/
+desktop/resources/electron-cache/

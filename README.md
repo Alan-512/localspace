@@ -37,6 +37,16 @@ continue long tasks across chat windows.
 
 ---
 
+## Desktop App (beta)
+
+Prefer not to use a terminal? The repository also ships **LocalSpace Desktop**
+([`desktop/`](desktop/README.md)), an Electron companion that wraps the same
+core: a guided first-run wizard, one-click start/stop, and the MCP URL plus
+Owner password ready to copy. See [`desktop/README.md`](desktop/README.md) for
+architecture decisions and build instructions.
+
+---
+
 ## Why LocalSpace?
 
 LocalSpace is designed for hybrid human + AI coding sessions where the model is
