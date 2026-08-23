@@ -8,18 +8,19 @@
 // Env overrides: LOCALSPACE_NODE_MIRROR (default https://nodejs.org/dist),
 //                LOCALSPACE_DESKTOP_NODE_BIN (path to a pre-downloaded binary).
 import { spawnSync } from "node:child_process";
-import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { arch, platform } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const desktopRoot = dirname(fileURLToPath(import.meta.url));
-const repoRoot = join(desktopRoot, "..");
-const resourcesServer = join(desktopRoot, "resources", "server");
-const resourcesBin = join(desktopRoot, "resources", "bin");
-const resourcesDir = join(desktopRoot, "resources");
+const scriptDir = dirname(fileURLToPath(import.meta.url)); // desktop/scripts
+const desktopDir = join(scriptDir, ".."); // desktop/
+const repoRoot = join(desktopDir, ".."); // repository root
+const resourcesServer = join(desktopDir, "resources", "server");
+const resourcesBin = join(desktopDir, "resources", "bin");
+const resourcesDir = join(desktopDir, "resources");
 const skipNodeDownload = process.argv.includes("--skip-node-download");
 
 function fail(message) {
@@ -54,34 +55,82 @@ writeFileSync(
   `${JSON.stringify(serverPackageJson, null, 2)}\n`,
 );
 
+// Resolve the Node sidecar FIRST: native modules (better-sqlite3) must be built
+// for the ABI of the Node that will run the server, not the one running this script.
+const sidecar = await ensureNodeSidecar();
+
 console.log("installing production dependencies into resources/server ...");
-const npmCommand = platform() === "win32" ? "npm.cmd" : "npm";
-const ci = spawnSync(npmCommand, ["ci", "--omit=dev", "--no-audit", "--no-fund"], {
+const ciArgs = ["ci", "--omit=dev", "--no-audit", "--no-fund"];
+// prebuild-install reads npm_config_target from the environment and fetches
+// the native build matching the sidecar's ABI, not this script's Node.
+const ciEnv = sidecar.version
+  ? { ...process.env, npm_config_target: sidecar.version }
+  : process.env;
+// Spawn npm-cli.js through Node itself: modern Node refuses to exec .cmd
+// shims without a shell, which made npm.cmd fail silently here.
+const ci = spawnSync(sidecar.binary, [sidecar.npmCli, ...ciArgs], {
   cwd: resourcesServer,
+  env: ciEnv,
   stdio: "inherit",
 });
 if (ci.status !== 0) fail("npm ci --omit=dev inside resources/server returned nonzero");
 
-if (!skipNodeDownload) {
-  await downloadNodeSidecar();
-} else {
-  console.log("skipping Node sidecar download (--skip-node-download)");
-}
-
 console.log("resources/server ready.");
 
-async function downloadNodeSidecar() {
+/**
+ * Places the sidecar binary into resources/bin and returns its Node version,
+ * or null when no sidecar is being bundled (--skip-node-download without an
+ * explicit binary): dependencies then target the current process's Node.
+ */
+async function ensureNodeSidecar() {
   const mirror = process.env.LOCALSPACE_NODE_MIRROR ?? "https://nodejs.org/dist";
   const explicitBinary = process.env.LOCALSPACE_DESKTOP_NODE_BIN;
 
   rmSync(resourcesBin, { recursive: true, force: true });
   mkdirSync(resourcesBin, { recursive: true });
 
-  if (explicitBinary) {
+  if (explicitBinary || true) {
+    // Resolve leniently: shells may hand us a directory, an exe, or nothing useful.
+    const candidates = [explicitBinary, process.execPath].filter(Boolean);
+    let resolved = null;
+    for (const entry of candidates) {
+      try {
+        const stats = statSync(entry);
+        if (stats.isFile()) {
+          resolved = entry;
+          break;
+        }
+        if (stats.isDirectory()) {
+          const inner = join(entry, platform() === "win32" ? "node.exe" : "node");
+          if (existsSync(inner)) {
+            resolved = inner;
+            break;
+          }
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    if (!resolved) fail("LOCALSPACE_DESKTOP_NODE_BIN does not point to a usable Node binary");
+
     const targetName = platform() === "win32" ? "node.exe" : "node";
-    cpSync(explicitBinary, join(resourcesBin, targetName));
-    console.log(`copied LOCALSPACE_DESKTOP_NODE_BIN -> resources/bin/${targetName}`);
-    return;
+    const sidecarBinary = join(resourcesBin, targetName);
+    cpSync(resolved, sidecarBinary);
+    const probe = spawnSync(sidecarBinary, ["--version"], { encoding: "utf8" });
+    const detected = String(probe.stdout ?? "").trim().replace(/^v/, "");
+    console.log(`copied ${resolved} -> resources/bin/${targetName} (${detected || "version unknown"})`);
+    const npmCli =
+      npmCliNextTo(resolved) ?? npmCliNextTo(process.execPath) ??
+      fail(`npm-cli.js not found next to ${resolved} or ${process.execPath}`);
+    return { version: detected || null, binary: sidecarBinary, npmCli };
+  }
+
+  if (skipNodeDownload) {
+    console.log("skipping Node sidecar download (--skip-node-download)");
+    const npmCli =
+      npmCliNextTo(process.execPath) ??
+      fail(`npm-cli.js not found next to ${process.execPath}`);
+    return { version: null, binary: process.execPath, npmCli };
   }
 
   const version = await pickLatestV22(mirror);
@@ -95,10 +144,24 @@ async function downloadNodeSidecar() {
   const extract = spawnSync("tar", ["-xf", archivePath, "-C", resourcesDir], { stdio: "pipe" });
   if (extract.status !== 0) fail(`tar extraction failed: ${String(extract.stderr ?? "")}`);
 
-  cpSync(join(resourcesDir, asset.innerPath), join(resourcesBin, platform() === "win32" ? "node.exe" : "node"));
+  const extractedRoot = join(resourcesDir, asset.innerPath.split("/")[0] ?? "");
+  cpSync(join(extractedRoot, "node.exe"), join(resourcesBin, "node.exe"));
+  cpSync(join(extractedRoot, "node_modules", "npm"), join(resourcesBin, "node_modules", "npm"), {
+    recursive: true,
+  });
   rmSync(archivePath, { force: true });
-  rmSync(join(resourcesDir, asset.innerPath.split("/")[0] ?? ""), { recursive: true, force: true });
+  rmSync(extractedRoot, { recursive: true, force: true });
   console.log(`Node sidecar written to resources/bin/${platform() === "win32" ? "node.exe" : "node"}`);
+  return {
+    version,
+    binary: join(resourcesBin, platform() === "win32" ? "node.exe" : "node"),
+    npmCli: join(resourcesBin, "node_modules", "npm", "bin", "npm-cli.js"),
+  };
+}
+
+function npmCliNextTo(binaryPath) {
+  const candidate = join(dirname(binaryPath), "node_modules", "npm", "bin", "npm-cli.js");
+  return existsSync(candidate) ? candidate : null;
 }
 
 async function pickLatestV22(mirror) {

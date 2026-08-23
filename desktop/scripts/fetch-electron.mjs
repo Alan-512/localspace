@@ -102,23 +102,29 @@ mkdirSync(cacheDir, { recursive: true });
 const totalSize = await headTotalSize();
 const chunkSize = Math.ceil(totalSize / segments);
 
-await Promise.all(
-  Array.from({ length: segments }, (_, index) => {
-    const start = index * chunkSize;
-    const end = Math.min(start + chunkSize - 1, totalSize - 1);
-    return start > end ? Promise.resolve() : downloadSegment(index, start, end);
-  }),
-);
-
-const downloadedBytes = Array.from({ length: segments }, (_, index) => statSync(segmentPath(index)).size)
-  .reduce((sum, size) => sum + size, 0);
-if (downloadedBytes !== totalSize) {
-  fail(`assembled size ${downloadedBytes} != expected ${totalSize}; rerun to resume`);
-}
-
-// Assemble and extract.
 const archivePath = join(cacheDir, asset.fileName);
-{
+const preDownloaded =
+  existsSync(archivePath) && statSync(archivePath).size === totalSize;
+
+if (preDownloaded) {
+  console.log(`archive already present in cache (${totalSize} bytes); skipping download`);
+} else {
+  await Promise.all(
+    Array.from({ length: segments }, (_, index) => {
+      const start = index * chunkSize;
+      const end = Math.min(start + chunkSize - 1, totalSize - 1);
+      return start > end ? Promise.resolve() : downloadSegment(index, start, end);
+    }),
+  );
+
+  const downloadedBytes = Array.from({ length: segments }, (_, index) =>
+    statSync(segmentPath(index)).size,
+  ).reduce((sum, size) => sum + size, 0);
+  if (downloadedBytes !== totalSize) {
+    fail(`assembled size ${downloadedBytes} != expected ${totalSize}; rerun to resume`);
+  }
+
+  // Assemble and extract.
   const { appendFileSync, rmSync } = await import("node:fs");
   rmSync(archivePath, { force: true });
   for (let index = 0; index < segments; index += 1) {
