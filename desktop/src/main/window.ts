@@ -1,6 +1,5 @@
 import { BrowserWindow, Menu, app, shell } from "electron";
 import { join } from "node:path";
-
 export interface MainWindowOptions {
   readonly preloadPath: string;
   readonly rendererIndex: string;
@@ -26,11 +25,17 @@ export function createMainWindow(options: MainWindowOptions): MainWindowHandle {
     show: false,
     autoHideMenuBar: true,
     title: "LocalSpace",
-    icon: join(process.resourcesPath ?? "", "icons", "tray.png"),
+    // In dev, process.resourcesPath points inside electron's own dist and has
+    // no icons; only set the icon for packaged builds.
+    ...(app.isPackaged ? { icon: join(process.resourcesPath, "icons", "tray.png") } : {}),
     webPreferences: {
       preload: options.preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      // The preload requires compiled shared modules (../shared/channels.js),
+      // which sandboxed preloads cannot do; the renderer itself stays fully
+      // isolated through contextIsolation.
+      sandbox: false,
       spellcheck: false,
     },
   });
