@@ -125,6 +125,30 @@ function runCli(args: readonly string[], configDir: string): CliRunResult {
   }
 }
 
+// Local-only non-interactive init omits the public URL and the core derives it
+{
+  const configDir = newConfigDir();
+  const init = runCli(
+    ["init", "--non-interactive", "--roots", configDir, "--port", "7688"],
+    configDir,
+  );
+
+  assert.equal(init.status, 0, `init failed: ${init.stderr}`);
+  assert.match(init.stdout, /Public MCP URL: not configured/);
+  const config = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8")) as {
+    publicBaseUrl?: string | null;
+  };
+  assert.equal(config.publicBaseUrl ?? null, null);
+
+  const doctor = runCli(["doctor", "--json"], configDir);
+  assert.equal(doctor.status, 0);
+  const report = JSON.parse(doctor.stdout) as {
+    server?: { publicMcpUrl?: string; localMcpUrl?: string };
+  };
+  assert.equal(report.server?.localMcpUrl, "http://127.0.0.1:7688/mcp");
+  assert.equal(report.server?.publicMcpUrl, "http://127.0.0.1:7688/mcp");
+}
+
 // doctor --json prints a machine-readable report and still supports text mode
 {
   const configDir = newConfigDir();

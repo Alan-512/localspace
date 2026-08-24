@@ -12,7 +12,8 @@ export interface ParsedInitArgs {
 export interface ResolvedNonInteractiveInit {
   allowedRoots: string[];
   port: number;
-  publicBaseUrl: string;
+  /** null means local-only setup: the core derives http://127.0.0.1:<port>. */
+  publicBaseUrl: string | null;
 }
 
 export const defaultInitPort = 7676;
@@ -144,6 +145,11 @@ export function resolveNonInteractiveInit(parsed: ParsedInitArgs): ResolvedNonIn
   }
 
   const requestedPublicBaseUrl = parsed.publicBaseUrl?.trim() ?? "";
+  if (!requestedPublicBaseUrl) {
+    // Local-only setup: loadConfig derives http://127.0.0.1:<port> when the
+    // persisted publicBaseUrl is absent, so no flag is needed.
+    return { allowedRoots, port: Number(requestedPort), publicBaseUrl: null };
+  }
   const publicBaseUrlError = publicBaseUrlValidationError(requestedPublicBaseUrl);
   if (publicBaseUrlError) {
     throw new InitArgsError(`Invalid --public-base-url: ${publicBaseUrlError}`);

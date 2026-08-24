@@ -78,6 +78,15 @@ assert.throws(() => parseInitArgs(["--unexpected"]), InitArgsError);
   assert.equal(resolved.publicBaseUrl, "https://demo.example.com");
 }
 
+// resolveNonInteractiveInit: local-only setup omits the public base URL
+{
+  const resolved = resolveNonInteractiveInit(
+    parseInitArgs(["--non-interactive", "--roots", "~/projects", "--port", "7788"]),
+  );
+  assert.equal(resolved.publicBaseUrl, null);
+  assert.equal(resolved.port, 7788);
+}
+
 // resolveNonInteractiveInit: normalizes trailing slashes on the public URL
 {
   const resolved = resolveNonInteractiveInit(
@@ -99,8 +108,8 @@ for (const badPort of ["0", "65536", "abc"]) {
 assert.equal(portValidationError("1"), undefined);
 assert.equal(portValidationError("65535"), undefined);
 
-// resolveNonInteractiveInit: rejects invalid public base URLs
-for (const badUrl of ["", "   ", "https://demo.example.com/mcp", "ftp://demo.example.com", "not a url"]) {
+// resolveNonInteractiveInit: rejects invalid public base URLs (empty means local-only)
+for (const badUrl of ["https://demo.example.com/mcp", "ftp://demo.example.com", "not a url"]) {
   assert.throws(
     () => resolveNonInteractiveInit(parseInitArgs(["--roots", "x", "--public-base-url", badUrl])),
     /Invalid --public-base-url/,

@@ -120,7 +120,11 @@ function runNonInteractiveInit(parsed: ParsedInitArgs): void {
   console.log(`Config: ${configPath}`);
   console.log(`Auth: ${authPath}`);
   console.log(`Local MCP URL: http://${config.host}:${config.port}/mcp`);
-  console.log(`Public MCP URL: ${resolved.publicBaseUrl}/mcp`);
+  if (resolved.publicBaseUrl) {
+    console.log(`Public MCP URL: ${resolved.publicBaseUrl}/mcp`);
+  } else {
+    console.log("Public MCP URL: not configured (local-only setup)");
+  }
   console.log(`Owner password: ${auth.ownerToken}`);
 }
 
@@ -403,7 +407,8 @@ function printHelp(): void {
       "  localspace serve           Start the server",
       "  localspace init            Create or update ~/.localspace/config.json and auth.json",
       "  localspace init --non-interactive --roots \"<path1>,<path2>\" --port 7676 --public-base-url <url>",
-      "                             Configure without prompts; add --force to overwrite an existing setup",
+      "                             Configure without prompts; --public-base-url is optional for",
+      "                             local-only setups; add --force to overwrite an existing setup",
       "  localspace doctor          Show config, runtime, and native dependency status",
       "  localspace doctor --json   Print the same doctor report as JSON",
       "  localspace config get      Print persisted config",
