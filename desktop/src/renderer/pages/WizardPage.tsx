@@ -117,7 +117,7 @@ export function WizardPage({ api, existing, force, onFinished, onCancel }: Wizar
           {doneLocalOnly && (
             <p className="hint">
               下一步：点主面板的「启动」，然后把本地 MCP 地址填入安装在这台电脑上的
-              ChatGPT / Claude 桌面版即可开始使用。
+              ChatGPT 桌面版即可开始使用。
             </p>
           )}
         </section>
@@ -134,7 +134,7 @@ export function WizardPage({ api, existing, force, onFinished, onCancel }: Wizar
     <div className="wizard">
       <h1>{force ? "重新配置 LocalSpace" : "欢迎使用 LocalSpace"}</h1>
       <p className="wizard-intro">
-        三步完成：选择允许访问的项目目录 → 设置本地端口 → 填入公网地址。数据始终保留在你的电脑上。
+        三步完成:选择允许访问的项目目录 → 设置本地端口 → 选择接入方式。数据始终保留在你的电脑上。
       </p>
 
       <section className="card">
@@ -200,7 +200,7 @@ export function WizardPage({ api, existing, force, onFinished, onCancel }: Wizar
           >
             <span className="access-title">仅本机使用（推荐）</span>
             <span className="access-desc">
-              ChatGPT / Claude 桌面版装在这台电脑上时选这个。无需任何公网配置，
+              ChatGPT 桌面版装在这台电脑上时选这个。无需任何公网配置，
               数据完全不出本机。
             </span>
           </button>
