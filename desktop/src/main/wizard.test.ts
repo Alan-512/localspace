@@ -13,6 +13,7 @@ const baseInput = {
   roots: ["C:/work/a", "C:/work,b/project"],
   port: 7788,
   publicBaseUrl: "https://demo.example.com/",
+  localOnly: false,
   force: false,
 };
 
@@ -34,6 +35,12 @@ const baseInput = {
 
   const forcedArgs = buildWizardInitArgs({ ...baseInput, force: true });
   assert.ok(forcedArgs.includes("--force"));
+
+  // local-only setups omit the public URL flag entirely
+  const localArgs = buildWizardInitArgs({ ...baseInput, localOnly: true });
+  assert.equal(localArgs.includes("--public-base-url"), false);
+  const emptyUrlArgs = buildWizardInitArgs({ ...baseInput, publicBaseUrl: "  " });
+  assert.equal(emptyUrlArgs.includes("--public-base-url"), false);
 }
 
 // input validation
@@ -46,6 +53,11 @@ assert.equal(validateWizardInput({ ...baseInput, publicBaseUrl: "" }).valid, fal
 assert.equal(validateWizardInput({ ...baseInput, publicBaseUrl: "https://x.example.com/mcp" }).valid, false);
 assert.equal(validateWizardInput({ ...baseInput, publicBaseUrl: "ftp://x.example.com" }).valid, false);
 assert.equal(validateWizardInput({ ...baseInput, publicBaseUrl: "not a url" }).valid, false);
+// local-only mode skips URL requirements entirely
+assert.equal(
+  validateWizardInput({ ...baseInput, localOnly: true, publicBaseUrl: "" }).valid,
+  true,
+);
 
 async function main(): Promise<void> {
   // failure path: a script that exits nonzero with stderr surfaces the error

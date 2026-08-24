@@ -13,15 +13,21 @@ interface WizardProps {
 }
 
 export function WizardPage({ api, existing, force, onFinished, onCancel }: WizardProps): JSX.Element {
+  const existingPublicUrl =
+    typeof existing?.publicBaseUrl === "string" && existing.publicBaseUrl
+      ? existing.publicBaseUrl
+      : "";
   const [roots, setRoots] = useState<ReadonlyArray<string>>(existing?.allowedRoots ?? []);
   const [manualRoot, setManualRoot] = useState("");
   const [port, setPort] = useState(String(existing?.port ?? 7676));
-  const [publicBaseUrl, setPublicBaseUrl] = useState(
-    typeof existing?.publicBaseUrl === "string" ? existing.publicBaseUrl : "",
+  const [accessMode, setAccessMode] = useState<"local" | "remote">(
+    existingPublicUrl ? "remote" : "local",
   );
+  const [publicBaseUrl, setPublicBaseUrl] = useState(existingPublicUrl);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneToken, setDoneToken] = useState<string | null>(null);
+  const [doneLocalOnly, setDoneLocalOnly] = useState(false);
 
   const addManualRoot = () => {
     const trimmed = manualRoot.trim();
@@ -58,23 +64,32 @@ export function WizardPage({ api, existing, force, onFinished, onCancel }: Wizar
       setError("请至少添加一个项目目录。");
       return;
     }
+    const localOnly = accessMode === "local";
     const trimmedUrl = publicBaseUrl.trim().replace(/\/+$/, "");
-    if (trimmedUrl.endsWith("/mcp")) {
-      setError("公网地址只填到根路径即可，不要带 /mcp。");
-      return;
+    if (!localOnly) {
+      if (!trimmedUrl) {
+        setError("请填写公网地址，或切换到“仅本机使用”。");
+        return;
+      }
+      if (trimmedUrl.endsWith("/mcp")) {
+        setError("公网地址只填到根路径即可，不要带 /mcp。");
+        return;
+      }
     }
 
     setSubmitting(true);
     const result = await api.wizardComplete({
       roots,
       port: parsedPort,
-      publicBaseUrl: publicBaseUrl.trim(),
+      publicBaseUrl: localOnly ? "" : publicBaseUrl.trim(),
+      localOnly,
       force,
     });
     setSubmitting(false);
 
     if (result.ok && result.data.ok) {
       setDoneToken(result.data.ownerToken ?? null);
+      setDoneLocalOnly(localOnly);
     } else {
       setError((result.ok ? result.data.error : result.error) ?? "配置失败");
     }
@@ -99,6 +114,12 @@ export function WizardPage({ api, existing, force, onFinished, onCancel }: Wizar
               复制密码
             </button>
           </div>
+          {doneLocalOnly && (
+            <p className="hint">
+              下一步：点主面板的「启动」，然后把本地 MCP 地址填入安装在这台电脑上的
+              ChatGPT / Claude 桌面版即可开始使用。
+            </p>
+          )}
         </section>
         <div className="btn-row">
           <button type="button" className="btn btn-primary" onClick={onFinished}>
@@ -170,19 +191,45 @@ export function WizardPage({ api, existing, force, onFinished, onCancel }: Wizar
       </section>
 
       <section className="card">
-        <h2>3 · 公网接入地址</h2>
-        <p className="hint">
-          ChatGPT / Claude 需要通过 HTTPS 访问本机。当前版本请粘贴你已有的隧道地址
-          （Cloudflare Tunnel、ngrok、cpolar 等的公网 origin，不带 /mcp）。
-          一键隧道将在后续版本内置。
-        </p>
-        <input
-          className="wide-input"
-          type="url"
-          placeholder="https://your-tunnel.example.com"
-          value={publicBaseUrl}
-          onChange={(event) => setPublicBaseUrl(event.target.value)}
-        />
+        <h2>3 · 接入方式</h2>
+        <div className="access-options">
+          <button
+            type="button"
+            className={`access-option ${accessMode === "local" ? "selected" : ""}`}
+            onClick={() => setAccessMode("local")}
+          >
+            <span className="access-title">仅本机使用（推荐）</span>
+            <span className="access-desc">
+              ChatGPT / Claude 桌面版装在这台电脑上时选这个。无需任何公网配置，
+              数据完全不出本机。
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`access-option ${accessMode === "remote" ? "selected" : ""}`}
+            onClick={() => setAccessMode("remote")}
+          >
+            <span className="access-title">远程访问</span>
+            <span className="access-desc">
+              从手机或网页版 ChatGPT 连接时选这个，需要已有 Cloudflare Tunnel、
+              ngrok、cpolar 等公网地址。
+            </span>
+          </button>
+        </div>
+        {accessMode === "remote" && (
+          <>
+            <input
+              className="wide-input"
+              type="url"
+              placeholder="https://your-tunnel.example.com（不带 /mcp）"
+              value={publicBaseUrl}
+              onChange={(event) => setPublicBaseUrl(event.target.value)}
+            />
+            <p className="hint">
+              一键隧道将在后续版本内置；当前请粘贴你已有的隧道公网 origin。
+            </p>
+          </>
+        )}
       </section>
 
       {error && <p className="field-error">{error}</p>}

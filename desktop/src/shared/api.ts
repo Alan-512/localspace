@@ -19,7 +19,9 @@ export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string };
  */
 export interface DesktopApi {
   getState(): Promise<IpcResult<AppState>>;
-  wizardComplete(input: WizardInput & { force?: boolean }): Promise<IpcResult<WizardResult>>;
+  wizardComplete(
+    input: WizardInput & { force?: boolean; localOnly?: boolean },
+  ): Promise<IpcResult<WizardResult>>;
   startService(): Promise<IpcResult<ServiceStatus>>;
   stopService(): Promise<IpcResult<ServiceStatus>>;
   restartService(): Promise<IpcResult<ServiceStatus>>;

@@ -100,9 +100,16 @@ export function DashboardPage({
           placeholder="未配置公网地址，ChatGPT 将无法远程连接"
         />
         <SecretRow api={api} masked={connection?.ok ? connection.data.maskedOwnerToken : null} />
-        <p className="hint">
-          把公网 MCP 地址填入 ChatGPT / Claude 的 MCP 设置；首次连接时输入 Owner 密码完成授权。
-        </p>
+        {connection?.ok && connection.data.publicMcpUrl ? (
+          <p className="hint">
+            把公网 MCP 地址填入 ChatGPT / Claude 的 MCP 设置；首次连接时输入 Owner 密码完成授权。
+          </p>
+        ) : (
+          <p className="hint">
+            本机模式：把上方本地 MCP 地址填入安装在这台电脑上的 ChatGPT / Claude
+            桌面版即可。需要手机或网页远程访问时，点「重新配置」切换为远程模式。
+          </p>
+        )}
       </section>
 
       <section className="card">

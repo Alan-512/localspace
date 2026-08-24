@@ -5,7 +5,12 @@ import type { OwnerTokenResult } from "./config-store.js";
 export interface WizardInitInput {
   readonly roots: ReadonlyArray<string>;
   readonly port: number;
+  /**
+   * Remote access origin. Ignored when localOnly is true; the CLI then writes
+   * no publicBaseUrl and the core derives http://127.0.0.1:<port>.
+   */
   readonly publicBaseUrl: string;
+  readonly localOnly: boolean;
   /** Overwrite an existing configuration (the wizard reconfigure flow). */
   readonly force: boolean;
 }
@@ -29,8 +34,9 @@ export function buildWizardInitArgs(input: WizardInitInput): ReadonlyArray<strin
     ...rootArgs,
     "--port",
     String(input.port),
-    "--public-base-url",
-    input.publicBaseUrl,
+    ...(input.localOnly || !input.publicBaseUrl.trim()
+      ? []
+      : ["--public-base-url", input.publicBaseUrl]),
   ];
 }
 
@@ -46,8 +52,11 @@ export function validateWizardInput(
   if (!Number.isInteger(input.port) || input.port < 1 || input.port > 65535) {
     return { valid: false, error: "端口必须是 1–65535 之间的整数。" };
   }
+  if (input.localOnly) {
+    return { valid: true };
+  }
   if (typeof input.publicBaseUrl !== "string" || !input.publicBaseUrl.trim()) {
-    return { valid: false, error: "请填写公网 MCP 地址或选择隧道方案。" };
+    return { valid: false, error: "请填写公网 MCP 地址，或选择“仅本机使用”。" };
   }
   try {
     const parsed = new URL(input.publicBaseUrl);

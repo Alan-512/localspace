@@ -274,7 +274,13 @@ function normalizeWizardInput(input: unknown): import("./wizard.js").WizardInitI
   const roots = Array.isArray(raw.roots) ? raw.roots.map(String) : [];
   const port = Number(raw.port);
   const publicBaseUrl = String(raw.publicBaseUrl ?? "");
-  return { roots, port, publicBaseUrl, force: raw.force === true };
+  return {
+    roots,
+    port,
+    publicBaseUrl,
+    localOnly: raw.localOnly === true,
+    force: raw.force === true,
+  };
 }
 
 interface DoctorViewGroup {

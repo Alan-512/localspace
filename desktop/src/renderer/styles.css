@@ -219,6 +219,34 @@ input[type="url"] {
 input:focus { border-color: var(--accent); }
 .wide-input { width: 100%; margin-top: 8px; }
 
+.access-options { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+
+.access-option {
+  flex: 1;
+  min-width: 240px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.access-option:hover { border-color: var(--accent); }
+
+.access-option.selected {
+  border-color: var(--accent);
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.access-title { font-size: 13.5px; font-weight: 600; }
+
+.access-desc { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+
 .wizard { max-width: 720px; margin: 0 auto; padding: 28px 20px; display: flex; flex-direction: column; gap: 16px; }
 .wizard h1 { font-size: 20px; margin: 0; }
 .wizard-intro { color: var(--text-muted); margin: 0; }
