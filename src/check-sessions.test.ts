@@ -51,6 +51,29 @@ try {
   assert.equal(running.running, true);
   assert.ok(running.sessionId && running.sessionId < 0);
   assert.equal(checks.has("ws_checks", running.sessionId), true);
+  const runningRecovery = checks.listRecoverable("ws_checks")
+    .find((session) => session.sessionId === running.sessionId);
+  assert.ok(runningRecovery);
+  assert.equal(runningRecovery.running, true);
+  assert.deepEqual(runningRecovery.checkNames, ["long"]);
+
+  let completedRecovery = checks.listRecoverable("ws_checks")
+    .find((session) => session.sessionId === running.sessionId);
+  const recoveryDeadline = Date.now() + 3_000;
+  while (completedRecovery?.running && Date.now() < recoveryDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    completedRecovery = checks.listRecoverable("ws_checks")
+      .find((session) => session.sessionId === running.sessionId);
+  }
+  assert.ok(completedRecovery);
+  assert.equal(completedRecovery.running, false);
+  assert.equal(completedRecovery.summary.passed, 1);
+  assert.equal(completedRecovery.hasPendingOutput, true);
+  assert.equal(completedRecovery.hasRecoveryOutput, true);
+  assert.match(completedRecovery.outputPreview, /long-done/);
+  assert.equal(typeof completedRecovery.completedAt, "string");
+  assert.equal(checks.activeProcessSessionIds("ws_checks").size, 0);
+
   const polled = await checks.write({
     workspaceId: "ws_checks",
     sessionId: running.sessionId,
@@ -59,6 +82,20 @@ try {
   assert.equal(polled.running, false);
   assert.equal(polled.summary.passed, 1);
   assert.match(polled.result, /long-done/);
+  const retainedCompleted = checks.listRecoverable("ws_checks")
+    .find((session) => session.sessionId === running.sessionId);
+  assert.ok(retainedCompleted);
+  assert.equal(retainedCompleted.running, false);
+  assert.equal(retainedCompleted.hasPendingOutput, false);
+  assert.equal(retainedCompleted.hasRecoveryOutput, true);
+  const replayed = await checks.write({
+    workspaceId: "ws_checks",
+    sessionId: running.sessionId,
+    yieldTimeMs: 0,
+  });
+  assert.equal(replayed.running, false);
+  assert.equal(replayed.summary.passed, 1);
+  assert.match(replayed.result, /long-done/);
 } finally {
   checks.shutdown();
   processes.shutdown();

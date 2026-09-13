@@ -61,6 +61,23 @@ export interface CheckSessionSnapshot {
   concurrency: number;
 }
 
+export interface RecoverableCheckSession {
+  kind: "check-group";
+  workspaceId: string;
+  sessionId: number;
+  running: boolean;
+  root: string;
+  startedAt: string;
+  completedAt?: string;
+  wallTimeMs: number;
+  hasPendingOutput: boolean;
+  hasRecoveryOutput: boolean;
+  outputPreview: string;
+  outputPreviewTruncated: boolean;
+  checkNames: string[];
+  summary: CheckSummary;
+}
+
 export interface StartCheckSessionInput {
   workspaceId: string;
   root: string;
@@ -91,6 +108,7 @@ interface CheckSession {
   workspaceId: string;
   root: string;
   startedAt: number;
+  completedAt?: number;
   checks: ManagedCheck[];
   concurrency: number;
   failFast: boolean;
@@ -99,6 +117,7 @@ interface CheckSession {
   failFastTriggered: boolean;
   nextIndex: number;
   activeProcessSessions: Set<number>;
+  ownedProcessSessions: Set<number>;
   buffer: HeadTailBuffer;
   exitPromise: Promise<void>;
   resolveExit: () => void;
@@ -122,6 +141,61 @@ export class CheckSessionManager {
   has(workspaceId: string, sessionId: number): boolean {
     const session = this.sessions.get(sessionId);
     return Boolean(session && session.workspaceId === workspaceId);
+  }
+
+  listRecoverable(workspaceId?: string): RecoverableCheckSession[] {
+    const now = Date.now();
+    return [...this.sessions.values()]
+      .filter((session) => workspaceId === undefined || session.workspaceId === workspaceId)
+      .map((session) => {
+        let preview = session.buffer.peek(2_000);
+        if (preview.output.length === 0) {
+          const recovery = new HeadTailBuffer(2_000);
+          for (const check of session.checks) {
+            recovery.append(
+              `[${check.name}] ${check.status} (${check.wallTimeMs ?? 0}ms, exit ${check.exitCode ?? "unknown"})\n${check.output}\n`,
+            );
+          }
+          preview = recovery.peek(2_000);
+        }
+        return {
+          kind: "check-group" as const,
+          workspaceId: session.workspaceId,
+          sessionId: session.id,
+          running: session.running,
+          root: session.root,
+          startedAt: new Date(session.startedAt).toISOString(),
+          completedAt: session.completedAt === undefined
+            ? undefined
+            : new Date(session.completedAt).toISOString(),
+          wallTimeMs: (session.completedAt ?? now) - session.startedAt,
+          hasPendingOutput: session.buffer.hasOutput(),
+          hasRecoveryOutput: preview.output.length > 0,
+          outputPreview: preview.output,
+          outputPreviewTruncated: preview.truncated,
+          checkNames: session.checks.map((check) => check.name),
+          summary: summarizeChecks(session.checks),
+        };
+      })
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+  }
+
+  activeProcessSessionIds(workspaceId?: string): Set<number> {
+    const ids = new Set<number>();
+    for (const session of this.sessions.values()) {
+      if (workspaceId !== undefined && session.workspaceId !== workspaceId) continue;
+      for (const sessionId of session.activeProcessSessions) ids.add(sessionId);
+    }
+    return ids;
+  }
+
+  ownedProcessSessionIds(workspaceId?: string): Set<number> {
+    const ids = new Set<number>();
+    for (const session of this.sessions.values()) {
+      if (workspaceId !== undefined && session.workspaceId !== workspaceId) continue;
+      for (const sessionId of session.ownedProcessSessions) ids.add(sessionId);
+    }
+    return ids;
   }
 
   async start(input: StartCheckSessionInput): Promise<CheckSessionSnapshot> {
@@ -177,6 +251,7 @@ export class CheckSessionManager {
       failFastTriggered: false,
       nextIndex: 0,
       activeProcessSessions: new Set(),
+      ownedProcessSessions: new Set(),
       buffer: new HeadTailBuffer(maxOutputTokens * 4),
       exitPromise,
       resolveExit,
@@ -187,7 +262,6 @@ export class CheckSessionManager {
 
     await waitForExitOrTimeout(session.exitPromise, yieldTimeMs);
     const snapshot = this.consume(session, maxOutputTokens);
-    if (!session.running) this.removeSession(session.id);
     return snapshot;
   }
 
@@ -221,7 +295,6 @@ export class CheckSessionManager {
       );
       await waitForExitOrTimeout(session.exitPromise, yieldTimeMs);
       const snapshot = this.consume(session, maxOutputTokens, permit.queuedMs);
-      if (!session.running) this.removeSession(session.id);
       return snapshot;
     } finally {
       permit.release();
@@ -266,6 +339,7 @@ export class CheckSessionManager {
     await Promise.all(workers);
     session.workspaceRevisionAtEnd = await workspaceRevision(session.root);
     session.running = false;
+    session.completedAt = Date.now();
     session.resolveExit();
     session.cleanupTimer = setTimeout(
       () => this.removeSession(session.id),
@@ -291,19 +365,23 @@ export class CheckSessionManager {
       });
       check.queuedMs += snapshot.queuedMs;
       this.appendCheckOutput(check, snapshot.output, snapshot.outputTruncated);
-      if (snapshot.sessionId) session.activeProcessSessions.add(snapshot.sessionId);
+      const processSessionId = snapshot.sessionId;
+      if (processSessionId) {
+        session.activeProcessSessions.add(processSessionId);
+        session.ownedProcessSessions.add(processSessionId);
+      }
 
-      while (snapshot.running && snapshot.sessionId) {
+      while (snapshot.running && processSessionId) {
         snapshot = await this.processes.write({
           workspaceId: session.workspaceId,
-          sessionId: snapshot.sessionId,
+          sessionId: processSessionId,
           yieldTimeMs: 1_000,
           maxOutputTokens,
         });
         check.queuedMs += snapshot.queuedMs;
         this.appendCheckOutput(check, snapshot.output, snapshot.outputTruncated);
       }
-      if (snapshot.sessionId) session.activeProcessSessions.delete(snapshot.sessionId);
+      if (processSessionId) session.activeProcessSessions.delete(processSessionId);
       check.exitCode = snapshot.exitCode;
       check.signal = snapshot.signal;
       check.wallTimeMs = snapshot.wallTimeMs;
@@ -353,8 +431,17 @@ export class CheckSessionManager {
     maxOutputTokens: number,
     interactionQueuedMs = 0,
   ): CheckSessionSnapshot {
-    const output = session.buffer.drain(maxOutputTokens * 4);
+    let output = session.buffer.drain(maxOutputTokens * 4);
     const checks = session.checks.map(({ definition: _definition, buffer: _buffer, ...check }) => ({ ...check }));
+    if (!session.running && output.output.length === 0) {
+      const recovery = new HeadTailBuffer(maxOutputTokens * 4);
+      for (const check of checks) {
+        recovery.append(
+          `[${check.name}] ${check.status} (${check.wallTimeMs ?? 0}ms, exit ${check.exitCode ?? "unknown"})\n${check.output}\n`,
+        );
+      }
+      output = recovery.drain(maxOutputTokens * 4);
+    }
     return {
       sessionId: session.running ? session.id : undefined,
       running: session.running,

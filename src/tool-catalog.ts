@@ -86,7 +86,7 @@ export const toolCatalog: readonly ToolCatalogEntry[] = [
   entry(toolNames.readMany, codexModes, "navigation", "shared-read", "Read multiple known text files in one bounded call with ordered partial results and limited internal concurrency."),
   entry(toolNames.doctor, allModes, "diagnostics", "shared-read", "Report LocalSpace configuration, runtime, command availability, and optional workspace health."),
   entry(toolNames.workspaceInfo, allModes, "workspace", "shared-read", "Show workspace identity, Git state, recent commits, and package scripts."),
-  entry(toolNames.sessionSummary, allModes, "workflow", "shared-read", "Summarize recent tool activity, MCP request timings, and durable security audit events for one or all workspaces."),
+  entry(toolNames.sessionSummary, allModes, "workflow", "shared-read", "Summarize recent tool activity, MCP request timings, durable security audit events, and recoverable process/check sessions. After a client or reply interruption, call this before re-running commands so an existing session can be resumed with write_stdin."),
   entry(toolNames.entrypoints, allModes, "navigation", "shared-read", "Show package entrypoints, likely source entry files, important config files, and suggested verification commands."),
 
   packedEntry(toolNames.diagnostics, allModes, "diagnostics", "heavy-read", "Report bounded TypeScript and JavaScript compiler diagnostics from the configured or inferred workspace project.", "code-intelligence"),

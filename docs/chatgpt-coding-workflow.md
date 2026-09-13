@@ -200,6 +200,15 @@ registered. `exec_command` returns a process session ID when a command is still
 running after its yield window. Use `write_stdin` to poll it, send input, resize
 a PTY, or send Ctrl-C. Set `tty: true` only for commands that need a terminal.
 
+If the browser, ChatGPT reply stream, or tool continuation is interrupted, do
+not immediately re-run the last command. Call `session_summary` first. It lists
+recoverable process and check-group sessions for the workspace, including
+recently completed sessions whose final result may have been lost with the
+interrupted reply. Resume the matching session with `write_stdin`; completed
+sessions replay their retained output/result. Recovery records expire after the
+completed-session TTL, so this is intended for immediate continuation after an
+interruption rather than long-term job persistence.
+
 Use `read_many` only after navigation has identified several concrete text
 files. It preserves input order, isolates per-file failures, and caps total
 returned text. Continue to use `read` for one file or the first read of an

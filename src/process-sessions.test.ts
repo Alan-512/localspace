@@ -100,6 +100,11 @@ const background = await manager.start({
 assert.equal(background.running, true);
 assert.ok(background.sessionId);
 assert.equal(typeof background.sessionId, "number");
+const runningRecovery = manager.listRecoverable("workspace-a")
+  .find((session) => session.sessionId === background.sessionId);
+assert.ok(runningRecovery);
+assert.equal(runningRecovery.running, true);
+assert.equal(runningRecovery.hasPendingOutput, false);
 
 await assert.rejects(
   manager.write({
@@ -110,6 +115,22 @@ await assert.rejects(
   /does not belong to workspace/,
 );
 
+let completedRecovery = manager.listRecoverable("workspace-a")
+  .find((session) => session.sessionId === background.sessionId);
+const recoveryDeadline = Date.now() + 2_000;
+while (completedRecovery?.running && Date.now() < recoveryDeadline) {
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  completedRecovery = manager.listRecoverable("workspace-a")
+    .find((session) => session.sessionId === background.sessionId);
+}
+assert.ok(completedRecovery);
+assert.equal(completedRecovery.running, false);
+assert.equal(completedRecovery.exitCode, 0);
+assert.equal(completedRecovery.hasPendingOutput, true);
+assert.equal(completedRecovery.hasRecoveryOutput, true);
+assert.match(completedRecovery.outputPreview, /finished/);
+assert.equal(typeof completedRecovery.completedAt, "string");
+
 const completed = await manager.write({
   workspaceId: "workspace-a",
   sessionId: background.sessionId,
@@ -118,6 +139,20 @@ const completed = await manager.write({
 assert.equal(completed.running, false);
 assert.equal(completed.exitCode, 0);
 assert.match(completed.output, /finished/);
+const retainedCompleted = manager.listRecoverable("workspace-a")
+  .find((session) => session.sessionId === background.sessionId);
+assert.ok(retainedCompleted);
+assert.equal(retainedCompleted.running, false);
+assert.equal(retainedCompleted.hasPendingOutput, false);
+assert.equal(retainedCompleted.hasRecoveryOutput, true);
+const replayedCompleted = await manager.write({
+  workspaceId: "workspace-a",
+  sessionId: background.sessionId,
+  yieldTimeMs: 0,
+});
+assert.equal(replayedCompleted.running, false);
+assert.equal(replayedCompleted.exitCode, 0);
+assert.match(replayedCompleted.output, /finished/);
 
 const interactive = await manager.start({
   workspaceId: "workspace-a",

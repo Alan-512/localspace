@@ -760,6 +760,51 @@ const readManyOutputSchema = resultOutputSchema({
   }),
 });
 
+const recoverableSessionOutputSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("process"),
+    workspaceId: z.string(),
+    sessionId: z.number().int(),
+    running: z.boolean(),
+    command: z.string(),
+    workingDirectory: z.string(),
+    startedAt: z.string(),
+    completedAt: z.string().optional(),
+    wallTimeMs: z.number(),
+    exitCode: z.number().int().optional(),
+    signal: z.string().optional(),
+    hasPendingOutput: z.boolean(),
+    hasRecoveryOutput: z.boolean(),
+    outputPreview: z.string(),
+    outputPreviewTruncated: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal("check-group"),
+    workspaceId: z.string(),
+    sessionId: z.number().int(),
+    running: z.boolean(),
+    root: z.string(),
+    startedAt: z.string(),
+    completedAt: z.string().optional(),
+    wallTimeMs: z.number(),
+    hasPendingOutput: z.boolean(),
+    hasRecoveryOutput: z.boolean(),
+    outputPreview: z.string(),
+    outputPreviewTruncated: z.boolean(),
+    checkNames: z.array(z.string()),
+    summary: z.object({
+      requested: z.number(),
+      queued: z.number(),
+      running: z.number(),
+      passed: z.number(),
+      failed: z.number(),
+      blocked: z.number(),
+      skipped: z.number(),
+      cancelled: z.number(),
+    }),
+  }),
+]);
+
 const sessionSummaryOutputSchema = structuredResultOutputSchema({
   totalEvents: z.number(),
   successfulEvents: z.number(),
@@ -803,6 +848,7 @@ const sessionSummaryOutputSchema = structuredResultOutputSchema({
   risks: z.record(z.string(), z.number()),
   recentEvents: z.array(z.unknown()),
   recentAuditEvents: z.array(z.unknown()),
+  recoverableSessions: z.array(recoverableSessionOutputSchema),
   requestMetrics: z.object({
     totalRequests: z.number(),
     successfulRequests: z.number(),
@@ -3804,6 +3850,36 @@ function createMcpServer(
       const activity = activityLog.summarize({ workspaceId, limit });
       const audit = auditLog.summarize({ workspaceId, limit });
       const requests = requestMetrics.summarize({ workspaceId, limit });
+      const checkGroupProcessSessionIds = checkSessions.ownedProcessSessionIds(workspaceId);
+      const recoverableSessions = [
+        ...processSessions
+          .listRecoverable(workspaceId)
+          .filter((session) => !checkGroupProcessSessionIds.has(session.sessionId)),
+        ...checkSessions.listRecoverable(workspaceId),
+      ]
+        .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+        .slice(0, 20);
+      const recoveryText = recoverableSessions.length === 0
+        ? "Recoverable sessions\n\n- none"
+        : [
+          "Recoverable sessions",
+          "",
+          ...recoverableSessions.map((session) => {
+            if (session.kind === "process") {
+              const command = session.command.length > 180
+                ? `${session.command.slice(0, 177)}...`
+                : session.command;
+              const preview = session.outputPreview
+                ? `\n  Output preview: ${session.outputPreview.slice(0, 400)}`
+                : "";
+              return `- process ${session.sessionId} | workspace ${session.workspaceId} | ${session.running ? "running" : "completed"} | pendingOutput=${session.hasPendingOutput} | recoveryOutput=${session.hasRecoveryOutput} | ${command}\n  Resume with write_stdin(workspaceId=${session.workspaceId}, sessionId=${session.sessionId}).${preview}`;
+            }
+            const preview = session.outputPreview
+              ? `\n  Output preview: ${session.outputPreview.slice(0, 400)}`
+              : "";
+            return `- check-group ${session.sessionId} | workspace ${session.workspaceId} | ${session.running ? "running" : "completed"} | pendingOutput=${session.hasPendingOutput} | recoveryOutput=${session.hasRecoveryOutput} | checks=${session.checkNames.join(", ")}\n  Resume with write_stdin(workspaceId=${session.workspaceId}, sessionId=${session.sessionId}).${preview}`;
+          }),
+        ].join("\n");
       const data = {
         ...activity,
         blockedEvents: audit.blockedEvents,
@@ -3813,8 +3889,11 @@ function createMcpServer(
         commands: audit.commands,
         risks: audit.risks,
         recentAuditEvents: audit.recentEvents,
+        recoverableSessions,
         requestMetrics: requests,
         text: [
+          recoveryText,
+          "",
           activity.text,
           "",
           audit.text.replace(/^Session summary/, "Durable audit summary"),

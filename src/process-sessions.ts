@@ -14,6 +14,7 @@ const MAX_COMMAND_YIELD_MS = 5_000;
 const MAX_POLL_YIELD_MS = 5_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
 const DEFAULT_BUFFER_CHARACTERS = 1_000_000;
+const DEFAULT_RECOVERY_BUFFER_CHARACTERS = 64_000;
 const COMPLETED_SESSION_TTL_MS = 5 * 60 * 1_000;
 const DEFAULT_COLUMNS = 80;
 const DEFAULT_ROWS = 24;
@@ -41,6 +42,24 @@ export interface WriteStdinInput {
   rows?: number;
   yieldTimeMs?: number;
   maxOutputTokens?: number;
+}
+
+export interface RecoverableProcessSession {
+  kind: "process";
+  workspaceId: string;
+  sessionId: number;
+  running: boolean;
+  command: string;
+  workingDirectory: string;
+  startedAt: string;
+  completedAt?: string;
+  wallTimeMs: number;
+  exitCode?: number;
+  signal?: string;
+  hasPendingOutput: boolean;
+  hasRecoveryOutput: boolean;
+  outputPreview: string;
+  outputPreviewTruncated: boolean;
 }
 
 export interface ProcessSnapshot {
@@ -78,6 +97,7 @@ interface ProcessSession {
   columns: number;
   rows: number;
   buffer: HeadTailBuffer;
+  recoveryBuffer: HeadTailBuffer;
   running: boolean;
   exitCode?: number;
   signal?: string;
@@ -204,7 +224,7 @@ export class HeadTailBuffer {
     return this.totalCharacters > 0;
   }
 
-  drain(maxCharacters: number): { output: string; truncated: boolean } {
+  peek(maxCharacters: number): { output: string; truncated: boolean } {
     if (!Number.isInteger(maxCharacters) || maxCharacters < 1) {
       throw new Error("Output limit must be a positive integer.");
     }
@@ -217,11 +237,17 @@ export class HeadTailBuffer {
     const output = truncateOutput(retained, maxCharacters);
     const truncated = omittedByBuffer > 0 || output.truncated;
 
+    return { output: output.output, truncated };
+  }
+
+  drain(maxCharacters: number): { output: string; truncated: boolean } {
+    const result = this.peek(maxCharacters);
+
     this.head = "";
     this.tail = "";
     this.totalCharacters = 0;
 
-    return { output: output.output, truncated };
+    return result;
   }
 }
 
@@ -282,8 +308,36 @@ export class ProcessSessionManager {
     await this.waitForExit(session, yieldTimeMs);
 
     const snapshot = this.consume(session, input.maxOutputTokens, processPermits.queuedMs);
-    if (!session.running) this.removeSession(session.id);
     return snapshot;
+  }
+
+  listRecoverable(workspaceId?: string): RecoverableProcessSession[] {
+    const now = Date.now();
+    return [...this.sessions.values()]
+      .filter((session) => workspaceId === undefined || session.workspaceId === workspaceId)
+      .map((session) => {
+        const preview = session.recoveryBuffer.peek(2_000);
+        return {
+          kind: "process" as const,
+          workspaceId: session.workspaceId,
+          sessionId: session.id,
+          running: session.running,
+          command: session.command,
+          workingDirectory: session.workingDirectory,
+          startedAt: new Date(session.startedAt).toISOString(),
+          completedAt: session.completedAt === undefined
+            ? undefined
+            : new Date(session.completedAt).toISOString(),
+          wallTimeMs: (session.completedAt ?? now) - session.startedAt,
+          exitCode: session.exitCode,
+          signal: session.signal,
+          hasPendingOutput: session.buffer.hasOutput(),
+          hasRecoveryOutput: session.recoveryBuffer.hasOutput(),
+          outputPreview: preview.output,
+          outputPreviewTruncated: preview.truncated,
+        };
+      })
+      .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
   }
 
   async write(input: WriteStdinInput): Promise<ProcessSnapshot> {
@@ -328,7 +382,6 @@ export class ProcessSessionManager {
     }
 
     const snapshot = this.consume(session, input.maxOutputTokens, queuedMs);
-    if (!session.running) this.removeSession(session.id);
     return snapshot;
   }
 
@@ -376,6 +429,9 @@ export class ProcessSessionManager {
       columns: terminalSize(input.columns, DEFAULT_COLUMNS),
       rows: terminalSize(input.rows, DEFAULT_ROWS),
       buffer: new HeadTailBuffer(this.maxBufferCharacters),
+      recoveryBuffer: new HeadTailBuffer(
+        Math.min(this.maxBufferCharacters, DEFAULT_RECOVERY_BUFFER_CHARACTERS),
+      ),
       running: true,
       exitPromise,
       resolveExit,
@@ -463,6 +519,7 @@ export class ProcessSessionManager {
 
   private append(session: ProcessSession, output: string): void {
     session.buffer.append(output);
+    session.recoveryBuffer.append(output);
   }
 
   private consume(
@@ -472,7 +529,10 @@ export class ProcessSessionManager {
   ): ProcessSnapshot {
     const limit = boundedInteger(maxOutputTokens, DEFAULT_MAX_OUTPUT_TOKENS, 100_000);
     const maxCharacters = Math.max(256, limit * 4);
-    const buffered = session.buffer.drain(maxCharacters);
+    let buffered = session.buffer.drain(maxCharacters);
+    if (!session.running && buffered.output.length === 0 && session.recoveryBuffer.hasOutput()) {
+      buffered = session.recoveryBuffer.peek(maxCharacters);
+    }
 
     return {
       sessionId: session.running ? session.id : undefined,

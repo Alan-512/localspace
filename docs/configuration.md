@@ -69,6 +69,16 @@ changing the stateless transport model. Client aborts, early response closes,
 and response errors are classified in request metrics; abnormal MCP connection
 outcomes are also written to the durable audit log.
 
+Process and check-group sessions are retained for five minutes after completion
+so a lost ChatGPT/tool continuation can be recovered without re-running the
+command. `session_summary` lists recoverable sessions, including completed ones,
+and `write_stdin` can replay the retained result/output for a completed session.
+After a browser, client, or assistant reply interruption, query
+`session_summary` before launching replacement commands; resume the matching
+session ID instead when one exists. Child process sessions owned by a
+`run_checks` group are hidden from the recovery list so the group session remains
+the single recovery handle.
+
 This mode has been validated with a real ChatGPT conversation across repeated
 LocalSpace restarts without refreshing the page, reconnecting the app, or
 opening a new workspace. The same workspace ID and multi-request process tools

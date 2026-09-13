@@ -1454,6 +1454,36 @@ try {
     assert.equal(faultSummaryResponse.status, 200);
     const faultSummaryResult = await jsonRpcResult(faultSummaryResponse);
     const faultSummaryStructured = recordValue(faultSummaryResult, "structuredContent");
+    const recoverableSessions = arrayValue(recordValue(faultSummaryStructured, "recoverableSessions"));
+    const abortedRecovery = recoverableSessions.find((entry) =>
+      String(recordValue(entry, "command")).includes("aborted-request-finished"),
+    );
+    assert.ok(abortedRecovery, "aborted exec_command should remain recoverable after the HTTP client disconnects");
+    assert.equal(recordValue(abortedRecovery, "running"), false);
+    assert.equal(recordValue(abortedRecovery, "hasRecoveryOutput"), true);
+    assert.match(String(recordValue(abortedRecovery, "outputPreview")), /aborted-request-finished/);
+    const abortedRecoverySessionId = recordValue(abortedRecovery, "sessionId");
+    assert.equal(typeof abortedRecoverySessionId, "number");
+
+    const replayedRecoveryResponse = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(642, "write_stdin", {
+        workspaceId,
+        sessionId: abortedRecoverySessionId,
+        yieldTimeMs: 0,
+      }),
+      sessionId,
+    );
+    assert.equal(replayedRecoveryResponse.status, 200);
+    const replayedRecoveryResult = await jsonRpcResult(replayedRecoveryResponse);
+    assert.equal(recordValue(replayedRecoveryResult.structuredContent, "running"), false);
+    assert.equal(recordValue(replayedRecoveryResult.structuredContent, "exitCode"), 0);
+    assert.match(
+      String(recordValue(replayedRecoveryResult.structuredContent, "result")),
+      /aborted-request-finished/,
+    );
+
     const faultRequestMetrics = recordValue(faultSummaryStructured, "requestMetrics");
     const disconnectedRequests =
       Number(recordValue(faultRequestMetrics, "clientAbortedRequests"))
