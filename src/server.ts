@@ -86,7 +86,10 @@ import {
   ToolActivityLogManager,
   type ToolActivityInput,
 } from "./activity-log.js";
-import { McpRequestMetricsManager } from "./request-metrics.js";
+import {
+  McpRequestMetricsManager,
+  type RequestConnectionOutcome,
+} from "./request-metrics.js";
 import {
   CheckSessionManager,
   type CheckSessionSnapshot,
@@ -804,6 +807,9 @@ const sessionSummaryOutputSchema = structuredResultOutputSchema({
     totalRequests: z.number(),
     successfulRequests: z.number(),
     failedRequests: z.number(),
+    clientAbortedRequests: z.number(),
+    responseClosedEarlyRequests: z.number(),
+    responseErrorRequests: z.number(),
     statelessRequests: z.number(),
     statefulRequests: z.number(),
     averageTotalMs: z.number(),
@@ -2350,9 +2356,9 @@ function registerCodexProcessTools(
           .number()
           .int()
           .min(0)
-          .max(30_000)
+          .max(5_000)
           .optional()
-          .describe("Milliseconds to wait before returning a running session. Defaults to 10000."),
+          .describe("Milliseconds to wait before returning a running session. Defaults to 3000, max 5000."),
         maxOutputTokens: z
           .number()
           .int()
@@ -2502,7 +2508,7 @@ function registerCodexProcessTools(
           .describe(`package.json script names to run. Maximum ${MAX_PACKAGE_CHECKS}.`),
         concurrency: z.number().int().min(1).max(4).optional().describe("Maximum checks to run concurrently. Defaults to 2, max 4."),
         failFast: z.boolean().optional().describe("Stop starting queued checks after the first failure. Running checks are allowed to finish."),
-        yieldTimeMs: z.number().int().min(0).max(30_000).optional().describe("Milliseconds to wait before returning a running group session. Defaults to 10000."),
+        yieldTimeMs: z.number().int().min(0).max(5_000).optional().describe("Milliseconds to wait before returning a running group session. Defaults to 3000, max 5000."),
         maxOutputTokens: z.number().int().positive().max(100_000).optional().describe("Approximate combined output token budget. Defaults to 20000."),
         approvals: z
           .array(z.object({
@@ -2673,9 +2679,9 @@ function registerCodexProcessTools(
           .number()
           .int()
           .min(0)
-          .max(30_000)
+          .max(5_000)
           .optional()
-          .describe("Milliseconds to wait for process output or completion. Defaults to 10000."),
+          .describe("Milliseconds to wait for process output or completion. Defaults to 3000, max 5000."),
         maxOutputTokens: z
           .number()
           .int()
@@ -5982,6 +5988,56 @@ export function createServer(config = loadConfig()): RunningServer {
     const requestId = randomUUID();
     const startedAt = performance.now();
     res.locals.requestId = requestId;
+    res.locals.clientAborted = false;
+    res.locals.responseClosedEarly = false;
+    res.locals.responseError = false;
+
+    req.once("aborted", () => {
+      res.locals.clientAborted = true;
+      logEvent(config.logging, "warn", "http_request_aborted", {
+        requestId,
+        method: req.method,
+        path: requestPath(req),
+        durationMs: Math.round(performance.now() - startedAt),
+        ...requestLogFields(req, config),
+      });
+    });
+
+    req.once("error", (error) => {
+      logEvent(config.logging, "warn", "http_request_error", {
+        requestId,
+        method: req.method,
+        path: requestPath(req),
+        error: error.message,
+        durationMs: Math.round(performance.now() - startedAt),
+        ...requestLogFields(req, config),
+      });
+    });
+
+    res.once("error", (error) => {
+      res.locals.responseError = true;
+      logEvent(config.logging, "warn", "http_response_error", {
+        requestId,
+        method: req.method,
+        path: requestPath(req),
+        error: error.message,
+        durationMs: Math.round(performance.now() - startedAt),
+        ...requestLogFields(req, config),
+      });
+    });
+
+    res.once("close", () => {
+      if (res.writableFinished) return;
+      res.locals.responseClosedEarly = true;
+      logEvent(config.logging, "warn", "http_response_closed_early", {
+        requestId,
+        method: req.method,
+        path: requestPath(req),
+        status: res.statusCode,
+        durationMs: Math.round(performance.now() - startedAt),
+        ...requestLogFields(req, config),
+      });
+    });
 
     res.on("finish", () => {
       const path = requestPath(req);
@@ -6042,6 +6098,7 @@ export function createServer(config = loadConfig()): RunningServer {
     let transportConnectMs = 0;
     let transportHandleMs = 0;
     let cleanupMs = 0;
+    let handlerFailed = false;
 
     try {
       const authStartedAt = performance.now();
@@ -6195,6 +6252,7 @@ export function createServer(config = loadConfig()): RunningServer {
         transportHandleMs = Math.round((performance.now() - handleStartedAt) * 100) / 100;
       }
     } catch (error) {
+      handlerFailed = true;
       logEvent(config.logging, "error", "mcp_request_error", {
         requestId,
         error: error instanceof Error ? error.message : String(error),
@@ -6204,6 +6262,16 @@ export function createServer(config = loadConfig()): RunningServer {
       }
     } finally {
       const totalMs = Math.round((performance.now() - requestStartedAt) * 100) / 100;
+      const clientAborted = Boolean(res.locals.clientAborted) || req.aborted;
+      const responseClosedEarly = Boolean(res.locals.responseClosedEarly) || (res.closed && !res.writableFinished);
+      const responseError = Boolean(res.locals.responseError);
+      const connectionOutcome: RequestConnectionOutcome = responseError
+        ? "response_error"
+        : clientAborted
+          ? "client_aborted"
+          : responseClosedEarly
+            ? "response_closed_early"
+            : "completed";
       const metric = {
         requestId,
         transportMode: config.mcpTransportMode,
@@ -6212,7 +6280,7 @@ export function createServer(config = loadConfig()): RunningServer {
         tool: rpcInfo.tool,
         workspaceId: rpcInfo.workspaceId,
         status: res.statusCode,
-        success: res.statusCode < 400,
+        success: res.statusCode < 400 && !handlerFailed && connectionOutcome === "completed",
         requestBytes: optionalByteLength(req.header("content-length")),
         responseBytes: optionalByteLength(res.getHeader("content-length") as string | number | string[] | undefined),
         authMs,
@@ -6221,8 +6289,19 @@ export function createServer(config = loadConfig()): RunningServer {
         transportHandleMs,
         cleanupMs,
         totalMs,
+        connectionOutcome,
       };
       requestMetrics.record(metric);
+      if (connectionOutcome !== "completed") {
+        auditLog.record({
+          tool: "mcp_http",
+          workspaceId: rpcInfo.workspaceId,
+          action: connectionOutcome,
+          success: false,
+          durationMs: Math.round(totalMs),
+          error: handlerFailed ? "handler_failed" : undefined,
+        });
+      }
       if (config.logging.requests) {
         logEvent(config.logging, metric.success ? "info" : "warn", "mcp_request_metrics", metric);
       }

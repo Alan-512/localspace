@@ -1418,6 +1418,60 @@ try {
     assert.ok(Array.isArray(checkValidationEvidence));
     assert.ok(checkValidationEvidence.includes("typecheck"));
 
+    const abortController = new AbortController();
+    const abortedRequest = fetch(`${stateless.baseUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        accept: "application/json, text/event-stream",
+        "mcp-protocol-version": LATEST_PROTOCOL_VERSION,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(callToolRequest(640, "exec_command", {
+        workspaceId,
+        cmd: `node -e "setTimeout(() => console.log('aborted-request-finished'), 750)"`,
+        yieldTimeMs: 5_000,
+      })),
+      signal: abortController.signal,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    abortController.abort();
+    await assert.rejects(
+      abortedRequest,
+      (error: unknown) => error instanceof Error && error.name === "AbortError",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+
+    const faultSummaryResponse = await mcpRequest(
+      stateless.baseUrl,
+      accessToken,
+      callToolRequest(641, "session_summary", {
+        workspaceId,
+        limit: 50,
+      }),
+      sessionId,
+    );
+    assert.equal(faultSummaryResponse.status, 200);
+    const faultSummaryResult = await jsonRpcResult(faultSummaryResponse);
+    const faultSummaryStructured = recordValue(faultSummaryResult, "structuredContent");
+    const faultRequestMetrics = recordValue(faultSummaryStructured, "requestMetrics");
+    const disconnectedRequests =
+      Number(recordValue(faultRequestMetrics, "clientAbortedRequests"))
+      + Number(recordValue(faultRequestMetrics, "responseClosedEarlyRequests"))
+      + Number(recordValue(faultRequestMetrics, "responseErrorRequests"));
+    assert.ok(disconnectedRequests >= 1);
+    assert.ok(Number(recordValue(faultRequestMetrics, "failedRequests")) >= 1);
+
+    const faultAuditEntries = (await readFile(config.audit.path, "utf8"))
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.ok(faultAuditEntries.some((entry) =>
+      entry.tool === "mcp_http"
+      && ["client_aborted", "response_closed_early", "response_error"].includes(String(entry.action)),
+    ));
+
   } finally {
     await stateless.close();
   }

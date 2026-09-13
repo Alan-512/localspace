@@ -49,6 +49,7 @@ metrics.record({
   transportHandleMs: 30,
   cleanupMs: 0,
   totalMs: 34,
+  connectionOutcome: "client_aborted",
 });
 metrics.record({
   transportMode: "stateless",
@@ -70,6 +71,9 @@ const summary = metrics.summarize({ workspaceId: "ws_test", limit: 10 });
 assert.equal(summary.totalRequests, 2);
 assert.equal(summary.successfulRequests, 1);
 assert.equal(summary.failedRequests, 1);
+assert.equal(summary.clientAbortedRequests, 1);
+assert.equal(summary.responseClosedEarlyRequests, 0);
+assert.equal(summary.responseErrorRequests, 0);
 assert.equal(summary.statelessRequests, 1);
 assert.equal(summary.statefulRequests, 1);
 assert.equal(summary.averageTotalMs, 33);
@@ -83,3 +87,4 @@ assert.equal(summary.tools.grep, 1);
 const all = metrics.summarize({ limit: 10 });
 assert.equal(all.totalRequests, 3);
 assert.equal(all.tools.git_status, 1);
+assert.equal(all.clientAbortedRequests, 1);

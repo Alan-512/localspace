@@ -5,8 +5,8 @@ import { workspaceRevision } from "./workspace-revision.js";
 
 const DEFAULT_CHECK_CONCURRENCY = 2;
 const MAX_CHECK_CONCURRENCY = 4;
-const DEFAULT_CHECK_YIELD_MS = 10_000;
-const MAX_CHECK_YIELD_MS = 30_000;
+const DEFAULT_CHECK_YIELD_MS = 3_000;
+const MAX_CHECK_YIELD_MS = 5_000;
 const DEFAULT_CHECK_OUTPUT_TOKENS = 20_000;
 const COMPLETED_CHECK_SESSION_TTL_MS = 5 * 60 * 1_000;
 
@@ -209,7 +209,7 @@ export class CheckSessionManager {
       const yieldTimeMs = boundedInteger(
         input.yieldTimeMs,
         DEFAULT_CHECK_YIELD_MS,
-        110_000,
+        MAX_CHECK_YIELD_MS,
         "yieldTimeMs",
         true,
       );

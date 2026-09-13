@@ -61,6 +61,14 @@ work without a transport session. A LocalSpace process restart still clears
 non-persisted runtime state such as active child-process handles and outstanding
 approval tokens.
 
+Long-running process tools intentionally keep each individual MCP HTTP request
+short: `exec_command`, `run_checks`, and `write_stdin` wait at most 5 seconds
+per call and default to 3 seconds before returning a resumable session. This
+reduces silent request time across public tunnels and MCP connectors without
+changing the stateless transport model. Client aborts, early response closes,
+and response errors are classified in request metrics; abnormal MCP connection
+outcomes are also written to the durable audit log.
+
 This mode has been validated with a real ChatGPT conversation across repeated
 LocalSpace restarts without refreshing the page, reconnecting the app, or
 opening a new workspace. The same workspace ID and multi-request process tools

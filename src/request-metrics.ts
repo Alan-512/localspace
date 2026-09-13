@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 export type RequestTransportMode = "stateful" | "stateless";
+export type RequestConnectionOutcome =
+  | "completed"
+  | "client_aborted"
+  | "response_closed_early"
+  | "response_error";
 
 export interface McpRequestMetricInput {
   requestId?: string;
@@ -19,6 +24,7 @@ export interface McpRequestMetricInput {
   transportHandleMs: number;
   cleanupMs: number;
   totalMs: number;
+  connectionOutcome?: RequestConnectionOutcome;
 }
 
 export interface McpRequestMetric extends McpRequestMetricInput {
@@ -35,6 +41,9 @@ export interface McpRequestMetricsSummary {
   totalRequests: number;
   successfulRequests: number;
   failedRequests: number;
+  clientAbortedRequests: number;
+  responseClosedEarlyRequests: number;
+  responseErrorRequests: number;
   statelessRequests: number;
   statefulRequests: number;
   averageTotalMs: number;
@@ -76,12 +85,18 @@ export class McpRequestMetricsManager {
     const tools: Record<string, number> = {};
     let successfulRequests = 0;
     let failedRequests = 0;
+    let clientAbortedRequests = 0;
+    let responseClosedEarlyRequests = 0;
+    let responseErrorRequests = 0;
     let statelessRequests = 0;
     let statefulRequests = 0;
 
     for (const event of filtered) {
       if (event.success) successfulRequests += 1;
       else failedRequests += 1;
+      if (event.connectionOutcome === "client_aborted") clientAbortedRequests += 1;
+      if (event.connectionOutcome === "response_closed_early") responseClosedEarlyRequests += 1;
+      if (event.connectionOutcome === "response_error") responseErrorRequests += 1;
       if (event.transportMode === "stateless") statelessRequests += 1;
       else statefulRequests += 1;
       if (event.rpcMethod) rpcMethods[event.rpcMethod] = (rpcMethods[event.rpcMethod] ?? 0) + 1;
@@ -92,6 +107,9 @@ export class McpRequestMetricsManager {
       totalRequests: filtered.length,
       successfulRequests,
       failedRequests,
+      clientAbortedRequests,
+      responseClosedEarlyRequests,
+      responseErrorRequests,
       statelessRequests,
       statefulRequests,
       averageTotalMs: average(filtered.map((event) => event.totalMs)),
