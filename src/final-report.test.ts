@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 import type { AuditSummary } from "./audit-log.js";
 import { createFinalReport, createHandoffSummary } from "./final-report.js";
 
@@ -58,7 +59,7 @@ try {
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync("git", args, { cwd, windowsHide: true });
+  await execFileAsync(resolveGitExecutable(), args, { cwd, windowsHide: true });
 }
 
 function auditFixture(): AuditSummary {

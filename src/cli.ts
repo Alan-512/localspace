@@ -22,7 +22,7 @@ import {
   type LocalspaceUserConfig,
 } from "./user-config.js";
 import { expandHomePath } from "./roots.js";
-import { resolveShellCommand } from "./process-platform.js";
+import { resolveGitExecutable, resolveShellCommand } from "./process-platform.js";
 
 type Command = "serve" | "init" | "doctor" | "config" | "help" | "version";
 const require = createRequire(import.meta.url);
@@ -483,7 +483,7 @@ function checkGitAvailable(): { available: boolean; detail: string } {
     const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
     return {
       available: true,
-      detail: execFileSync("git", ["--version"], { encoding: "utf8", windowsHide: true }).trim(),
+      detail: execFileSync(resolveGitExecutable(), ["--version"], { encoding: "utf8", windowsHide: true }).trim(),
     };
   } catch (error) {
     return { available: false, detail: error instanceof Error ? error.message : String(error) };

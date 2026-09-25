@@ -3,6 +3,7 @@ import { createHash, type Hash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readlink } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
+import { resolveGitExecutable } from "./process-platform.js";
 
 const MAX_GIT_PATH_OUTPUT_BYTES = 64 * 1024 * 1024;
 
@@ -142,7 +143,7 @@ async function runGit(
   onStdout: (chunk: Buffer) => void,
 ): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn("git", args, {
+    const child = spawn(resolveGitExecutable(), args, {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,

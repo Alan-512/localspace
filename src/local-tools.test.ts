@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 import {
   editFileTool,
   findFilesTool,
@@ -125,5 +126,5 @@ function text(response: { content: Array<{ type: string; text?: string }> }): st
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync("git", args, { cwd, windowsHide: true });
+  await execFileAsync(resolveGitExecutable(), args, { cwd, windowsHide: true });
 }

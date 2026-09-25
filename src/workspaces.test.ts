@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 import assert from "node:assert/strict";
 import { loadConfig } from "./config.js";
 import { GitWorktreeError } from "./git-worktrees.js";
@@ -204,5 +205,5 @@ try {
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync("git", args, { cwd, windowsHide: true });
+  await execFileAsync(resolveGitExecutable(), args, { cwd, windowsHide: true });
 }

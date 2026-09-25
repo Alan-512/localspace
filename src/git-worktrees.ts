@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { mkdir, realpath, rm, stat } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import type { ServerConfig } from "./config.js";
+import { resolveGitExecutable } from "./process-platform.js";
 import { assertAllowedPath, isPathInsideRoot } from "./roots.js";
 
 const execFileAsync = promisify(execFile);
@@ -161,7 +162,7 @@ function sanitizePathSegment(value: string): string {
 
 async function git(args: string[], cwd: string): Promise<string> {
   try {
-    const { stdout } = await execFileAsync("git", args, {
+    const { stdout } = await execFileAsync(resolveGitExecutable(), args, {
       cwd,
       maxBuffer: 10 * 1024 * 1024,
       windowsHide: true,

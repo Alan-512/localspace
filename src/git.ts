@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -21,7 +22,7 @@ export async function git(
   args: string[],
   options: { env?: NodeJS.ProcessEnv; maxBuffer?: number } = {},
 ): Promise<GitCommandResult> {
-  const { stdout, stderr } = await execFileAsync("git", args, {
+  const { stdout, stderr } = await execFileAsync(resolveGitExecutable(), args, {
     cwd,
     env: options.env ? { ...process.env, ...options.env } : process.env,
     maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,

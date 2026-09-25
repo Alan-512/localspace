@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AuditSummary } from "./audit-log.js";
+import { resolveGitExecutable } from "./process-platform.js";
 import { createTaskSummary, createValidationSummary, type ValidationDetectedResult } from "./task-summary.js";
 
 const execFileAsync = promisify(execFile);
@@ -143,7 +144,7 @@ export async function createHandoffSummary(
 
 async function reportGitState(workspaceRoot: string): Promise<ReportGitState> {
   try {
-    const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
+    const inside = await execFileAsync(resolveGitExecutable(), ["rev-parse", "--is-inside-work-tree"], {
       cwd: workspaceRoot,
       windowsHide: true,
     });
@@ -170,7 +171,7 @@ async function reportGitState(workspaceRoot: string): Promise<ReportGitState> {
 
 async function gitOutput(workspaceRoot: string, args: string[]): Promise<string> {
   try {
-    const result = await execFileAsync("git", args, { cwd: workspaceRoot, windowsHide: true });
+    const result = await execFileAsync(resolveGitExecutable(), args, { cwd: workspaceRoot, windowsHide: true });
     return result.stdout.trim();
   } catch {
     return "";

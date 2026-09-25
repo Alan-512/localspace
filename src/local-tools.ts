@@ -27,7 +27,11 @@ import {
 import { promisify } from "node:util";
 import { createTwoFilesPatch } from "diff";
 import { KeyedMutex } from "./concurrency.js";
-import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  resolveGitExecutable,
+  resolveShellCommand,
+  terminateProcessTree,
+} from "./process-platform.js";
 import { assertAllowedPath, isPathInsideRoot, resolveAllowedPath } from "./roots.js";
 
 const execFileAsync = promisify(execFile);
@@ -443,7 +447,7 @@ async function collectGitFiles(scope: string, workspaceRoot: string): Promise<st
     const gitRoot = await detectGitRoot(workspaceRoot);
     const scopePathspec = toPosix(relative(gitRoot, scope)) || ".";
     const output = (await execFileAsync(
-      "git",
+      resolveGitExecutable(),
       ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", scopePathspec],
       { cwd: gitRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, windowsHide: true },
     )).stdout;
@@ -470,7 +474,7 @@ async function detectGitRoot(workspaceRoot: string): Promise<string> {
     await lstat(join(workspaceRoot, ".git"));
     return workspaceRoot;
   } catch {
-    return (await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+    return (await execFileAsync(resolveGitExecutable(), ["rev-parse", "--show-toplevel"], {
       cwd: workspaceRoot,
       encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,

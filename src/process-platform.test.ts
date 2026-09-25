@@ -1,5 +1,31 @@
 import assert from "node:assert/strict";
-import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  resolveGitExecutable,
+  resolveShellCommand,
+  terminateProcessTree,
+} from "./process-platform.js";
+
+const gitForWindowsFiles = new Set([
+  "C:\\Program Files\\Git\\cmd\\git.exe",
+  "C:\\Program Files\\Git\\mingw64\\bin\\git.exe",
+]);
+assert.equal(
+  resolveGitExecutable(
+    "win32",
+    { Path: "C:\\Program Files\\Git\\cmd;C:\\Windows\\System32" },
+    (path) => gitForWindowsFiles.has(path),
+  ),
+  "C:\\Program Files\\Git\\mingw64\\bin\\git.exe",
+);
+assert.equal(
+  resolveGitExecutable(
+    "win32",
+    { Path: "C:\\PortableGit\\cmd" },
+    (path) => path === "C:\\PortableGit\\cmd\\git.exe",
+  ),
+  "C:\\PortableGit\\cmd\\git.exe",
+);
+assert.equal(resolveGitExecutable("linux", { PATH: "/usr/bin" }, () => false), "git");
 
 assert.deepEqual(resolveShellCommand("echo ok", "win32", { ComSpec: "C:\\Windows\\cmd.exe" }), {
   executable: "C:\\Windows\\cmd.exe",

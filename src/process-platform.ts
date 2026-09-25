@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, win32 } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export interface ShellCommand {
@@ -31,6 +32,36 @@ const defaultProcessTreeRuntime: ProcessTreeRuntime = {
 
 const LOGIN_SHELLS = new Set(["bash", "ksh", "zsh"]);
 const POSIX_SHELLS = new Set(["ash", "dash", "sh"]);
+
+export function resolveGitExecutable(
+  platform: NodeJS.Platform = process.platform,
+  environment: NodeJS.ProcessEnv = process.env,
+  pathExists: (path: string) => boolean = existsSync,
+): string {
+  if (platform !== "win32") return "git";
+
+  const pathValue = environment.Path ?? environment.PATH ?? environment.path ?? "";
+  for (const rawEntry of pathValue.split(";")) {
+    const entry = rawEntry.trim().replace(/^"(.*)"$/, "$1");
+    if (!entry) continue;
+
+    const git = win32.join(entry, "git.exe");
+    if (!pathExists(git)) continue;
+
+    const parent = win32.basename(win32.dirname(git)).toLowerCase();
+    if (parent === "cmd" || parent === "bin") {
+      const installRoot = win32.dirname(win32.dirname(git));
+      for (const runtime of ["mingw64", "mingw32"]) {
+        const realGit = win32.join(installRoot, runtime, "bin", "git.exe");
+        if (pathExists(realGit)) return realGit;
+      }
+    }
+
+    return git;
+  }
+
+  return "git";
+}
 
 export function resolveShellCommand(
   command: string,

@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { findEntrypointsData, type EntrypointSearchResult } from "./entrypoints.js";
 import type { AuditSummary } from "./audit-log.js";
+import { resolveGitExecutable } from "./process-platform.js";
 import {
   createDeterministicAutomation,
   type DeterministicAutomationData,
@@ -231,12 +232,13 @@ export async function createNextSteps(workspaceRoot: string, audit?: AuditSummar
 
 async function gitStatusSummary(workspaceRoot: string): Promise<GitStatusSummary> {
   try {
-    const repo = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
+    const git = resolveGitExecutable();
+    const repo = await execFileAsync(git, ["rev-parse", "--is-inside-work-tree"], {
       cwd: workspaceRoot,
       windowsHide: true,
     });
     if (repo.stdout.trim() !== "true") return emptyGitSummary(false);
-    const status = await execFileAsync("git", ["status", "--porcelain=v1"], {
+    const status = await execFileAsync(git, ["status", "--porcelain=v1"], {
       cwd: workspaceRoot,
       windowsHide: true,
     });

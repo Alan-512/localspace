@@ -7,6 +7,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { ServerConfig } from "./config.js";
 import { createManagedWorktree } from "./git-worktrees.js";
+import { resolveGitExecutable } from "./process-platform.js";
 import { assertAllowedPath, isPathInsideRoot, resolveAllowedPath } from "./roots.js";
 import {
   loadWorkspaceSkills,
@@ -437,7 +438,7 @@ async function walkWorkspace(
 async function findGitContextFiles(root: string): Promise<string[] | undefined> {
   try {
     const { stdout: topLevelOutput } = await execFileAsync(
-      "git",
+      resolveGitExecutable(),
       ["-C", root, "rev-parse", "--show-toplevel"],
       {
         encoding: "utf8",
@@ -463,7 +464,7 @@ async function findGitContextFiles(root: string): Promise<string[] | undefined> 
       `:(glob)${prefix}**/${name}`,
     ]);
     const { stdout } = await execFileAsync(
-      "git",
+      resolveGitExecutable(),
       [
         "-C",
         gitRoot,

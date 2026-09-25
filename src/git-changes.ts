@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -245,7 +246,7 @@ function clampInteger(value: number | undefined, fallback: number, min: number, 
 }
 
 async function git(cwd: string, args: string[]): Promise<GitResult> {
-  return execFileAsync("git", args, {
+  return execFileAsync(resolveGitExecutable(), args, {
     cwd,
     maxBuffer: 10 * 1024 * 1024,
     windowsHide: true,

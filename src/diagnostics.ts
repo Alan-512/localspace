@@ -4,7 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import type { ServerConfig } from "./config.js";
-import { resolveShellCommand } from "./process-platform.js";
+import { resolveGitExecutable, resolveShellCommand } from "./process-platform.js";
 import type { Workspace } from "./workspaces.js";
 
 const execFileAsync = promisify(execFile);
@@ -319,13 +319,14 @@ async function runDoctorChecks(config: ServerConfig, workspaceRoot: string | und
 }
 
 async function checkCommand(name: string, args: string[], cwd: string): Promise<CommandCheck> {
+  const executable = name === "git" ? resolveGitExecutable() : name;
   try {
-    const result = await execFileAsync(name, args, { cwd, timeout: 5_000, windowsHide: true });
+    const result = await execFileAsync(executable, args, { cwd, timeout: 5_000, windowsHide: true });
     const detail = (result.stdout || result.stderr).trim() || "available";
     return { name, status: "ok", detail };
   } catch (error) {
     if (process.platform === "win32") {
-      return checkCommandWithWindowsShellFallback(name, args, cwd, error);
+      return checkCommandWithWindowsShellFallback(executable, args, cwd, error);
     }
     return { name, status: "error", detail: errorMessage(error) };
   }
@@ -404,16 +405,17 @@ async function gitWorkspaceInfo(root: string): Promise<{
   error?: string;
 }> {
   try {
-    const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, windowsHide: true });
+    const git = resolveGitExecutable();
+    const inside = await execFileAsync(git, ["rev-parse", "--is-inside-work-tree"], { cwd: root, windowsHide: true });
     if (inside.stdout.trim() !== "true") {
       return emptyGitWorkspaceData();
     }
     const [branch, head, status, log, commitCount] = await Promise.all([
-      execFileAsync("git", ["branch", "--show-current"], { cwd: root, windowsHide: true }),
-      execFileAsync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, windowsHide: true }),
-      execFileAsync("git", ["status", "--short"], { cwd: root, windowsHide: true }),
-      execFileAsync("git", ["log", "--oneline", `-${RECENT_COMMIT_LIMIT}`], { cwd: root, windowsHide: true }),
-      execFileAsync("git", ["rev-list", "--count", "HEAD"], { cwd: root, windowsHide: true }),
+      execFileAsync(git, ["branch", "--show-current"], { cwd: root, windowsHide: true }),
+      execFileAsync(git, ["rev-parse", "--short", "HEAD"], { cwd: root, windowsHide: true }),
+      execFileAsync(git, ["status", "--short"], { cwd: root, windowsHide: true }),
+      execFileAsync(git, ["log", "--oneline", `-${RECENT_COMMIT_LIMIT}`], { cwd: root, windowsHide: true }),
+      execFileAsync(git, ["rev-list", "--count", "HEAD"], { cwd: root, windowsHide: true }),
     ]);
     const allStatusLines = status.stdout
       .trim()

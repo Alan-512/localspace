@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -202,7 +203,7 @@ async function isGitRepository(cwd: string): Promise<boolean> {
 
 async function runGit(cwd: string, args: string[]): Promise<GitResult> {
   try {
-    return await execFileAsync("git", args, {
+    return await execFileAsync(resolveGitExecutable(), args, {
       cwd,
       maxBuffer: 10 * 1024 * 1024,
       windowsHide: true,

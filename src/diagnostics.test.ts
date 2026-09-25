@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveGitExecutable } from "./process-platform.js";
 import assert from "node:assert/strict";
 import type { ServerConfig } from "./config.js";
 import { generateDoctorReport, generateDoctorReportData, generateWorkspaceInfo, generateWorkspaceInfoData } from "./diagnostics.js";
@@ -158,5 +159,5 @@ function testConfig(root: string): ServerConfig {
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync("git", args, { cwd, windowsHide: true });
+  await execFileAsync(resolveGitExecutable(), args, { cwd, windowsHide: true });
 }
