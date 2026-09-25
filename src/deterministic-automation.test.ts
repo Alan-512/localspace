@@ -16,11 +16,11 @@ try {
   await mkdir(join(root, "src"), { recursive: true });
   const sourcePath = join(root, "src", "index.ts");
   await writeFile(sourcePath, "export const answer = 42;\n", "utf8");
-  execFileSync("git", ["init"], { cwd: root, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "automation@localspace.invalid"], { cwd: root });
-  execFileSync("git", ["config", "user.name", "LocalSpace Automation Test"], { cwd: root });
-  execFileSync("git", ["add", "--", "src/index.ts"], { cwd: root });
-  execFileSync("git", ["commit", "-m", "automation baseline"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["init"], { cwd: root, stdio: "ignore", windowsHide: true });
+  execFileSync("git", ["config", "user.email", "automation@localspace.invalid"], { cwd: root, windowsHide: true });
+  execFileSync("git", ["config", "user.name", "LocalSpace Automation Test"], { cwd: root, windowsHide: true });
+  execFileSync("git", ["add", "--", "src/index.ts"], { cwd: root, windowsHide: true });
+  execFileSync("git", ["commit", "-m", "automation baseline"], { cwd: root, stdio: "ignore", windowsHide: true });
   const changeTime = new Date("2026-07-21T10:00:00.000Z");
   await utimes(sourcePath, changeTime, changeTime);
 

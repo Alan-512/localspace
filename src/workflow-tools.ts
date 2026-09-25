@@ -231,9 +231,15 @@ export async function createNextSteps(workspaceRoot: string, audit?: AuditSummar
 
 async function gitStatusSummary(workspaceRoot: string): Promise<GitStatusSummary> {
   try {
-    const repo = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: workspaceRoot });
+    const repo = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: workspaceRoot,
+      windowsHide: true,
+    });
     if (repo.stdout.trim() !== "true") return emptyGitSummary(false);
-    const status = await execFileAsync("git", ["status", "--porcelain=v1"], { cwd: workspaceRoot });
+    const status = await execFileAsync("git", ["status", "--porcelain=v1"], {
+      cwd: workspaceRoot,
+      windowsHide: true,
+    });
     const lines = status.stdout.split(/\r?\n/).filter(Boolean);
     const changedPaths = lines.map((line) => parseStatusPath(line)).filter(Boolean);
     return {

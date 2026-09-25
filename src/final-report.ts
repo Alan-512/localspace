@@ -143,7 +143,10 @@ export async function createHandoffSummary(
 
 async function reportGitState(workspaceRoot: string): Promise<ReportGitState> {
   try {
-    const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: workspaceRoot });
+    const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: workspaceRoot,
+      windowsHide: true,
+    });
     if (inside.stdout.trim() !== "true") return emptyGitState(false);
     const [branch, head, latestCommit] = await Promise.all([
       gitOutput(workspaceRoot, ["branch", "--show-current"]),
@@ -167,7 +170,7 @@ async function reportGitState(workspaceRoot: string): Promise<ReportGitState> {
 
 async function gitOutput(workspaceRoot: string, args: string[]): Promise<string> {
   try {
-    const result = await execFileAsync("git", args, { cwd: workspaceRoot });
+    const result = await execFileAsync("git", args, { cwd: workspaceRoot, windowsHide: true });
     return result.stdout.trim();
   } catch {
     return "";

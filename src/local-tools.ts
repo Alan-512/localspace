@@ -445,7 +445,7 @@ async function collectGitFiles(scope: string, workspaceRoot: string): Promise<st
     const output = (await execFileAsync(
       "git",
       ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", scopePathspec],
-      { cwd: gitRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      { cwd: gitRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, windowsHide: true },
     )).stdout;
     const files: string[] = [];
     for (const entry of output.split("\0")) {
@@ -474,6 +474,7 @@ async function detectGitRoot(workspaceRoot: string): Promise<string> {
       cwd: workspaceRoot,
       encoding: "utf8",
       maxBuffer: 10 * 1024 * 1024,
+      windowsHide: true,
     })).stdout.trim();
   }
 }

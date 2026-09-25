@@ -79,14 +79,18 @@ try {
     );
     let tscOutput = "";
     try {
-      await execFileAsync(process.execPath, [
-        tscPath,
-        "--project",
-        root,
-        "--noEmit",
-        "--pretty",
-        "false",
-      ]);
+      await execFileAsync(
+        process.execPath,
+        [
+          tscPath,
+          "--project",
+          root,
+          "--noEmit",
+          "--pretty",
+          "false",
+        ],
+        { windowsHide: true },
+      );
     } catch (error) {
       const failed = error as { stdout?: string; stderr?: string };
       tscOutput = `${failed.stdout ?? ""}${failed.stderr ?? ""}`;

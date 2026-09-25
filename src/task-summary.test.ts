@@ -61,7 +61,7 @@ try {
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
-  await execFileAsync("git", args, { cwd });
+  await execFileAsync("git", args, { cwd, windowsHide: true });
 }
 
 function auditFixture(): AuditSummary {

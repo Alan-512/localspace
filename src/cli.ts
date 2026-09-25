@@ -481,7 +481,10 @@ function checkSqliteNative(): { ok: boolean; error?: string } {
 function checkGitAvailable(): { available: boolean; detail: string } {
   try {
     const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
-    return { available: true, detail: execFileSync("git", ["--version"], { encoding: "utf8" }).trim() };
+    return {
+      available: true,
+      detail: execFileSync("git", ["--version"], { encoding: "utf8", windowsHide: true }).trim(),
+    };
   } catch (error) {
     return { available: false, detail: error instanceof Error ? error.message : String(error) };
   }

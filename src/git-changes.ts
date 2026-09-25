@@ -248,5 +248,6 @@ async function git(cwd: string, args: string[]): Promise<GitResult> {
   return execFileAsync("git", args, {
     cwd,
     maxBuffer: 10 * 1024 * 1024,
+    windowsHide: true,
   });
 }

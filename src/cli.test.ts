@@ -12,6 +12,7 @@ for (const flag of ["-v", "--version"]) {
   const output = execFileSync("node", ["--import", "tsx", "src/cli.ts", flag], {
     encoding: "utf8",
     env: { ...process.env, LOCALSPACE_CONFIG_DIR: "/tmp/localspace-cli-version-test" },
+    windowsHide: true,
   }).trim();
 
   assert.equal(output, packageJson.version);
@@ -31,6 +32,7 @@ function runCli(args: readonly string[], configDir: string): CliRunResult {
   const result = spawnSync("node", ["--import", "tsx", "src/cli.ts", ...args], {
     encoding: "utf8",
     env: { ...process.env, LOCALSPACE_CONFIG_DIR: configDir },
+    windowsHide: true,
   });
   return {
     status: result.status ?? -1,

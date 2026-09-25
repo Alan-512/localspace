@@ -126,20 +126,20 @@ try {
       "commit:bypass": "git commit -m bypass"
     }
   }, null, 2), "utf8");
-  execFileSync("git", ["init"], { cwd: automationRoot, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "automation@localspace.invalid"], { cwd: automationRoot });
-  execFileSync("git", ["config", "user.name", "LocalSpace Automation Test"], { cwd: automationRoot });
-  execFileSync("git", ["add", "--", "."], { cwd: automationRoot });
-  execFileSync("git", ["commit", "-m", "initial automation fixture"], { cwd: automationRoot, stdio: "ignore" });
+  execFileSync("git", ["init"], { cwd: automationRoot, stdio: "ignore", windowsHide: true });
+  execFileSync("git", ["config", "user.email", "automation@localspace.invalid"], { cwd: automationRoot, windowsHide: true });
+  execFileSync("git", ["config", "user.name", "LocalSpace Automation Test"], { cwd: automationRoot, windowsHide: true });
+  execFileSync("git", ["add", "--", "."], { cwd: automationRoot, windowsHide: true });
+  execFileSync("git", ["commit", "-m", "initial automation fixture"], { cwd: automationRoot, stdio: "ignore", windowsHide: true });
   const sensitiveRoot = join(root, "sensitive-workspace");
   await mkdir(join(sensitiveRoot, ".localspace"), { recursive: true });
   await writeFile(join(sensitiveRoot, ".env.example"), "PUBLIC_VALUE=example\n", "utf8");
   await writeFile(join(sensitiveRoot, "README.md"), "sensitive fixture\n", "utf8");
-  execFileSync("git", ["init"], { cwd: sensitiveRoot, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "sensitive@localspace.invalid"], { cwd: sensitiveRoot });
-  execFileSync("git", ["config", "user.name", "LocalSpace Sensitive Test"], { cwd: sensitiveRoot });
-  execFileSync("git", ["add", "--", "."], { cwd: sensitiveRoot });
-  execFileSync("git", ["commit", "-m", "initial sensitive fixture"], { cwd: sensitiveRoot, stdio: "ignore" });
+  execFileSync("git", ["init"], { cwd: sensitiveRoot, stdio: "ignore", windowsHide: true });
+  execFileSync("git", ["config", "user.email", "sensitive@localspace.invalid"], { cwd: sensitiveRoot, windowsHide: true });
+  execFileSync("git", ["config", "user.name", "LocalSpace Sensitive Test"], { cwd: sensitiveRoot, windowsHide: true });
+  execFileSync("git", ["add", "--", "."], { cwd: sensitiveRoot, windowsHide: true });
+  execFileSync("git", ["commit", "-m", "initial sensitive fixture"], { cwd: sensitiveRoot, stdio: "ignore", windowsHide: true });
   const config = testConfig(root);
   seedOAuthToken(config, accessToken, refreshToken);
 

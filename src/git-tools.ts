@@ -205,6 +205,7 @@ async function runGit(cwd: string, args: string[]): Promise<GitResult> {
     return await execFileAsync("git", args, {
       cwd,
       maxBuffer: 10 * 1024 * 1024,
+      windowsHide: true,
     });
   } catch (error) {
     const execError = error as NodeJS.ErrnoException & { stdout?: string; stderr?: string };

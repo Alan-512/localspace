@@ -320,7 +320,7 @@ async function runDoctorChecks(config: ServerConfig, workspaceRoot: string | und
 
 async function checkCommand(name: string, args: string[], cwd: string): Promise<CommandCheck> {
   try {
-    const result = await execFileAsync(name, args, { cwd, timeout: 5_000 });
+    const result = await execFileAsync(name, args, { cwd, timeout: 5_000, windowsHide: true });
     const detail = (result.stdout || result.stderr).trim() || "available";
     return { name, status: "ok", detail };
   } catch (error) {
@@ -340,7 +340,7 @@ async function checkCommandWithWindowsShellFallback(
   const shell = resolveShellCommand(shellCommand([name, ...args]), "win32", process.env);
 
   try {
-    const result = await execFileAsync(shell.executable, shell.args, { cwd, timeout: 5_000 });
+    const result = await execFileAsync(shell.executable, shell.args, { cwd, timeout: 5_000, windowsHide: true });
     const detail = (result.stdout || result.stderr).trim() || "available";
     return { name, status: "ok", detail };
   } catch (shellError) {
@@ -365,7 +365,7 @@ async function checkShell(config: ServerConfig, cwd: string): Promise<CommandChe
   const environment = config.shell ? { ...process.env, LOCALSPACE_SHELL: config.shell } : process.env;
   const shell = resolveShellCommand("echo localspace-shell-ok", process.platform, environment);
   try {
-    const result = await execFileAsync(shell.executable, shell.args, { cwd, timeout: 5_000 });
+    const result = await execFileAsync(shell.executable, shell.args, { cwd, timeout: 5_000, windowsHide: true });
     const output = (result.stdout || result.stderr).trim();
     const executable = basename(shell.executable);
     return {
@@ -404,16 +404,16 @@ async function gitWorkspaceInfo(root: string): Promise<{
   error?: string;
 }> {
   try {
-    const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root });
+    const inside = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, windowsHide: true });
     if (inside.stdout.trim() !== "true") {
       return emptyGitWorkspaceData();
     }
     const [branch, head, status, log, commitCount] = await Promise.all([
-      execFileAsync("git", ["branch", "--show-current"], { cwd: root }),
-      execFileAsync("git", ["rev-parse", "--short", "HEAD"], { cwd: root }),
-      execFileAsync("git", ["status", "--short"], { cwd: root }),
-      execFileAsync("git", ["log", "--oneline", `-${RECENT_COMMIT_LIMIT}`], { cwd: root }),
-      execFileAsync("git", ["rev-list", "--count", "HEAD"], { cwd: root }),
+      execFileAsync("git", ["branch", "--show-current"], { cwd: root, windowsHide: true }),
+      execFileAsync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, windowsHide: true }),
+      execFileAsync("git", ["status", "--short"], { cwd: root, windowsHide: true }),
+      execFileAsync("git", ["log", "--oneline", `-${RECENT_COMMIT_LIMIT}`], { cwd: root, windowsHide: true }),
+      execFileAsync("git", ["rev-list", "--count", "HEAD"], { cwd: root, windowsHide: true }),
     ]);
     const allStatusLines = status.stdout
       .trim()
